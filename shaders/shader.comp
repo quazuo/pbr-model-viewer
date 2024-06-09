@@ -1,0 +1,163 @@
+#version 450
+
+#include "ext.glsl"
+#include "utils.glsl"
+
+layout (push_constant) uniform PushConstants {
+    uint level;
+    uint pyramid_height;
+} consts;
+
+layout (binding = 0) uniform AutomatonConfigUBO {
+    uint grid_depth;
+    uint survive_mask;
+    uint birth_mask;
+    uint state_count;
+    uint use_moore_neighborhood;
+} ubo;
+
+layout(binding = 1) readonly buffer StateSsboIn {
+    uint8_t state_in[];
+};
+
+layout(binding = 2) buffer StateSsboOut {
+    uint8_t state_out[];
+};
+
+#define WORK_GROUP_SIZE uvec3(8)
+
+layout (local_size_x = WORK_GROUP_SIZE.x, local_size_y = WORK_GROUP_SIZE.y, local_size_z = WORK_GROUP_SIZE.z) in;
+
+bool survives(uint neighbor_count_bit) {
+    return (ubo.survive_mask & neighbor_count_bit) != 0;
+}
+
+bool is_born(uint neighbor_count_bit) {
+    return (ubo.birth_mask & neighbor_count_bit) != 0;
+}
+
+bool check_cell(uvec3 coords) {
+    const uint level_width = 1u << (ubo.grid_depth - 1);
+
+    if (coords.x >= level_width || coords.y >= level_width || coords.z >= level_width) {
+        return false;
+    }
+
+    const uint level_offset = get_level_offset(ubo.grid_depth - 1);
+    const uint cell_index = morton3(coords);
+    const uint8_t cell_value = state_in[level_offset + cell_index];
+    return cell_value == 1;
+}
+
+uint get_neighbor_count_bit_moore(uvec3 coords) {
+    const uint level_offset = get_level_offset(ubo.grid_depth - 1);
+    uint neighbor_count_bit = 1;
+
+    for (int dx = -1; dx <= 1; dx++) {
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                if (dx == 0 && dy == 0 && dz == 0) continue;
+
+                if (check_cell(coords + uvec3(dx, dy, dz))) {
+                    neighbor_count_bit <<= 1;
+                }
+            }
+        }
+    }
+
+    return neighbor_count_bit;
+}
+
+uint get_neighbor_count_bit_von_neumann(uvec3 coords) {
+    uint neighbor_count_bit = 1;
+
+    if (check_cell(coords + uvec3(1, 0, 0)))  neighbor_count_bit <<= 1;
+    if (check_cell(coords + uvec3(-1, 0, 0))) neighbor_count_bit <<= 1;
+    if (check_cell(coords + uvec3(0, 1, 0)))  neighbor_count_bit <<= 1;
+    if (check_cell(coords + uvec3(0, -1, 0))) neighbor_count_bit <<= 1;
+    if (check_cell(coords + uvec3(0, 0, 1)))  neighbor_count_bit <<= 1;
+    if (check_cell(coords + uvec3(0, 0, -1))) neighbor_count_bit <<= 1;
+
+    return neighbor_count_bit;
+}
+
+uint get_buffer_index() {
+    const uvec3 globalInvocationCount = gl_NumWorkGroups * WORK_GROUP_SIZE;
+
+    return globalInvocationCount.x * globalInvocationCount.y * gl_GlobalInvocationID.z +
+           globalInvocationCount.x * gl_GlobalInvocationID.y +
+           gl_GlobalInvocationID.x;
+}
+
+void update_state() {
+    const uint level_offset = get_level_offset(ubo.grid_depth - 1);
+    const uint index = get_buffer_index();
+    const uvec3 coords = unmorton3(index);
+    const uint old_value = state_in[level_offset + index];
+
+    uint neighbor_count_bit = 0;
+    if (ubo.use_moore_neighborhood != 0) {
+        neighbor_count_bit = get_neighbor_count_bit_moore(coords);
+    } else {
+        neighbor_count_bit = get_neighbor_count_bit_von_neumann(coords);
+    }
+
+    uint new_value = 0;
+    if (old_value == 0) {
+        new_value = is_born(neighbor_count_bit) ? 1 : 0;
+    } else if (old_value == 1) {
+        new_value = survives(neighbor_count_bit) ? 1 : (ubo.state_count == 2 ? 0 : 2);
+    } else {
+        new_value = (old_value + 1) % ubo.state_count;
+    }
+
+    state_out[level_offset + index] = uint8_t(new_value);
+}
+
+void make_next_parent(uint last_result) {
+    const uint level_offset = get_level_offset(consts.level - 1);
+    const uint buf_index = get_buffer_index();
+
+    barrier();
+
+    uint sum = last_result;
+
+    for (uint i = 1; i < 8; i++) {
+        sum += subgroupShuffleXor(last_result, i);
+    }
+
+    if (buf_index % 8 != 0) return;
+
+    const uint8_t result = uint8_t(sum == 0 ? 0 : 1);
+    state_out[level_offset + buf_index / 8] = result;
+}
+
+void make_parent() {
+    const uint level_offset = get_level_offset(consts.level);
+    const uint next_level_offset = get_level_offset(consts.level + 1);
+    const uint buf_index = get_buffer_index();
+
+    // only happens on levels 0, 1 and 2 bcs they're small
+    if (buf_index + level_offset >= next_level_offset) return;
+
+    uint sum = 0u;
+
+    for (uint i = 0; i < 8; i++) {
+        sum += state_out[next_level_offset + 8 * buf_index + i];
+    }
+
+    const uint result = sum == 0 ? 0 : 1;
+    state_out[level_offset + buf_index] = uint8_t(result);
+
+    if (consts.pyramid_height == 2) {
+        make_next_parent(result);
+    }
+}
+
+void main() {
+    if (consts.level == ubo.grid_depth - 1) {
+        update_state();
+    } else {
+        make_parent();
+    }
+}

@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CodeBlocks_project_file>
+	<FileVersion major="1" minor="6"/>
+	<Project>
+		<Option title="GLFW"/>
+		<Option makefile_is_custom="1"/>
+		<Option compiler="gcc"/>
+		<Option virtualFolders="CMake Files\;CMake Files\deps\;CMake Files\deps\glfw\;CMake Files\deps\glfw\CMake\;CMake Files\deps\glfw\src\;CMake Files\deps\glfw\docs\;"/>
+		<Build>
+			<Target title="all">
+				<Option working_dir="/home/quazuo/projects/voxel/deps/glfw"/>
+				<Option type="4"/>
+				<MakeCommands>
+					<Build command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/Makefile&quot;  VERBOSE=1 all"/>
+					<CompileFile command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/Makefile&quot;  VERBOSE=1 &quot;$file&quot;"/>
+					<Clean command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/Makefile&quot;  VERBOSE=1 clean"/>
+					<DistClean command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/Makefile&quot;  VERBOSE=1 clean"/>
+				</MakeCommands>
+			</Target>
+			<Target title="uninstall">
+				<Option working_dir="/home/quazuo/projects/voxel/deps/glfw"/>
+				<Option type="4"/>
+				<MakeCommands>
+					<Build command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/Makefile&quot;  VERBOSE=1 uninstall"/>
+					<CompileFile command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/Makefile&quot;  VERBOSE=1 &quot;$file&quot;"/>
+					<Clean command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/Makefile&quot;  VERBOSE=1 clean"/>
+					<DistClean command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/Makefile&quot;  VERBOSE=1 clean"/>
+				</MakeCommands>
+			</Target>
+			<Target title="update_mappings">
+				<Option working_dir="/home/quazuo/projects/voxel/deps/glfw/src"/>
+				<Option type="4"/>
+				<MakeCommands>
+					<Build command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/src/Makefile&quot;  VERBOSE=1 update_mappings"/>
+					<CompileFile command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/src/Makefile&quot;  VERBOSE=1 &quot;$file&quot;"/>
+					<Clean command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/src/Makefile&quot;  VERBOSE=1 clean"/>
+					<DistClean command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/src/Makefile&quot;  VERBOSE=1 clean"/>
+				</MakeCommands>
+			</Target>
+			<Target title="glfw">
+				<Option output="/home/quazuo/projects/voxel/deps/glfw/src/libglfw3.a" prefix_auto="0" extension_auto="0"/>
+				<Option working_dir="/home/quazuo/projects/voxel/deps/glfw/src"/>
+				<Option object_output="./"/>
+				<Option type="2"/>
+				<Option compiler="gcc"/>
+				<Compiler>
+					<Add option="-D_GLFW_X11"/>
+					<Add option="-D_DEFAULT_SOURCE"/>
+					<Add option="-DTW_STATIC"/>
+					<Add option="-DTW_NO_LIB_PRAGMA"/>
+					<Add option="-DTW_NO_DIRECT3D"/>
+					<Add option="-DGLEW_STATIC"/>
+					<Add option="-D_CRT_SECURE_NO_WARNINGS"/>
+					<Add directory="/home/quazuo/projects/voxel/deps/glfw/include"/>
+					<Add directory="/home/quazuo/projects/voxel/deps/glfw/src"/>
+					<Add directory="/usr/include/c++/10"/>
+					<Add directory="/usr/include/x86_64-linux-gnu/c++/10"/>
+					<Add directory="/usr/include/c++/10/backward"/>
+					<Add directory="/usr/lib/gcc/x86_64-linux-gnu/10/include"/>
+					<Add directory="/usr/local/include"/>
+					<Add directory="/usr/include/x86_64-linux-gnu"/>
+					<Add directory="/usr/include"/>
+				</Compiler>
+				<MakeCommands>
+					<Build command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/src/Makefile&quot;  VERBOSE=1 glfw"/>
+					<CompileFile command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/src/Makefile&quot;  VERBOSE=1 &quot;$file&quot;"/>
+					<Clean command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/src/Makefile&quot;  VERBOSE=1 clean"/>
+					<DistClean command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/src/Makefile&quot;  VERBOSE=1 clean"/>
+				</MakeCommands>
+			</Target>
+			<Target title="glfw/fast">
+				<Option output="/home/quazuo/projects/voxel/deps/glfw/src/libglfw3.a" prefix_auto="0" extension_auto="0"/>
+				<Option working_dir="/home/quazuo/projects/voxel/deps/glfw/src"/>
+				<Option object_output="./"/>
+				<Option type="2"/>
+				<Option compiler="gcc"/>
+				<Compiler>
+					<Add option="-D_GLFW_X11"/>
+					<Add option="-D_DEFAULT_SOURCE"/>
+					<Add option="-DTW_STATIC"/>
+					<Add option="-DTW_NO_LIB_PRAGMA"/>
+					<Add option="-DTW_NO_DIRECT3D"/>
+					<Add option="-DGLEW_STATIC"/>
+					<Add option="-D_CRT_SECURE_NO_WARNINGS"/>
+					<Add directory="/home/quazuo/projects/voxel/deps/glfw/include"/>
+					<Add directory="/home/quazuo/projects/voxel/deps/glfw/src"/>
+					<Add directory="/usr/include/c++/10"/>
+					<Add directory="/usr/include/x86_64-linux-gnu/c++/10"/>
+					<Add directory="/usr/include/c++/10/backward"/>
+					<Add directory="/usr/lib/gcc/x86_64-linux-gnu/10/include"/>
+					<Add directory="/usr/local/include"/>
+					<Add directory="/usr/include/x86_64-linux-gnu"/>
+					<Add directory="/usr/include"/>
+				</Compiler>
+				<MakeCommands>
+					<Build command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/src/Makefile&quot;  VERBOSE=1 glfw/fast"/>
+					<CompileFile command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/src/Makefile&quot;  VERBOSE=1 &quot;$file&quot;"/>
+					<Clean command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/src/Makefile&quot;  VERBOSE=1 clean"/>
+					<DistClean command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/src/Makefile&quot;  VERBOSE=1 clean"/>
+				</MakeCommands>
+			</Target>
+			<Target title="docs">
+				<Option working_dir="/home/quazuo/projects/voxel/deps/glfw/docs"/>
+				<Option type="4"/>
+				<MakeCommands>
+					<Build command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/docs/Makefile&quot;  VERBOSE=1 docs"/>
+					<CompileFile command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/docs/Makefile&quot;  VERBOSE=1 &quot;$file&quot;"/>
+					<Clean command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/docs/Makefile&quot;  VERBOSE=1 clean"/>
+					<DistClean command="/usr/bin/make -j8 -f &quot;/home/quazuo/projects/voxel/deps/glfw/docs/Makefile&quot;  VERBOSE=1 clean"/>
+				</MakeCommands>
+			</Target>
+		</Build>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/CMake/GenerateMappings.cmake">
+			<Option target="update_mappings"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/docs/Doxyfile">
+			<Option target="docs"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/include/GLFW/glfw3.h">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/include/GLFW/glfw3native.h">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/context.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/egl_context.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/glx_context.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/init.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/input.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/internal.h">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/linux_joystick.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/linux_joystick.h">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/mappings.h">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/mappings.h.in">
+			<Option target="update_mappings"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/monitor.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/null_init.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/null_joystick.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/null_joystick.h">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/null_monitor.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/null_platform.h">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/null_window.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/osmesa_context.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/platform.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/platform.h">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/posix_module.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/posix_poll.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/posix_poll.h">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/posix_thread.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/posix_thread.h">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/posix_time.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/posix_time.h">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/vulkan.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/window.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/x11_init.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/x11_monitor.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/x11_platform.h">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/x11_window.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/xkb_unicode.c">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/xkb_unicode.h">
+			<Option target="glfw"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\deps\"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\deps\glfw\"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/CMake/cmake_uninstall.cmake.in">
+			<Option virtualFolder="CMake Files\deps\glfw\CMake\"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/CMake/glfw3.pc.in">
+			<Option virtualFolder="CMake Files\deps\glfw\CMake\"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/CMake/glfw3Config.cmake.in">
+			<Option virtualFolder="CMake Files\deps\glfw\CMake\"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/src/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\deps\glfw\src\"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/docs/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\deps\glfw\docs\"/>
+		</Unit>
+		<Unit filename="/home/quazuo/projects/voxel/deps/glfw/docs/Doxyfile.in">
+			<Option virtualFolder="CMake Files\deps\glfw\docs\"/>
+		</Unit>
+	</Project>
+</CodeBlocks_project_file>
