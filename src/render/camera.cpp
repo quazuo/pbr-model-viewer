@@ -11,15 +11,10 @@ Camera::Camera(GLFWwindow *w) : window(w), keyManager(std::make_unique<KeyManage
 }
 
 void Camera::tick(const float deltaTime) {
-    if (isInAutoMode) {
-        // in auto mode we ignore key and mouse events
-        tickAutoMode();
-    } else {
-        keyManager->tick(deltaTime);
+    keyManager->tick(deltaTime);
 
-        if (isCursorLocked) {
-            tickMouseMovement(deltaTime);
-        }
+    if (isCursorLocked) {
+        tickMouseMovement(deltaTime);
     }
 
     updateAspectRatio();
@@ -138,17 +133,6 @@ void Camera::renderGuiSection() {
         ImGui::DragFloat("Movement speed", &movementSpeed, 1.0f, 0.0f, FLT_MAX, "%.0f");
 
         ImGui::Separator();
-
-        if (ImGui::Checkbox("Auto mode", &isInAutoMode) && isInAutoMode) {
-            autoModeStopwatch.reset();
-        }
-        if (isInAutoMode) {
-            constexpr float yAngleLimit = glm::pi<float>() / 2 - 0.1f;
-
-            ImGui::DragFloat("Speed", &autoModeSpeed, 0.01f, 0.0f, std::numeric_limits<float>::max(), "%.2f");
-            ImGui::DragFloat("Radius", &autoModeRadius, 0.01f, 0.0f, std::numeric_limits<float>::max(), "%.2f");
-            ImGui::DragFloat("Y angle", &autoModeAngleY, 0.001f, -yAngleLimit, yAngleLimit, "%.3f rad");
-        }
     }
 }
 
@@ -202,28 +186,6 @@ glm::mat4 Camera::getStaticViewMatrix() const {
 
 glm::mat4 Camera::getProjectionMatrix() const {
     return glm::perspective(glm::radians(fieldOfView), aspectRatio, zNear, zFar);
-}
-
-void Camera::tickAutoMode() {
-    autoModeStopwatch.tick();
-    const float time = autoModeSpeed * autoModeStopwatch.getElapsed();
-
-    pos = {
-        glm::cos(autoModeAngleY) * autoModeRadius * glm::sin(time),
-        glm::sin(autoModeAngleY) * autoModeRadius * -1.0f,
-        glm::cos(autoModeAngleY) * autoModeRadius * glm::cos(time)
-    };
-
-    rot = {
-        time - glm::pi<float>(),
-        autoModeAngleY + 0.01f // this tiny term tries to alleviate the "tiny horizontal hole" issue with rendering
-    };
-
-    if (isCursorLocked) {
-        // keep the cursor confined to the center as even in auto mode we don't want
-        // the invisible cursor to hover on the gui
-        centerCursor();
-    }
 }
 
 void Camera::centerCursor() const {

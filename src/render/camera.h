@@ -4,7 +4,6 @@
 
 #include "libs.h"
 #include "src/utils/key-manager.h"
-#include "src/utils/stopwatch.h"
 
 class Camera {
     struct GLFWwindow *window = nullptr;
@@ -14,23 +13,13 @@ class Camera {
     float zNear = 0.1f;
     float zFar = 500.0f;
 
-    glm::vec3 pos = {0, 0, -15};
-    glm::vec2 rot = {0.01f, 0.01f}; // not {0, 0} to try to hide the horizontal line hole in rendering
+    glm::vec3 pos = {0, 0, -5};
+    glm::vec2 rot = {0, 0};
     glm::vec3 front{}, right{}, up{};
 
     float rotationSpeed = 2.5f;
-    float movementSpeed = 8.0f;
+    float movementSpeed = 1.0f;
     bool isCursorLocked = true;
-
-    /**
-     * Auto mode automatically moves the camera around the world origin while maintaining the eye direction
-     * so that it looks directly at the origin.
-     */
-    bool isInAutoMode = false;
-    float autoModeSpeed = 1.0f;
-    float autoModeRadius = 20.0f;
-    float autoModeAngleY = 0.0f;
-    Stopwatch autoModeStopwatch;
 
     std::unique_ptr<KeyManager> keyManager;
 
@@ -88,11 +77,6 @@ private:
      * what is visible to the camera.
      */
     void updateVecs();
-
-    /**
-     * Ticks the camera's state when in auto mode.
-     */
-    void tickAutoMode();
 
     /**
      * Moves the cursor to the center of the window.

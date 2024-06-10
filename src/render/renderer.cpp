@@ -16,9 +16,7 @@
 #include <random>
 
 #include "deps/tinyobjloader/tiny_obj_loader.h"
-#include "src/utils/octree-gen.h"
 
-#include "vertex.h"
 #include "vk/cmd.h"
 
 VmaAllocatorWrapper::VmaAllocatorWrapper(const vk::PhysicalDevice physicalDevice, const vk::Device device,
@@ -42,7 +40,7 @@ VmaAllocatorWrapper::~VmaAllocatorWrapper() {
     vmaDestroyAllocator(allocator);
 }
 
-AutomatonRenderer::AutomatonRenderer(const AutomatonConfig &config) : automatonConfig(config) {
+VulkanRenderer::VulkanRenderer() {
     constexpr int INIT_WINDOW_WIDTH = 1200;
     constexpr int INIT_WINDOW_HEIGHT = 800;
 
@@ -68,16 +66,17 @@ AutomatonRenderer::AutomatonRenderer(const AutomatonConfig &config) : automatonC
     createDescriptorSetLayouts();
 
     createGraphicsPipeline();
-    createComputePipeline();
 
     createCommandPool();
 
     swapChain->createFramebuffers(ctx, *renderPass);
 
+    loadModel();
+    createTextures();
+
     createVertexBuffer();
     createIndexBuffer();
     createUniformBuffers();
-    createShaderStorageBuffers();
 
     createDescriptorPool();
     createDescriptorSets();
@@ -89,30 +88,24 @@ AutomatonRenderer::AutomatonRenderer(const AutomatonConfig &config) : automatonC
     initImgui();
 }
 
-AutomatonRenderer::~AutomatonRenderer() {
+VulkanRenderer::~VulkanRenderer() {
     glfwDestroyWindow(window);
 }
 
-void AutomatonRenderer::updateAutomatonConfig(const AutomatonConfig &config) {
-    automatonConfig = config;
-
-    updateComputeUniformBuffers();
-}
-
-void AutomatonRenderer::setIsCursorLocked(const bool b) const {
+void VulkanRenderer::setIsCursorLocked(const bool b) const {
     camera->setIsCursorLocked(b);
     glfwSetInputMode(window, GLFW_CURSOR, b ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
 }
 
-void AutomatonRenderer::framebufferResizeCallback(GLFWwindow *window, const int width, const int height) {
+void VulkanRenderer::framebufferResizeCallback(GLFWwindow *window, const int width, const int height) {
     (void) (width + height);
-    const auto app = static_cast<AutomatonRenderer *>(glfwGetWindowUserPointer(window));
+    const auto app = static_cast<VulkanRenderer *>(glfwGetWindowUserPointer(window));
     app->framebufferResized = true;
 }
 
 // ==================== instance creation ====================
 
-void AutomatonRenderer::createInstance() {
+void VulkanRenderer::createInstance() {
     if (enableValidationLayers && !checkValidationLayerSupport()) {
         throw std::runtime_error("validation layers requested, but not available!");
     }
@@ -140,7 +133,7 @@ void AutomatonRenderer::createInstance() {
     instance = make_unique<vk::raii::Instance>(vkCtx, createInfo);
 }
 
-std::vector<const char *> AutomatonRenderer::getRequiredExtensions() {
+std::vector<const char *> VulkanRenderer::getRequiredExtensions() {
     std::uint32_t glfwExtensionCount = 0;
     const char **glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
@@ -155,7 +148,7 @@ std::vector<const char *> AutomatonRenderer::getRequiredExtensions() {
 
 // ==================== validation layers ====================
 
-bool AutomatonRenderer::checkValidationLayerSupport() {
+bool VulkanRenderer::checkValidationLayerSupport() {
     std::uint32_t layerCount;
     if (vk::enumerateInstanceLayerProperties(&layerCount, nullptr) != vk::Result::eSuccess) {
         throw std::runtime_error("couldn't fetch the number of instance layers!");
@@ -184,7 +177,7 @@ bool AutomatonRenderer::checkValidationLayerSupport() {
     return true;
 }
 
-vk::DebugUtilsMessengerCreateInfoEXT AutomatonRenderer::makeDebugMessengerCreateInfo() {
+vk::DebugUtilsMessengerCreateInfoEXT VulkanRenderer::makeDebugMessengerCreateInfo() {
     return {
         .messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose
                            | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning
@@ -196,14 +189,14 @@ vk::DebugUtilsMessengerCreateInfoEXT AutomatonRenderer::makeDebugMessengerCreate
     };
 }
 
-void AutomatonRenderer::setupDebugMessenger() {
+void VulkanRenderer::setupDebugMessenger() {
     if constexpr (!enableValidationLayers) return;
 
     const vk::DebugUtilsMessengerCreateInfoEXT createInfo = makeDebugMessengerCreateInfo();
     debugMessenger = make_unique<vk::raii::DebugUtilsMessengerEXT>(*instance, createInfo);
 }
 
-VKAPI_ATTR VkBool32 VKAPI_CALL AutomatonRenderer::debugCallback(
+VKAPI_ATTR VkBool32 VKAPI_CALL VulkanRenderer::debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
     const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
@@ -239,7 +232,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL AutomatonRenderer::debugCallback(
 
 // ==================== window surface ====================
 
-void AutomatonRenderer::createSurface() {
+void VulkanRenderer::createSurface() {
     VkSurfaceKHR _surface;
 
     if (glfwCreateWindowSurface(**instance, window, nullptr, &_surface) != VK_SUCCESS) {
@@ -251,14 +244,13 @@ void AutomatonRenderer::createSurface() {
 
 // ==================== physical device ====================
 
-void AutomatonRenderer::pickPhysicalDevice() {
+void VulkanRenderer::pickPhysicalDevice() {
     const std::vector<vk::raii::PhysicalDevice> devices = instance->enumeratePhysicalDevices();
 
     for (const auto &dev: devices) {
         if (isDeviceSuitable(dev)) {
             ctx.physicalDevice = make_unique<vk::raii::PhysicalDevice>(dev);
             msaaSampleCount = getMaxUsableSampleCount();
-            usePyramidAcceleration = checkDeviceSubgroupSupport(*ctx.physicalDevice);
             return;
         }
     }
@@ -267,7 +259,7 @@ void AutomatonRenderer::pickPhysicalDevice() {
 }
 
 [[nodiscard]]
-bool AutomatonRenderer::isDeviceSuitable(const vk::raii::PhysicalDevice &physicalDevice) const {
+bool VulkanRenderer::isDeviceSuitable(const vk::raii::PhysicalDevice &physicalDevice) const {
     if (!findQueueFamilies(physicalDevice).isComplete()) {
         return false;
     }
@@ -299,7 +291,7 @@ bool AutomatonRenderer::isDeviceSuitable(const vk::raii::PhysicalDevice &physica
 }
 
 [[nodiscard]]
-QueueFamilyIndices AutomatonRenderer::findQueueFamilies(const vk::raii::PhysicalDevice &physicalDevice) const {
+QueueFamilyIndices VulkanRenderer::findQueueFamilies(const vk::raii::PhysicalDevice &physicalDevice) const {
     const std::vector<vk::QueueFamilyProperties> queueFamilies = physicalDevice.getQueueFamilyProperties();
 
     std::optional<std::uint32_t> graphicsComputeFamily;
@@ -330,7 +322,7 @@ QueueFamilyIndices AutomatonRenderer::findQueueFamilies(const vk::raii::Physical
     };
 }
 
-bool AutomatonRenderer::checkDeviceExtensionSupport(const vk::raii::PhysicalDevice &physicalDevice) {
+bool VulkanRenderer::checkDeviceExtensionSupport(const vk::raii::PhysicalDevice &physicalDevice) {
     const std::vector<vk::ExtensionProperties> availableExtensions =
             physicalDevice.enumerateDeviceExtensionProperties();
 
@@ -343,7 +335,7 @@ bool AutomatonRenderer::checkDeviceExtensionSupport(const vk::raii::PhysicalDevi
     return requiredExtensions.empty();
 }
 
-bool AutomatonRenderer::checkDeviceSubgroupSupport(const vk::raii::PhysicalDevice &physicalDevice) {
+bool VulkanRenderer::checkDeviceSubgroupSupport(const vk::raii::PhysicalDevice &physicalDevice) {
     const vk::PhysicalDeviceSubgroupProperties subgroupProperties = physicalDevice
             .getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceSubgroupProperties>()
             .get<vk::PhysicalDeviceSubgroupProperties>();
@@ -365,7 +357,7 @@ bool AutomatonRenderer::checkDeviceSubgroupSupport(const vk::raii::PhysicalDevic
 
 // ==================== logical device ====================
 
-void AutomatonRenderer::createLogicalDevice() {
+void VulkanRenderer::createLogicalDevice() {
     const auto [graphicsComputeFamily, presentFamily] = findQueueFamilies(*ctx.physicalDevice);
     const std::set uniqueQueueFamilies = {graphicsComputeFamily.value(), presentFamily.value()};
 
@@ -411,13 +403,68 @@ void AutomatonRenderer::createLogicalDevice() {
     ctx.device = make_unique<vk::raii::Device>(*ctx.physicalDevice, createInfo);
 
     graphicsQueue = make_unique<vk::raii::Queue>(ctx.device->getQueue(graphicsComputeFamily.value(), 0));
-    computeQueue = make_unique<vk::raii::Queue>(ctx.device->getQueue(graphicsComputeFamily.value(), 0));
     presentQueue = make_unique<vk::raii::Queue>(ctx.device->getQueue(presentFamily.value(), 0));
+}
+
+// ==================== models ====================
+
+static const std::string MODEL_PATH = "../assets/default-model/viking_room.obj";
+
+void VulkanRenderer::loadModel() {
+    tinyobj::attrib_t attrib;
+    std::vector<tinyobj::shape_t> shapes;
+    std::vector<tinyobj::material_t> materials;
+    std::string warn, err;
+
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str())) {
+        throw std::runtime_error(warn + err);
+    }
+
+    std::unordered_map<Vertex, uint32_t> uniqueVertices{};
+
+    for (const auto &shape: shapes) {
+        for (const auto &index: shape.mesh.indices) {
+            const Vertex vertex{
+                .pos = {
+                    attrib.vertices[3 * index.vertex_index + 0],
+                    attrib.vertices[3 * index.vertex_index + 1],
+                    attrib.vertices[3 * index.vertex_index + 2]
+                },
+                .texCoord = {
+                    attrib.texcoords[2 * index.texcoord_index + 0],
+                    1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+                },
+                .normal = {
+                    attrib.normals[3 * index.normal_index + 0],
+                    attrib.normals[3 * index.normal_index + 1],
+                    attrib.normals[3 * index.normal_index + 2]
+                }
+            };
+
+            if (!uniqueVertices.contains(vertex)) {
+                uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
+                vertices.push_back(vertex);
+            }
+
+            indices.push_back(uniqueVertices.at(vertex));
+        }
+    }
+}
+
+static const std::string TEXTURE_PATH = "../assets/default-model/viking_room.png";
+
+void VulkanRenderer::createTextures() {
+    Texture t = TextureBuilder()
+                .fromPath(TEXTURE_PATH)
+                .makeMipmaps()
+                .create(ctx, *commandPool, *graphicsQueue);
+
+    texture = make_unique<Texture>(std::move(t));
 }
 
 // ==================== swapchain ====================
 
-void AutomatonRenderer::recreateSwapChain() {
+void VulkanRenderer::recreateSwapChain() {
     int width = 0, height = 0;
     glfwGetFramebufferSize(window, &width, &height);
 
@@ -436,12 +483,11 @@ void AutomatonRenderer::recreateSwapChain() {
 
 // ==================== descriptors ====================
 
-void AutomatonRenderer::createDescriptorSetLayouts() {
+void VulkanRenderer::createDescriptorSetLayouts() {
     createGraphicsDescriptorSetLayouts();
-    createComputeDescriptorSetLayout();
 }
 
-void AutomatonRenderer::createGraphicsDescriptorSetLayouts() {
+void VulkanRenderer::createGraphicsDescriptorSetLayouts() {
     static constexpr vk::DescriptorSetLayoutBinding uboLayoutBinding{
         .binding = 0U,
         .descriptorType = vk::DescriptorType::eUniformBuffer,
@@ -449,89 +495,37 @@ void AutomatonRenderer::createGraphicsDescriptorSetLayouts() {
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
     };
 
-    static constexpr vk::DescriptorSetLayoutBinding ssboLayoutBinding{
+    static constexpr vk::DescriptorSetLayoutBinding samplerLayoutBinding{
         .binding = 1U,
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
+        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
         .descriptorCount = 1U,
         .stageFlags = vk::ShaderStageFlagBits::eFragment,
     };
 
-    static constexpr std::array frameSetBindings{
+    static constexpr std::array graphicsSetBindings{
         uboLayoutBinding,
+        samplerLayoutBinding,
     };
 
-    static constexpr std::array ssboSetBindings{
-        ssboLayoutBinding,
+    static constexpr vk::DescriptorSetLayoutCreateInfo graphicsSetLayoutInfo{
+        .bindingCount = static_cast<std::uint32_t>(graphicsSetBindings.size()),
+        .pBindings = graphicsSetBindings.data(),
     };
 
-    static constexpr vk::DescriptorSetLayoutCreateInfo frameSetLayoutInfo{
-        .bindingCount = static_cast<std::uint32_t>(frameSetBindings.size()),
-        .pBindings = frameSetBindings.data(),
-    };
-
-    static constexpr vk::DescriptorSetLayoutCreateInfo ssboSetLayoutInfo{
-        .bindingCount = static_cast<std::uint32_t>(ssboSetBindings.size()),
-        .pBindings = ssboSetBindings.data(),
-    };
-
-    graphicsDescriptorSetLayouts = {
-        .frameSetLayout = make_unique<vk::raii::DescriptorSetLayout>(*ctx.device, frameSetLayoutInfo),
-        .ssboSetLayout = make_unique<vk::raii::DescriptorSetLayout>(*ctx.device, ssboSetLayoutInfo),
-    };
+    graphicsSetLayout = make_unique<vk::raii::DescriptorSetLayout>(*ctx.device, graphicsSetLayoutInfo);
 }
 
-void AutomatonRenderer::createComputeDescriptorSetLayout() {
-    static constexpr vk::DescriptorSetLayoutBinding uboBinding{
-        .binding = 0U,
-        .descriptorType = vk::DescriptorType::eUniformBuffer,
-        .descriptorCount = 1U,
-        .stageFlags = vk::ShaderStageFlagBits::eCompute,
-    };
-
-    static constexpr vk::DescriptorSetLayoutBinding prevFrameSsboBinding{
-        .binding = 1U,
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
-        .descriptorCount = 1U,
-        .stageFlags = vk::ShaderStageFlagBits::eCompute,
-    };
-
-    static constexpr vk::DescriptorSetLayoutBinding currFrameSsboBinding{
-        .binding = 2U,
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
-        .descriptorCount = 1U,
-        .stageFlags = vk::ShaderStageFlagBits::eCompute,
-    };
-
-    static constexpr std::array bindings{
-        uboBinding,
-        prevFrameSsboBinding,
-        currFrameSsboBinding,
-    };
-
-    static constexpr vk::DescriptorSetLayoutCreateInfo layoutInfo{
-        .bindingCount = static_cast<std::uint32_t>(bindings.size()),
-        .pBindings = bindings.data(),
-    };
-
-    computeDescriptorSetLayout = make_unique<vk::raii::DescriptorSetLayout>(*ctx.device, layoutInfo);
-}
-
-void AutomatonRenderer::createDescriptorPool() {
+void VulkanRenderer::createDescriptorPool() {
     static constexpr vk::DescriptorPoolSize uboPoolSize{
         .type = vk::DescriptorType::eUniformBuffer,
-        .descriptorCount = static_cast<std::uint32_t>(MAX_FRAMES_IN_FLIGHT + AUTOMATON_RESOURCE_COUNT),
+        .descriptorCount = static_cast<std::uint32_t>(MAX_FRAMES_IN_FLIGHT),
     };
 
-    static constexpr vk::DescriptorPoolSize ssboPoolSize{
-        .type = vk::DescriptorType::eStorageBuffer,
-        .descriptorCount = static_cast<std::uint32_t>(AUTOMATON_RESOURCE_COUNT) * 3,
-    };
-
-    static constexpr std::array poolSizes = {uboPoolSize, ssboPoolSize};
+    static constexpr std::array poolSizes = {uboPoolSize};
 
     static constexpr vk::DescriptorPoolCreateInfo poolInfo{
         .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-        .maxSets = static_cast<std::uint32_t>(MAX_FRAMES_IN_FLIGHT + AUTOMATON_RESOURCE_COUNT * 2),
+        .maxSets = static_cast<std::uint32_t>(MAX_FRAMES_IN_FLIGHT),
         .poolSizeCount = static_cast<std::uint32_t>(poolSizes.size()),
         .pPoolSizes = poolSizes.data(),
     };
@@ -539,26 +533,24 @@ void AutomatonRenderer::createDescriptorPool() {
     descriptorPool = make_unique<vk::raii::DescriptorPool>(*ctx.device, poolInfo);
 }
 
-void AutomatonRenderer::createDescriptorSets() {
+void VulkanRenderer::createDescriptorSets() {
     createGraphicsDescriptorSets();
-    createComputeDescriptorSets();
 }
 
-void AutomatonRenderer::createGraphicsDescriptorSets() {
-    constexpr std::uint32_t frameSetsCount = MAX_FRAMES_IN_FLIGHT;
-    constexpr std::uint32_t ssboSetsCount = AUTOMATON_RESOURCE_COUNT;
+void VulkanRenderer::createGraphicsDescriptorSets() {
+    constexpr std::uint32_t graphicsSetsCount = MAX_FRAMES_IN_FLIGHT;
 
-    const std::vector frameSetLayouts(frameSetsCount, **graphicsDescriptorSetLayouts.frameSetLayout);
+    const std::vector graphicsSetLayouts(graphicsSetsCount, **graphicsSetLayout);
 
     const vk::DescriptorSetAllocateInfo frameSetAllocInfo{
         .descriptorPool = **descriptorPool,
-        .descriptorSetCount = frameSetsCount,
-        .pSetLayouts = frameSetLayouts.data(),
+        .descriptorSetCount = graphicsSetsCount,
+        .pSetLayouts = graphicsSetLayouts.data(),
     };
 
-    std::vector<vk::raii::DescriptorSet> frameDescriptorSets = ctx.device->allocateDescriptorSets(frameSetAllocInfo);
+    std::vector<vk::raii::DescriptorSet> descriptorSets = ctx.device->allocateDescriptorSets(frameSetAllocInfo);
 
-    for (size_t i = 0; i < frameSetsCount; i++) {
+    for (size_t i = 0; i < graphicsSetsCount; i++) {
         const vk::DescriptorBufferInfo uboBufferInfo{
             .buffer = frameResources[i].graphicsUniformBuffer->get(),
             .offset = 0U,
@@ -566,7 +558,7 @@ void AutomatonRenderer::createGraphicsDescriptorSets() {
         };
 
         const vk::WriteDescriptorSet uboDescriptorWrite{
-            .dstSet = *frameDescriptorSets[i],
+            .dstSet = *descriptorSets[i],
             .dstBinding = 0U,
             .dstArrayElement = 0U,
             .descriptorCount = 1U,
@@ -574,127 +566,36 @@ void AutomatonRenderer::createGraphicsDescriptorSets() {
             .pBufferInfo = &uboBufferInfo
         };
 
-        const std::array descriptorWrites = {uboDescriptorWrite};
-        ctx.device->updateDescriptorSets(descriptorWrites, nullptr);
-
-        frameResources[i].graphicsDescriptorSet =
-                make_unique<vk::raii::DescriptorSet>(std::move(frameDescriptorSets[i]));
-    }
-
-    const std::vector ssboSetLayouts(ssboSetsCount, **graphicsDescriptorSetLayouts.ssboSetLayout);
-
-    const vk::DescriptorSetAllocateInfo ssboSetAllocInfo{
-        .descriptorPool = **descriptorPool,
-        .descriptorSetCount = ssboSetsCount,
-        .pSetLayouts = ssboSetLayouts.data(),
-    };
-
-    std::vector<vk::raii::DescriptorSet> ssboDescriptorSets = ctx.device->allocateDescriptorSets(ssboSetAllocInfo);
-
-    for (size_t i = 0; i < ssboSetsCount; i++) {
-        const vk::DeviceSize bufferSize = OctreeGen::getOctreeBufferSize(automatonConfig.gridDepth);
-
-        const vk::DescriptorBufferInfo ssboBufferInfo{
-            .buffer = automatonResources[i].shaderStorageBuffer->get(),
-            .offset = 0U,
-            .range = bufferSize,
+        const vk::DescriptorImageInfo imageInfo{
+            .sampler = *texture->getSampler(),
+            .imageView = *texture->getView(),
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
         };
 
-        const vk::WriteDescriptorSet ssboDescriptorWrite{
-            .dstSet = *ssboDescriptorSets[i],
-            .dstBinding = 1U,
-            .dstArrayElement = 0U,
-            .descriptorCount = 1U,
-            .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .pBufferInfo = &ssboBufferInfo
-        };
-
-        const std::array descriptorWrites = {ssboDescriptorWrite};
-        ctx.device->updateDescriptorSets(descriptorWrites, nullptr);
-
-        automatonResources[i].graphicsDescriptorSet =
-                make_unique<vk::raii::DescriptorSet>(std::move(ssboDescriptorSets[i]));
-    }
-}
-
-void AutomatonRenderer::createComputeDescriptorSets() {
-    constexpr std::uint32_t setsCount = AUTOMATON_RESOURCE_COUNT;
-
-    const std::vector layouts(setsCount, **computeDescriptorSetLayout);
-
-    const vk::DescriptorSetAllocateInfo allocInfo{
-        .descriptorPool = **descriptorPool,
-        .descriptorSetCount = setsCount,
-        .pSetLayouts = layouts.data(),
-    };
-
-    std::vector<vk::raii::DescriptorSet> descriptorSets = ctx.device->allocateDescriptorSets(allocInfo);
-
-    for (size_t i = 0; i < setsCount; i++) {
-        const vk::DescriptorBufferInfo uboInfo{
-            .buffer = automatonResources[i].computeUniformBuffer->get(),
-            .offset = 0U,
-            .range = sizeof(ComputeUBO),
-        };
-
-        const vk::WriteDescriptorSet uboDescriptorWrite{
-            .dstSet = *descriptorSets[i],
-            .dstBinding = 0U,
-            .dstArrayElement = 0U,
-            .descriptorCount = 1U,
-            .descriptorType = vk::DescriptorType::eUniformBuffer,
-            .pBufferInfo = &uboInfo
-        };
-
-        const vk::DeviceSize bufferSize = OctreeGen::getOctreeBufferSize(automatonConfig.gridDepth);
-
-        const size_t prevSsboIndex = i == 0 ? AUTOMATON_RESOURCE_COUNT - 1 : i - 1;
-
-        const vk::DescriptorBufferInfo prevFrameSsboInfo{
-            .buffer = automatonResources[prevSsboIndex].shaderStorageBuffer->get(),
-            .offset = 0U,
-            .range = bufferSize,
-        };
-
-        const vk::WriteDescriptorSet prevFrameSsboDescriptorWrite{
+        const vk::WriteDescriptorSet samplerDescriptorWrite{
             .dstSet = *descriptorSets[i],
             .dstBinding = 1U,
             .dstArrayElement = 0U,
             .descriptorCount = 1U,
-            .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .pBufferInfo = &prevFrameSsboInfo
-        };
-
-        const vk::DescriptorBufferInfo currFrameSsboInfo{
-            .buffer = automatonResources[i].shaderStorageBuffer->get(),
-            .offset = 0U,
-            .range = bufferSize,
-        };
-
-        const vk::WriteDescriptorSet currFrameSsboDescriptorWrite{
-            .dstSet = *descriptorSets[i],
-            .dstBinding = 2U,
-            .dstArrayElement = 0U,
-            .descriptorCount = 1U,
-            .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .pBufferInfo = &currFrameSsboInfo
+            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+            .pImageInfo = &imageInfo
         };
 
         const std::array descriptorWrites = {
             uboDescriptorWrite,
-            prevFrameSsboDescriptorWrite,
-            currFrameSsboDescriptorWrite
+            samplerDescriptorWrite
         };
 
         ctx.device->updateDescriptorSets(descriptorWrites, nullptr);
 
-        automatonResources[i].computeDescriptorSet = make_unique<vk::raii::DescriptorSet>(std::move(descriptorSets[i]));
+        frameResources[i].graphicsDescriptorSet =
+                make_unique<vk::raii::DescriptorSet>(std::move(descriptorSets[i]));
     }
 }
 
 // ==================== graphics pipeline ====================
 
-void AutomatonRenderer::createRenderPass() {
+void VulkanRenderer::createRenderPass() {
     const vk::AttachmentDescription colorAttachment{
         .format = swapChain->getImageFormat(),
         .samples = msaaSampleCount,
@@ -777,7 +678,7 @@ void AutomatonRenderer::createRenderPass() {
     renderPass = make_unique<vk::raii::RenderPass>(*ctx.device, renderPassInfo);
 }
 
-void AutomatonRenderer::createGraphicsPipeline() {
+void VulkanRenderer::createGraphicsPipeline() {
     const vk::raii::ShaderModule vertShaderModule = createShaderModule("../shaders/vert.spv");
     const vk::raii::ShaderModule fragShaderModule = createShaderModule("../shaders/frag.spv");
 
@@ -832,7 +733,7 @@ void AutomatonRenderer::createGraphicsPipeline() {
         .depthClampEnable = vk::False,
         .rasterizerDiscardEnable = vk::False,
         .polygonMode = vk::PolygonMode::eFill,
-        .cullMode = vk::CullModeFlagBits::eNone,
+        .cullMode = vk::CullModeFlagBits::eBack,
         .frontFace = vk::FrontFace::eCounterClockwise,
         .depthBiasEnable = vk::False,
         .lineWidth = 1.0f,
@@ -865,8 +766,7 @@ void AutomatonRenderer::createGraphicsPipeline() {
     };
 
     const std::array descriptorSetLayouts = {
-        **graphicsDescriptorSetLayouts.frameSetLayout,
-        **graphicsDescriptorSetLayouts.ssboSetLayout,
+        **graphicsSetLayout,
     };
 
     const vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
@@ -895,40 +795,8 @@ void AutomatonRenderer::createGraphicsPipeline() {
     graphicsPipeline = make_unique<vk::raii::Pipeline>(*ctx.device, nullptr, pipelineInfo);
 }
 
-void AutomatonRenderer::createComputePipeline() {
-    const vk::raii::ShaderModule compShaderModule = createShaderModule("../shaders/comp.spv");
-
-    const vk::PipelineShaderStageCreateInfo computeShaderStageInfo{
-        .stage = vk::ShaderStageFlagBits::eCompute,
-        .module = *compShaderModule,
-        .pName = "main",
-    };
-
-    static constexpr vk::PushConstantRange pushConstantRange{
-        .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        .offset = 0,
-        .size = sizeof(ComputePushConstants),
-    };
-
-    const vk::PipelineLayoutCreateInfo layoutInfo{
-        .setLayoutCount = 1U,
-        .pSetLayouts = &**computeDescriptorSetLayout,
-        .pushConstantRangeCount = 1U,
-        .pPushConstantRanges = &pushConstantRange,
-    };
-
-    computePipelineLayout = make_unique<vk::raii::PipelineLayout>(*ctx.device, layoutInfo);
-
-    const vk::ComputePipelineCreateInfo pipelineInfo{
-        .stage = computeShaderStageInfo,
-        .layout = **computePipelineLayout,
-    };
-
-    computePipeline = make_unique<vk::raii::Pipeline>(*ctx.device, nullptr, pipelineInfo);
-}
-
 [[nodiscard]]
-vk::raii::ShaderModule AutomatonRenderer::createShaderModule(const std::filesystem::path &path) const {
+vk::raii::ShaderModule VulkanRenderer::createShaderModule(const std::filesystem::path &path) const {
     std::ifstream file(path, std::ios::ate | std::ios::binary);
 
     if (!file.is_open()) {
@@ -951,7 +819,7 @@ vk::raii::ShaderModule AutomatonRenderer::createShaderModule(const std::filesyst
 // ==================== multisampling ====================
 
 [[nodiscard]]
-vk::SampleCountFlagBits AutomatonRenderer::getMaxUsableSampleCount() const {
+vk::SampleCountFlagBits VulkanRenderer::getMaxUsableSampleCount() const {
     const vk::PhysicalDeviceProperties physicalDeviceProperties = ctx.physicalDevice->getProperties();
 
     const vk::SampleCountFlags counts = physicalDeviceProperties.limits.framebufferColorSampleCounts
@@ -969,25 +837,8 @@ vk::SampleCountFlagBits AutomatonRenderer::getMaxUsableSampleCount() const {
 
 // ==================== buffers ====================
 
-/**
- * The only thing we conventionally render is the screen-filling quad on which
- * we will render the ray-marched graphics.
- */
-static constexpr std::array<Vertex, 4> quadVertices = {
-    {
-        {{-1.0f, -1.0f, 0.0f}, {0.0f, 1.0f}},
-        {{1.0f, -1.0f, 0.0f}, {1.0f, 1.0f}},
-        {{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-        {{-1.0f, 1.0f, 0.0f}, {0.0f, 0.0f}}
-    }
-};
-
-static constexpr std::array<std::uint32_t, 6> quadIndices = {
-    0, 1, 2, 2, 3, 0
-};
-
-void AutomatonRenderer::createVertexBuffer() {
-    constexpr vk::DeviceSize bufferSize = sizeof(quadVertices[0]) * quadVertices.size();
+void VulkanRenderer::createVertexBuffer() {
+    const vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
     Buffer stagingBuffer{
         ctx.allocator->get(),
@@ -997,7 +848,7 @@ void AutomatonRenderer::createVertexBuffer() {
     };
 
     void *data = stagingBuffer.map();
-    memcpy(data, quadVertices.data(), static_cast<size_t>(bufferSize));
+    memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
     stagingBuffer.unmap();
 
     vertexBuffer = std::make_unique<Buffer>(
@@ -1010,8 +861,8 @@ void AutomatonRenderer::createVertexBuffer() {
     copyBuffer(stagingBuffer.get(), vertexBuffer->get(), bufferSize);
 }
 
-void AutomatonRenderer::createIndexBuffer() {
-    constexpr vk::DeviceSize bufferSize = sizeof(quadIndices[0]) * quadIndices.size();
+void VulkanRenderer::createIndexBuffer() {
+    const vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 
     Buffer stagingBuffer{
         ctx.allocator->get(),
@@ -1021,7 +872,7 @@ void AutomatonRenderer::createIndexBuffer() {
     };
 
     void *data = stagingBuffer.map();
-    memcpy(data, quadIndices.data(), static_cast<size_t>(bufferSize));
+    memcpy(data, indices.data(), static_cast<size_t>(bufferSize));
     stagingBuffer.unmap();
 
     indexBuffer = std::make_unique<Buffer>(
@@ -1034,7 +885,7 @@ void AutomatonRenderer::createIndexBuffer() {
     copyBuffer(stagingBuffer.get(), indexBuffer->get(), bufferSize);
 }
 
-void AutomatonRenderer::createUniformBuffers() {
+void VulkanRenderer::createUniformBuffers() {
     for (auto &res: frameResources) {
         res.graphicsUniformBuffer = std::make_unique<Buffer>(
             ctx.allocator->get(),
@@ -1045,39 +896,9 @@ void AutomatonRenderer::createUniformBuffers() {
 
         res.graphicsUboMapped = res.graphicsUniformBuffer->map();
     }
-
-    for (auto &res: automatonResources) {
-        res.computeUniformBuffer = std::make_unique<Buffer>(
-            ctx.allocator->get(),
-            sizeof(ComputeUBO),
-            vk::BufferUsageFlagBits::eUniformBuffer,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-        );
-
-        res.computeUboMapped = res.computeUniformBuffer->map();
-    }
 }
 
-void AutomatonRenderer::createShaderStorageBuffers() {
-    const vk::DeviceSize bufferSize = OctreeGen::getOctreeBufferSize(automatonConfig.gridDepth);
-
-    for (auto &res: automatonResources) {
-        if (res.shaderStorageBuffer) {
-            res.shaderStorageBuffer = {};
-        }
-
-        res.shaderStorageBuffer = make_unique<Buffer>(
-            ctx.allocator->get(),
-            bufferSize,
-            vk::BufferUsageFlagBits::eTransferDst
-            | vk::BufferUsageFlagBits::eVertexBuffer
-            | vk::BufferUsageFlagBits::eStorageBuffer,
-            vk::MemoryPropertyFlagBits::eDeviceLocal
-        );
-    }
-}
-
-void AutomatonRenderer::copyBuffer(const vk::Buffer srcBuffer, const vk::Buffer dstBuffer,
+void VulkanRenderer::copyBuffer(const vk::Buffer srcBuffer, const vk::Buffer dstBuffer,
                                    const vk::DeviceSize size) const {
     const vk::raii::CommandBuffer commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
 
@@ -1092,42 +913,9 @@ void AutomatonRenderer::copyBuffer(const vk::Buffer srcBuffer, const vk::Buffer 
     utils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
 }
 
-void AutomatonRenderer::fillSsbos(const OctreeGen::OctreeBuf &initValues) const {
-    waitIdle();
-
-    const vk::DeviceSize bufferSize = initValues.size();
-
-    Buffer stagingBuffer{
-        ctx.allocator->get(),
-        bufferSize,
-        vk::BufferUsageFlagBits::eTransferSrc,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-    };
-
-    void *data = stagingBuffer.map();
-    memcpy(data, initValues.data(), static_cast<size_t>(bufferSize));
-    stagingBuffer.unmap();
-
-    for (auto &res: automatonResources) {
-        copyBuffer(stagingBuffer.get(), res.shaderStorageBuffer->get(), bufferSize);
-    }
-}
-
-void AutomatonRenderer::rebuildSsbos() {
-    waitIdle();
-
-    createShaderStorageBuffers();
-
-    // move old descriptor pool here before creating a new one so that it doesn't destruct.
-    // it cannot destruct yet because `createDescriptorSets()` frees old sets and freeing them needs the pool.
-    const auto oldPool = std::move(*descriptorPool);
-    createDescriptorPool();
-    createDescriptorSets();
-}
-
 // ==================== commands ====================
 
-void AutomatonRenderer::createCommandPool() {
+void VulkanRenderer::createCommandPool() {
     const QueueFamilyIndices queueFamilyIndices = findQueueFamilies(*ctx.physicalDevice);
 
     const vk::CommandPoolCreateInfo poolInfo{
@@ -1138,7 +926,7 @@ void AutomatonRenderer::createCommandPool() {
     commandPool = make_unique<vk::raii::CommandPool>(*ctx.device, poolInfo);
 }
 
-void AutomatonRenderer::createCommandBuffers() {
+void VulkanRenderer::createCommandBuffers() {
     const vk::CommandBufferAllocateInfo primaryAllocInfo{
         .commandPool = **commandPool,
         .level = vk::CommandBufferLevel::ePrimary,
@@ -1160,12 +948,10 @@ void AutomatonRenderer::createCommandBuffers() {
                 make_unique<vk::raii::CommandBuffer>(std::move(graphicsCommandBuffers[i]));
         frameResources[i].guiCmdBuf =
                 make_unique<vk::raii::CommandBuffer>(std::move(guiCommandBuffers[i]));
-        frameResources[i].computeCmdBuf =
-                make_unique<vk::raii::CommandBuffer>(std::move(computeCommandBuffers[i]));
     }
 }
 
-void AutomatonRenderer::recordGraphicsCommandBuffer() {
+void VulkanRenderer::recordGraphicsCommandBuffer() {
     const auto &commandBuffer = *frameResources[currentFrameIdx].graphicsCmdBuf;
 
     constexpr vk::CommandBufferBeginInfo beginInfo;
@@ -1224,7 +1010,6 @@ void AutomatonRenderer::recordGraphicsCommandBuffer() {
 
     const std::array descriptorSets = {
         **frameResources[currentFrameIdx].graphicsDescriptorSet,
-        **automatonResources[mostRecentSsboIdx].graphicsDescriptorSet
     };
 
     commandBuffer.bindDescriptorSets(
@@ -1235,7 +1020,7 @@ void AutomatonRenderer::recordGraphicsCommandBuffer() {
         nullptr
     );
 
-    commandBuffer.drawIndexed(static_cast<std::uint32_t>(quadIndices.size()), 1, 0, 0, 0);
+    commandBuffer.drawIndexed(static_cast<std::uint32_t>(indices.size()), 1, 0, 0, 0);
 
     commandBuffer.executeCommands(**frameResources[currentFrameIdx].guiCmdBuf);
 
@@ -1244,76 +1029,9 @@ void AutomatonRenderer::recordGraphicsCommandBuffer() {
     commandBuffer.end();
 }
 
-void AutomatonRenderer::recordComputeCommandBuffer() {
-    const auto &commandBuffer = *frameResources[currentFrameIdx].computeCmdBuf;
-
-    constexpr vk::CommandBufferBeginInfo beginInfo;
-    commandBuffer.begin(beginInfo);
-
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, **computePipeline);
-
-    commandBuffer.bindDescriptorSets(
-        vk::PipelineBindPoint::eCompute,
-        **computePipelineLayout,
-        0,
-        **automatonResources[mostRecentSsboIdx].computeDescriptorSet,
-        nullptr
-    );
-
-    static constexpr vk::MemoryBarrier2 memoryBarrier{
-        .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-        .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
-        .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-        .dstAccessMask = vk::AccessFlagBits2::eShaderRead
-    };
-
-    static constexpr vk::DependencyInfo dependencyInfo{
-        .memoryBarrierCount = 1,
-        .pMemoryBarriers = &memoryBarrier
-    };
-
-    for (int level = automatonConfig.gridDepth - 1; level >= 0; level--) {
-        const std::uint32_t pyramidHeight =
-                usePyramidAcceleration && level != automatonConfig.gridDepth - 1 && level > 0
-                    ? 2
-                    : 1;
-
-        const ComputePushConstants consts{
-            .level = static_cast<std::uint32_t>(level),
-            .pyramidHeight = pyramidHeight,
-        };
-
-        commandBuffer.pushConstants<ComputePushConstants>(
-            **computePipelineLayout,
-            vk::ShaderStageFlagBits::eCompute,
-            0,
-            consts
-        );
-
-        const std::uint32_t levelWidth = OctreeGen::getOctreeLevelWidth(level);
-
-        static_assert(WORK_GROUP_SIZE.x == WORK_GROUP_SIZE.y);
-        static_assert(WORK_GROUP_SIZE.x == WORK_GROUP_SIZE.z);
-
-        commandBuffer.dispatch(
-            std::max(levelWidth / WORK_GROUP_SIZE.x, 1u),
-            std::max(levelWidth / WORK_GROUP_SIZE.y, 1u),
-            std::max(levelWidth / WORK_GROUP_SIZE.z, 1u)
-        );
-
-        commandBuffer.pipelineBarrier2(dependencyInfo);
-
-        level -= consts.pyramidHeight - 1;
-    }
-
-    commandBuffer.pipelineBarrier2(dependencyInfo);
-
-    commandBuffer.end();
-}
-
 // ==================== sync ====================
 
-void AutomatonRenderer::createSyncObjects() {
+void VulkanRenderer::createSyncObjects() {
     static constexpr vk::SemaphoreTypeCreateInfo typeCreateInfo{
         .semaphoreType = vk::SemaphoreType::eTimeline,
         .initialValue = 0,
@@ -1334,14 +1052,13 @@ void AutomatonRenderer::createSyncObjects() {
             .imageAvailableSemaphore = make_unique<vk::raii::Semaphore>(*ctx.device, binarySemaphoreInfo),
             .readyToPresentSemaphore = make_unique<vk::raii::Semaphore>(*ctx.device, binarySemaphoreInfo),
             .renderFinishedTimeline = {make_unique<vk::raii::Semaphore>(*ctx.device, timelineSemaphoreInfo)},
-            .computeFinishedTimeline = {make_unique<vk::raii::Semaphore>(*ctx.device, timelineSemaphoreInfo)},
         };
     }
 }
 
 // ==================== gui ====================
 
-void AutomatonRenderer::initImgui() {
+void VulkanRenderer::initImgui() {
     const std::vector<vk::DescriptorPoolSize> poolSizes = {
         {vk::DescriptorType::eSampler, 1000},
         {vk::DescriptorType::eCombinedImageSampler, 1000},
@@ -1381,72 +1098,11 @@ void AutomatonRenderer::initImgui() {
     guiRenderer = make_unique<GuiRenderer>(window, imguiInitInfo, *renderPass);
 }
 
-void AutomatonRenderer::renderGuiSection() {
+void VulkanRenderer::renderGuiSection() {
     constexpr auto sectionFlags = ImGuiTreeNodeFlags_DefaultOpen;
 
     if (ImGui::CollapsingHeader("Renderer ", sectionFlags)) {
-        const std::vector<std::tuple<std::string, ColoringPreset, std::function<void()> > > coloringPresets{
-            {
-                "Coord-based RGB", ColoringPreset::COORD_RGB, [&] {
-                }
-            },
-            {
-                "State-based gradient", ColoringPreset::STATE_GRADIENT, [&] {
-                    ImGui::ColorEdit3("Color 1", &cellColor1.r);
-                    ImGui::ColorEdit3("Color 2", &cellColor2.r);
-                }
-            },
-            {
-                "Center distance-based gradient", ColoringPreset::DISTANCE_GRADIENT, [&] {
-                    ImGui::ColorEdit3("Color 1", &cellColor1.r);
-                    ImGui::ColorEdit3("Color 2", &cellColor2.r);
-                }
-            },
-            {
-                "Solid color", ColoringPreset::SOLID_COLOR, [&] {
-                    ImGui::ColorEdit3("Color", &cellColor1.r);
-                }
-            },
-        };
-
-        static int selectedPresetIdx = 0;
-        constexpr auto comboFlags = ImGuiComboFlags_WidthFitPreview;
-
-        ImGui::Text("Coloring preset:");
-        if (ImGui::BeginCombo("##coloring_preset", std::get<0>(coloringPresets[selectedPresetIdx]).c_str(),
-                              comboFlags)) {
-            for (int i = 0; i < coloringPresets.size(); i++) {
-                const bool isSelected = selectedPresetIdx == i;
-
-                if (ImGui::Selectable(std::get<0>(coloringPresets[i]).c_str(), isSelected)) {
-                    coloringPreset = std::get<1>(coloringPresets[i]);
-                    selectedPresetIdx = i;
-                }
-
-                if (isSelected) {
-                    ImGui::SetItemDefaultFocus();
-                }
-            }
-            ImGui::EndCombo();
-        }
-
-        std::get<2>(coloringPresets[selectedPresetIdx])();
-
-        ImGui::Separator();
-
-        ImGui::DragFloat("Fog distance", &fogDistance, 0.1f, 0.0f, std::numeric_limits<float>::max(), "%.1f");
-
-        ImGui::Separator();
-
-        ImGui::Checkbox("Do neighbor shading?", &doNeighborShading);
-
-        ImGui::Separator();
-
         ImGui::ColorEdit3("Background color", &backgroundColor.r);
-
-        ImGui::Separator();
-
-        ImGui::Checkbox("Use pyramid acceleration?", &usePyramidAcceleration);
     }
 
     camera->renderGuiSection();
@@ -1454,12 +1110,12 @@ void AutomatonRenderer::renderGuiSection() {
 
 // ==================== render loop ====================
 
-void AutomatonRenderer::tick(const float deltaTime) {
+void VulkanRenderer::tick(const float deltaTime) {
     glfwPollEvents();
     camera->tick(deltaTime);
 }
 
-void AutomatonRenderer::renderGui(const std::function<void()> &renderCommands) const {
+void VulkanRenderer::renderGui(const std::function<void()> &renderCommands) const {
     const auto &commandBuffer = *frameResources[currentFrameIdx].guiCmdBuf;
 
     const vk::CommandBufferInheritanceInfo inheritanceInfo{
@@ -1483,7 +1139,7 @@ void AutomatonRenderer::renderGui(const std::function<void()> &renderCommands) c
     commandBuffer.end();
 }
 
-void AutomatonRenderer::startFrame() {
+void VulkanRenderer::startFrame() {
     const auto &sync = frameResources[currentFrameIdx].sync;
     const auto &graphicsCmdBuf = frameResources[currentFrameIdx].graphicsCmdBuf;
 
@@ -1520,17 +1176,15 @@ void AutomatonRenderer::startFrame() {
     graphicsCmdBuf->reset();
 }
 
-void AutomatonRenderer::endFrame() {
+void VulkanRenderer::endFrame() {
     auto &sync = frameResources[currentFrameIdx].sync;
     const auto &graphicsCmdBuf = frameResources[currentFrameIdx].graphicsCmdBuf;
 
     const std::vector waitSemaphores = {
-        **sync.computeFinishedTimeline.semaphore,
         **sync.imageAvailableSemaphore
     };
 
     const std::vector waitSemaphoreValues = {
-        sync.computeFinishedTimeline.timeline,
         static_cast<std::uint64_t>(0)
     };
 
@@ -1602,59 +1256,11 @@ void AutomatonRenderer::endFrame() {
     currentFrameIdx = (currentFrameIdx + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-void AutomatonRenderer::drawScene() {
+void VulkanRenderer::drawScene() {
     recordGraphicsCommandBuffer();
 }
 
-void AutomatonRenderer::runCompute() {
-    mostRecentSsboIdx = (mostRecentSsboIdx + 1) % AUTOMATON_RESOURCE_COUNT;
-
-    auto &sync = frameResources[currentFrameIdx].sync;
-    const auto &computeCmdBuf = frameResources[currentFrameIdx].computeCmdBuf;
-
-    const std::vector waitSemaphores = {
-        **sync.computeFinishedTimeline.semaphore,
-    };
-
-    const std::vector waitSemaphoreValues = {
-        sync.computeFinishedTimeline.timeline,
-    };
-
-    const vk::SemaphoreWaitInfo waitInfo{
-        .semaphoreCount = static_cast<std::uint32_t>(waitSemaphores.size()),
-        .pSemaphores = waitSemaphores.data(),
-        .pValues = waitSemaphoreValues.data(),
-    };
-
-    if (ctx.device->waitSemaphores(waitInfo, UINT64_MAX) != vk::Result::eSuccess) {
-        std::cerr << "waitSemaphores on computeFinishedTimeline failed" << std::endl;
-    }
-
-    computeCmdBuf->reset();
-    recordComputeCommandBuffer();
-
-    const std::array signalSemaphores = {**sync.computeFinishedTimeline.semaphore};
-
-    sync.computeFinishedTimeline.timeline++;
-    const std::vector signalSemaphoreValues{sync.computeFinishedTimeline.timeline};
-
-    const vk::TimelineSemaphoreSubmitInfo timelineSubmitInfo{
-        .signalSemaphoreValueCount = static_cast<std::uint32_t>(signalSemaphoreValues.size()),
-        .pSignalSemaphoreValues = signalSemaphoreValues.data()
-    };
-
-    const vk::SubmitInfo computeSubmitInfo{
-        .pNext = &timelineSubmitInfo,
-        .commandBufferCount = 1U,
-        .pCommandBuffers = &**computeCmdBuf,
-        .signalSemaphoreCount = static_cast<std::uint32_t>(signalSemaphores.size()),
-        .pSignalSemaphores = signalSemaphores.data(),
-    };
-
-    computeQueue->submit(computeSubmitInfo);
-}
-
-void AutomatonRenderer::updateGraphicsUniformBuffer() const {
+void VulkanRenderer::updateGraphicsUniformBuffer() const {
     const glm::mat4 view = camera->getViewMatrix();
     const glm::mat4 proj = camera->getProjectionMatrix();
 
@@ -1671,32 +1277,10 @@ void AutomatonRenderer::updateGraphicsUniformBuffer() const {
             .proj = proj,
             .inverseVp = glm::inverse(proj * view),
         },
-        .coloring = {
-            .doNeighborShading = doNeighborShading ? 1u : 0u,
-            .coloringPreset = coloringPreset,
-            .color1 = cellColor1,
-            .color2 = cellColor2,
-            .backgroundColor = backgroundColor
-        },
         .misc = {
-            .fogDistance = fogDistance,
-            .cameraPos = camera->getPos(),
-        },
-        .automaton = {
-            .gridDepth = automatonConfig.gridDepth,
-            .stateCount = automatonConfig.preset.stateCount,
-        },
+            .camera_pos = camera->getPos()
+        }
     };
 
     memcpy(frameResources[currentFrameIdx].graphicsUboMapped, &graphicsUbo, sizeof(graphicsUbo));
-}
-
-void AutomatonRenderer::updateComputeUniformBuffers() const {
-    const ComputeUBO computeUbo{
-        .config = automatonConfig
-    };
-
-    for (size_t i = 0; i < AUTOMATON_RESOURCE_COUNT; i++) {
-        memcpy(automatonResources[i].computeUboMapped, &computeUbo, sizeof(computeUbo));
-    }
 }

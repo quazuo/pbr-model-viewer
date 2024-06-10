@@ -8,13 +8,12 @@
 
 #include "deps/vma/vk_mem_alloc.h"
 
-#include "src/automaton.h"
+#include "vertex.h"
 #include "libs.h"
 #include "camera.h"
 #include "vk/buffer.h"
 #include "vk/swapchain.h"
 #include "gui/gui.h"
-#include "src/utils/octree-gen.h"
 
 using std::unique_ptr, std::make_unique;
 
@@ -74,47 +73,13 @@ struct GraphicsUBO {
         glm::mat4 inverseVp;
     };
 
-    struct ColoringData {
-        std::uint32_t doNeighborShading;
-        ColoringPreset coloringPreset;
-        glm::vec3 color1;
-        glm::vec3 color2;
-        glm::vec3 backgroundColor;
-    };
-
     struct MiscData {
-        float fogDistance;
-        glm::vec3 cameraPos;
-    };
-
-    struct AutomatonInfo {
-        std::uint32_t gridDepth;
-        std::uint32_t stateCount;
+        glm::vec3 camera_pos;
     };
 
     alignas(16) WindowRes window{};
     alignas(16) Matrices matrices{};
-    alignas(16) ColoringData coloring{};
     alignas(16) MiscData misc{};
-    alignas(16) AutomatonInfo automaton{};
-};
-
-/**
- * Information held in the compute shader's uniform buffer.
- * This (obviously) has to exactly match the corresponding definition in the compute shader.
- */
-struct ComputeUBO {
-    AutomatonConfig config;
-};
-
-/**
- * Information sent to the compute shader via push constants.
- * This is used primarily because we dispatch more than once per frame and each dispatch
- * does different things, which push constants let us control easily.
- */
-struct ComputePushConstants {
-    std::uint32_t level{};
-    std::uint32_t pyramidHeight{};
 };
 
 /**
@@ -148,7 +113,7 @@ struct RendererContext {
     unique_ptr<VmaAllocatorWrapper> allocator;
 };
 
-class AutomatonRenderer {
+class VulkanRenderer {
     struct GLFWwindow *window = nullptr;
 
     unique_ptr<Camera> camera;
@@ -161,10 +126,11 @@ class AutomatonRenderer {
     RendererContext ctx;
 
     unique_ptr<vk::raii::Queue> graphicsQueue;
-    unique_ptr<vk::raii::Queue> computeQueue;
     unique_ptr<vk::raii::Queue> presentQueue;
 
     unique_ptr<SwapChain> swapChain;
+
+    unique_ptr<Texture> texture;
 
     unique_ptr<vk::raii::DescriptorPool> descriptorPool;
 
@@ -180,16 +146,9 @@ class AutomatonRenderer {
      * As the handles change on a non-per-frame basis, we provide them in a different descriptor set
      * which we swap whenever the automaton's state updates.
      */
-    struct GraphicsLayouts {
-        unique_ptr<vk::raii::DescriptorSetLayout> frameSetLayout;
-        unique_ptr<vk::raii::DescriptorSetLayout> ssboSetLayout;
-    } graphicsDescriptorSetLayouts;
+    unique_ptr<vk::raii::DescriptorSetLayout> graphicsSetLayout;
     unique_ptr<vk::raii::PipelineLayout> graphicsPipelineLayout;
     unique_ptr<vk::raii::Pipeline> graphicsPipeline;
-
-    unique_ptr<vk::raii::DescriptorSetLayout> computeDescriptorSetLayout;
-    unique_ptr<vk::raii::PipelineLayout> computePipelineLayout;
-    unique_ptr<vk::raii::Pipeline> computePipeline;
 
     unique_ptr<vk::raii::CommandPool> commandPool;
 
@@ -197,8 +156,6 @@ class AutomatonRenderer {
     unique_ptr<Buffer> indexBuffer;
 
     struct FrameResources {
-        unique_ptr<vk::raii::CommandBuffer> graphicsCmdBuf, guiCmdBuf, computeCmdBuf;
-
         struct {
             struct Timeline {
                 unique_ptr<vk::raii::Semaphore> semaphore;
@@ -208,12 +165,11 @@ class AutomatonRenderer {
             unique_ptr<vk::raii::Semaphore> imageAvailableSemaphore;
             unique_ptr<vk::raii::Semaphore> readyToPresentSemaphore;
             Timeline renderFinishedTimeline;
-            Timeline computeFinishedTimeline;
         } sync;
 
+        unique_ptr<vk::raii::CommandBuffer> graphicsCmdBuf, guiCmdBuf;
+
         unique_ptr<Buffer> graphicsUniformBuffer;
-
-
         void *graphicsUboMapped{};
 
         unique_ptr<vk::raii::DescriptorSet> graphicsDescriptorSet;
@@ -221,23 +177,6 @@ class AutomatonRenderer {
 
     static constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
     std::array<FrameResources, MAX_FRAMES_IN_FLIGHT> frameResources;
-
-    struct AutomatonResources {
-        unique_ptr<Buffer> shaderStorageBuffer;
-        unique_ptr<vk::raii::DescriptorSet> graphicsDescriptorSet;
-        unique_ptr<vk::raii::DescriptorSet> computeDescriptorSet;
-
-        unique_ptr<Buffer> computeUniformBuffer;
-        void *computeUboMapped{};
-    };
-
-    /**
-     * This is pretty much a set-in-stone constant and should not change.
-     * It has to be at least 2 as we need two separate storage buffers to correctly mutate the automaton's state.
-     * It also shouldn't be more than 2 since it would introduce unnecessary memory bloat.
-     */
-    static constexpr size_t AUTOMATON_RESOURCE_COUNT = 2;
-    std::array<AutomatonResources, AUTOMATON_RESOURCE_COUNT> automatonResources;
 
     vk::SampleCountFlagBits msaaSampleCount = vk::SampleCountFlagBits::e1;
 
@@ -248,33 +187,24 @@ class AutomatonRenderer {
 
     bool doShowGui = false;
 
-    AutomatonConfig automatonConfig;
-
     std::uint32_t currentFrameIdx = 0;
-    std::uint32_t mostRecentSsboIdx = 0;
 
     bool framebufferResized = false;
 
-    static constexpr glm::uvec3 WORK_GROUP_SIZE = {8, 8, 8};
-
-    bool usePyramidAcceleration = true;
-
-    float fogDistance = 50.0f;
-    bool doNeighborShading = true;
-    ColoringPreset coloringPreset = ColoringPreset::COORD_RGB;
-    glm::vec3 cellColor1 = glm::vec3(252, 70, 107) / 255.0f;
-    glm::vec3 cellColor2 = glm::vec3(63, 94, 251) / 255.0f;
     glm::vec3 backgroundColor = glm::vec3(26, 26, 26) / 255.0f;
 
+    std::vector<Vertex> vertices;
+    std::vector<std::uint32_t> indices;
+
 public:
-    explicit AutomatonRenderer(const AutomatonConfig &config);
+    explicit VulkanRenderer();
 
-    ~AutomatonRenderer();
+    ~VulkanRenderer();
 
-    AutomatonRenderer(const AutomatonRenderer &other) = delete;
-    AutomatonRenderer(AutomatonRenderer &&other) = delete;
-    AutomatonRenderer &operator=(const AutomatonRenderer &other) = delete;
-    AutomatonRenderer &operator=(AutomatonRenderer &&other) = delete;
+    VulkanRenderer(const VulkanRenderer &other) = delete;
+    VulkanRenderer(VulkanRenderer &&other) = delete;
+    VulkanRenderer &operator=(const VulkanRenderer &other) = delete;
+    VulkanRenderer &operator=(VulkanRenderer &&other) = delete;
 
     [[nodiscard]] GLFWwindow *getWindow() const { return window; }
 
@@ -284,8 +214,6 @@ public:
      * Waits until the device has completed all previously submitted commands.
      */
     void waitIdle() const { ctx.device->waitIdle(); }
-
-    void updateAutomatonConfig(const AutomatonConfig &config);
 
     /**
      * Locks or unlocks the cursor. When the cursor is locked, it's confined to the center
@@ -340,6 +268,12 @@ private:
 
     void createLogicalDevice();
 
+    // ==================== models ====================
+
+    void loadModel();
+
+    void createTextures();
+
     // ==================== swap chain ====================
 
     void recreateSwapChain();
@@ -350,23 +284,17 @@ private:
 
     void createGraphicsDescriptorSetLayouts();
 
-    void createComputeDescriptorSetLayout();
-
     void createDescriptorPool();
 
     void createDescriptorSets();
 
     void createGraphicsDescriptorSets();
 
-    void createComputeDescriptorSets();
-
     // ==================== graphics pipeline ====================
 
     void createRenderPass();
 
     void createGraphicsPipeline();
-
-    void createComputePipeline();
 
     [[nodiscard]]
     vk::raii::ShaderModule createShaderModule(const std::filesystem::path &path) const;
@@ -384,16 +312,8 @@ private:
 
     void createUniformBuffers();
 
-    void createShaderStorageBuffers();
-
     void copyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size) const;
 
-public:
-    void fillSsbos(const OctreeGen::OctreeBuf &initValues) const;
-
-    void rebuildSsbos();
-
-private:
     // ==================== commands ====================
 
     void createCommandPool();
@@ -401,8 +321,6 @@ private:
     void createCommandBuffers();
 
     void recordGraphicsCommandBuffer();
-
-    void recordComputeCommandBuffer();
 
     // ==================== sync ====================
 
@@ -427,10 +345,6 @@ public:
 
     void drawScene();
 
-    void runCompute();
-
 private:
     void updateGraphicsUniformBuffer() const;
-
-    void updateComputeUniformBuffers() const;
 };

@@ -8,7 +8,7 @@ vk::VertexInputBindingDescription Vertex::getBindingDescription() {
     };
 }
 
-std::array<vk::VertexInputAttributeDescription, 2> Vertex::getAttributeDescriptions() {
+std::array<vk::VertexInputAttributeDescription, 3> Vertex::getAttributeDescriptions() {
     return {
         {
             {
@@ -22,6 +22,12 @@ std::array<vk::VertexInputAttributeDescription, 2> Vertex::getAttributeDescripti
                 .binding = 0U,
                 .format = vk::Format::eR32G32Sfloat,
                 .offset = static_cast<std::uint32_t>(offsetof(Vertex, texCoord)),
+            },
+            {
+                .location = 2U,
+                .binding = 0U,
+                .format = vk::Format::eR32G32B32Sfloat,
+                .offset = static_cast<std::uint32_t>(offsetof(Vertex, normal)),
             },
         }
     };

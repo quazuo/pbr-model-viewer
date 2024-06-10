@@ -65,6 +65,76 @@ public:
                         const vk::raii::Queue &queue);
 };
 
+class Texture {
+    std::unique_ptr<Image> image;
+    std::unique_ptr<vk::raii::Sampler> textureSampler;
+    uint32_t mipLevels{};
+    vk::Format format{};
+
+    friend class TextureBuilder;
+
+    Texture() = default;
+
+public:
+    [[nodiscard]]
+    const vk::raii::Sampler &getSampler() const { return *textureSampler; }
+
+    [[nodiscard]]
+    const vk::raii::ImageView &getView() const { return image->getView(); }
+
+private:
+    void generateMipmaps(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
+                         const vk::raii::Queue &queue, vk::ImageLayout finalLayout) const;
+
+    void createSampler(const RendererContext &ctx);
+};
+
+class TextureBuilder {
+    vk::Format format = vk::Format::eR8G8B8A8Srgb;
+    vk::ImageLayout layout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eTransferSrc
+                                | vk::ImageUsageFlagBits::eTransferDst
+                                | vk::ImageUsageFlagBits::eSampled;
+    bool hasMipmaps = false;
+
+    using ptr_source_t = std::pair<vk::Extent3D, void *>;
+    std::variant<std::nullopt_t, std::filesystem::path, ptr_source_t> source = std::nullopt;
+
+public:
+    TextureBuilder &useFormat(const vk::Format f) {
+        format = f;
+        return *this;
+    }
+
+    TextureBuilder &useLayout(const vk::ImageLayout l) {
+        layout = l;
+        return *this;
+    }
+
+    TextureBuilder &useUsage(const vk::ImageUsageFlags u) {
+        usage = u;
+        return *this;
+    }
+
+    TextureBuilder &makeMipmaps() {
+        hasMipmaps = true;
+        return *this;
+    }
+
+    TextureBuilder &fromPath(const std::filesystem::path &path) {
+        source = path;
+        return *this;
+    }
+
+    TextureBuilder &fromDataPtr(vk::Extent3D extent, void *data) {
+        source = std::make_pair(extent, data);
+        return *this;
+    }
+
+    [[nodiscard]] Texture create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
+                                 const vk::raii::Queue &queue) const;
+};
+
 namespace utils::img {
     [[nodiscard]]
     std::unique_ptr<vk::raii::ImageView> createImageView(const RendererContext &ctx, vk::Image image,
@@ -74,4 +144,7 @@ namespace utils::img {
     void transitionImageLayout(const RendererContext &ctx, vk::Image image, vk::ImageLayout oldLayout,
                                vk::ImageLayout newLayout, std::uint32_t mipLevels,
                                const vk::raii::CommandPool &cmdPool, const vk::raii::Queue &queue);
+
+    [[nodiscard]]
+    size_t getFormatSizeInBytes(vk::Format format);
 }
