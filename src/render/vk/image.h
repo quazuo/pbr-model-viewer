@@ -96,40 +96,29 @@ class TextureBuilder {
                                 | vk::ImageUsageFlagBits::eTransferDst
                                 | vk::ImageUsageFlagBits::eSampled;
     bool hasMipmaps = false;
+    std::uint32_t layerCount = 1;
 
     using ptr_source_t = std::pair<vk::Extent3D, void *>;
-    std::variant<std::nullopt_t, std::filesystem::path, ptr_source_t> source = std::nullopt;
+    using path_vec_t = std::vector<std::filesystem::path>;
+
+    std::variant<
+        std::nullopt_t,
+        path_vec_t,
+        ptr_source_t
+    > sources = std::nullopt;
 
 public:
-    TextureBuilder &useFormat(const vk::Format f) {
-        format = f;
-        return *this;
-    }
+    TextureBuilder &useFormat(vk::Format f);
 
-    TextureBuilder &useLayout(const vk::ImageLayout l) {
-        layout = l;
-        return *this;
-    }
+    TextureBuilder &useLayout(vk::ImageLayout l);
 
-    TextureBuilder &useUsage(const vk::ImageUsageFlags u) {
-        usage = u;
-        return *this;
-    }
+    TextureBuilder &useUsage(vk::ImageUsageFlags u);
 
-    TextureBuilder &makeMipmaps() {
-        hasMipmaps = true;
-        return *this;
-    }
+    TextureBuilder &makeMipmaps();
 
-    TextureBuilder &fromPath(const std::filesystem::path &path) {
-        source = path;
-        return *this;
-    }
+    TextureBuilder &fromPaths(const std::vector<std::filesystem::path> &paths);
 
-    TextureBuilder &fromDataPtr(vk::Extent3D extent, void *data) {
-        source = std::make_pair(extent, data);
-        return *this;
-    }
+    TextureBuilder &fromDataPtr(vk::Extent3D extent, void *data, size_t layerCount = 1);
 
     [[nodiscard]] Texture create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
                                  const vk::raii::Queue &queue) const;

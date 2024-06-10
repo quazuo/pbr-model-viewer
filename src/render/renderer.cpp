@@ -455,11 +455,18 @@ static const std::string TEXTURE_PATH = "../assets/default-model/viking_room.png
 
 void VulkanRenderer::createTextures() {
     Texture t = TextureBuilder()
-                .fromPath(TEXTURE_PATH)
+                .fromPaths({TEXTURE_PATH})
                 .makeMipmaps()
                 .create(ctx, *commandPool, *graphicsQueue);
 
     texture = make_unique<Texture>(std::move(t));
+
+    Texture cubemap = TextureBuilder()
+                .fromPaths({6, TEXTURE_PATH})
+                .makeMipmaps()
+                .create(ctx, *commandPool, *graphicsQueue);
+
+    skyboxTexture = make_unique<Texture>(std::move(cubemap));
 }
 
 // ==================== swapchain ====================

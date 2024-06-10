@@ -226,25 +226,64 @@ void Texture::createSampler(const RendererContext &ctx) {
     textureSampler = std::make_unique<vk::raii::Sampler>(*ctx.device, samplerInfo);
 }
 
+TextureBuilder &TextureBuilder::useFormat(const vk::Format f) {
+    format = f;
+    return *this;
+}
+
+TextureBuilder &TextureBuilder::useLayout(const vk::ImageLayout l) {
+    layout = l;
+    return *this;
+}
+
+TextureBuilder &TextureBuilder::useUsage(const vk::ImageUsageFlags u) {
+    usage = u;
+    return *this;
+}
+
+TextureBuilder &TextureBuilder::makeMipmaps() {
+    hasMipmaps = true;
+    return *this;
+}
+
+TextureBuilder &TextureBuilder::fromPaths(const std::vector<std::filesystem::path> &paths) {
+    layerCount = paths.size();
+    sources = paths;
+    return *this;
+}
+
+TextureBuilder &TextureBuilder::fromDataPtr(vk::Extent3D extent, void *data, const size_t layers) {
+    layerCount = layers;
+    sources = std::make_pair(extent, data);
+    return *this;
+}
+
 Texture TextureBuilder::create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
                                const vk::raii::Queue &queue) const {
     Texture texture;
 
-    void *dataSource;
+    texture.format = format;
+
+    std::vector<void *> dataSources;
     int texWidth, texHeight, texChannels;
 
-    if (std::holds_alternative<std::filesystem::path>(source)) {
-        const auto &path = std::get<std::filesystem::path>(source);
-        dataSource = stbi_load(path.string().c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    if (std::holds_alternative<path_vec_t>(sources)) {
+        const auto &paths = std::get<path_vec_t>(sources);
 
-        if (!dataSource) {
-            throw std::runtime_error("failed to load texture image!");
+        for (const auto &path : paths) {
+            void *src = stbi_load(path.string().c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+            if (!src) {
+                throw std::runtime_error("failed to load texture image!");
+            }
+
+            dataSources.push_back(src);
         }
-    } else if (std::holds_alternative<ptr_source_t>(source)) {
-        const auto &[extent, ptr] = std::get<ptr_source_t>(source);
+
+    } else if (std::holds_alternative<ptr_source_t>(sources)) {
+        const auto &[extent, ptr] = std::get<ptr_source_t>(sources);
         texWidth = extent.width;
         texHeight = extent.height;
-        dataSource = ptr;
+        dataSources.push_back(ptr);
     } else {
         throw std::runtime_error("no specified data source for texture!");
     }
@@ -252,24 +291,29 @@ Texture TextureBuilder::create(const RendererContext &ctx, const vk::raii::Comma
     texture.mipLevels = hasMipmaps
                             ? static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1
                             : 1;
-    const vk::DeviceSize imageSize = texWidth * texHeight * utils::img::getFormatSizeInBytes(format);
-
-    texture.format = format;
+    const vk::DeviceSize layerSize = texWidth * texHeight * utils::img::getFormatSizeInBytes(format);
+    const vk::DeviceSize textureSize = layerSize * layerCount;
 
     Buffer stagingBuffer{
         ctx.allocator->get(),
-        imageSize,
+        textureSize,
         vk::BufferUsageFlagBits::eTransferSrc,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
     };
 
     void *data = stagingBuffer.map();
-    memcpy(data, dataSource, static_cast<size_t>(imageSize));
-    stagingBuffer.unmap();
 
-    if (std::holds_alternative<std::filesystem::path>(source)) {
-        stbi_image_free(dataSource);
+    if (std::holds_alternative<path_vec_t>(sources)) {
+        for (size_t i = 0; i < dataSources.size(); i++) {
+            const size_t offset = layerSize * i;
+            memcpy(data + offset, dataSources[i], static_cast<size_t>(layerSize));
+            stbi_image_free(dataSources[i]);
+        }
+    } else if (std::holds_alternative<ptr_source_t>(sources)) {
+        memcpy(data, dataSources[0], static_cast<size_t>(textureSize));
     }
+
+    stagingBuffer.unmap();
 
     const vk::ImageCreateInfo imageInfo{
         .imageType = vk::ImageType::e2D,
@@ -280,7 +324,7 @@ Texture TextureBuilder::create(const RendererContext &ctx, const vk::raii::Comma
             .depth = 1,
         },
         .mipLevels = texture.mipLevels,
-        .arrayLayers = 1,
+        .arrayLayers = layerCount,
         .samples = vk::SampleCountFlagBits::e1,
         .tiling = vk::ImageTiling::eOptimal,
         .usage = usage,

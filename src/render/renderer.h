@@ -131,6 +131,7 @@ class VulkanRenderer {
     unique_ptr<SwapChain> swapChain;
 
     unique_ptr<Texture> texture;
+    unique_ptr<Texture> skyboxTexture;
 
     unique_ptr<vk::raii::DescriptorPool> descriptorPool;
 
