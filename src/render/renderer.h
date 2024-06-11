@@ -137,16 +137,6 @@ class VulkanRenderer {
 
     unique_ptr<vk::raii::RenderPass> renderPass;
 
-    /**
-     * We use two graphics descriptor sets for each frame, as there are two kinds of information we need
-     * to provide to fragment shaders:
-     *
-     * 1. per-frame uniform buffer with stuff like MVP matrices and other info,
-     * 2. handles to storage buffers containing the most recent state of the automaton.
-     *
-     * As the handles change on a non-per-frame basis, we provide them in a different descriptor set
-     * which we swap whenever the automaton's state updates.
-     */
     unique_ptr<vk::raii::DescriptorSetLayout> graphicsSetLayout;
     unique_ptr<vk::raii::PipelineLayout> graphicsPipelineLayout;
     unique_ptr<vk::raii::Pipeline> graphicsPipeline;
