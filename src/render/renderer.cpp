@@ -964,9 +964,9 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
     constexpr vk::CommandBufferBeginInfo beginInfo;
     commandBuffer.begin(beginInfo);
 
-    constexpr vk::ClearColorValue clearColor{0.0f, 0.0f, 0.0f, 1.0f};
+    const vk::ClearColorValue clearColor{backgroundColor.x, backgroundColor.y, backgroundColor.z, 1.0f};
 
-    constexpr std::array<vk::ClearValue, 2> clearValues{
+    const std::array<vk::ClearValue, 2> clearValues{
         {
             clearColor,
             vk::ClearDepthStencilValue{

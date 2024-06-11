@@ -306,7 +306,7 @@ Texture TextureBuilder::create(const RendererContext &ctx, const vk::raii::Comma
     if (std::holds_alternative<path_vec_t>(sources)) {
         for (size_t i = 0; i < dataSources.size(); i++) {
             const size_t offset = layerSize * i;
-            memcpy(data + offset, dataSources[i], static_cast<size_t>(layerSize));
+            memcpy(static_cast<char *>(data) + offset, dataSources[i], static_cast<size_t>(layerSize));
             stbi_image_free(dataSources[i]);
         }
     } else if (std::holds_alternative<ptr_source_t>(sources)) {

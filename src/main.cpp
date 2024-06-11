@@ -91,10 +91,6 @@ private:
     }
 };
 
-void func(int... args) {
-
-}
-
 int main() {
     glfwInit();
 
