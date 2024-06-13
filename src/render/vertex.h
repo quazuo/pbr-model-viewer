@@ -16,6 +16,18 @@ struct Vertex {
     static std::array<vk::VertexInputAttributeDescription, 3> getAttributeDescriptions();
 };
 
+struct SkyboxVertex {
+    glm::vec3 pos;
+
+    bool operator==(const Vertex &other) const {
+        return pos == other.pos;
+    }
+
+    static vk::VertexInputBindingDescription getBindingDescription();
+
+    static std::array<vk::VertexInputAttributeDescription, 1> getAttributeDescriptions();
+};
+
 template<>
 struct std::hash<Vertex> {
     size_t operator()(Vertex const &vertex) const noexcept {

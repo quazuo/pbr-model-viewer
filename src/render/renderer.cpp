@@ -65,7 +65,7 @@ VulkanRenderer::VulkanRenderer() {
 
     createDescriptorSetLayouts();
 
-    createGraphicsPipeline();
+    createScenePipeline();
 
     createCommandPool();
 
@@ -455,16 +455,16 @@ static const std::string TEXTURE_PATH = "../assets/default-model/viking_room.png
 
 void VulkanRenderer::createTextures() {
     Texture t = TextureBuilder()
-                .fromPaths({TEXTURE_PATH})
-                .makeMipmaps()
-                .create(ctx, *commandPool, *graphicsQueue);
+            .fromPaths({TEXTURE_PATH})
+            .makeMipmaps()
+            .create(ctx, *commandPool, *graphicsQueue);
 
     texture = make_unique<Texture>(std::move(t));
 
     Texture cubemap = TextureBuilder()
-                .fromPaths({6, TEXTURE_PATH})
-                .makeMipmaps()
-                .create(ctx, *commandPool, *graphicsQueue);
+            .fromPaths({6, TEXTURE_PATH})
+            .makeMipmaps()
+            .create(ctx, *commandPool, *graphicsQueue);
 
     skyboxTexture = make_unique<Texture>(std::move(cubemap));
 }
@@ -528,7 +528,15 @@ void VulkanRenderer::createDescriptorPool() {
         .descriptorCount = static_cast<std::uint32_t>(MAX_FRAMES_IN_FLIGHT),
     };
 
-    static constexpr std::array poolSizes = {uboPoolSize};
+    static constexpr vk::DescriptorPoolSize samplerPoolSize{
+        .type = vk::DescriptorType::eCombinedImageSampler,
+        .descriptorCount = static_cast<std::uint32_t>(MAX_FRAMES_IN_FLIGHT),
+    };
+
+    static constexpr std::array poolSizes = {
+        uboPoolSize,
+        samplerPoolSize
+    };
 
     static constexpr vk::DescriptorPoolCreateInfo poolInfo{
         .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
@@ -549,13 +557,13 @@ void VulkanRenderer::createGraphicsDescriptorSets() {
 
     const std::vector graphicsSetLayouts(graphicsSetsCount, **graphicsSetLayout);
 
-    const vk::DescriptorSetAllocateInfo frameSetAllocInfo{
+    const vk::DescriptorSetAllocateInfo allocInfo{
         .descriptorPool = **descriptorPool,
         .descriptorSetCount = graphicsSetsCount,
         .pSetLayouts = graphicsSetLayouts.data(),
     };
 
-    std::vector<vk::raii::DescriptorSet> descriptorSets = ctx.device->allocateDescriptorSets(frameSetAllocInfo);
+    std::vector<vk::raii::DescriptorSet> descriptorSets = ctx.device->allocateDescriptorSets(allocInfo);
 
     for (size_t i = 0; i < graphicsSetsCount; i++) {
         const vk::DescriptorBufferInfo uboBufferInfo{
@@ -685,26 +693,13 @@ void VulkanRenderer::createRenderPass() {
     renderPass = make_unique<vk::raii::RenderPass>(*ctx.device, renderPassInfo);
 }
 
-void VulkanRenderer::createGraphicsPipeline() {
-    const vk::raii::ShaderModule vertShaderModule = createShaderModule("../shaders/vert.spv");
-    const vk::raii::ShaderModule fragShaderModule = createShaderModule("../shaders/frag.spv");
+void VulkanRenderer::createPipelines() {
+    createScenePipeline();
+    createSkyboxPipeline();
+}
 
-    const vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
-        .stage = vk::ShaderStageFlagBits::eVertex,
-        .module = *vertShaderModule,
-        .pName = "main",
-    };
-
-    const vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
-        .stage = vk::ShaderStageFlagBits::eFragment,
-        .module = *fragShaderModule,
-        .pName = "main",
-    };
-
-    const vk::PipelineShaderStageCreateInfo shaderStages[] = {
-        vertShaderStageInfo,
-        fragShaderStageInfo,
-    };
+void VulkanRenderer::createScenePipeline() {
+    const auto shaderStages = makeShaderStages("../shaders/shader-vert.spv", "../shaders/shader-frag.spv");
 
     const auto bindingDescription = Vertex::getBindingDescription();
     const auto attributeDescriptions = Vertex::getAttributeDescriptions();
@@ -718,7 +713,6 @@ void VulkanRenderer::createGraphicsPipeline() {
 
     constexpr vk::PipelineInputAssemblyStateCreateInfo inputAssembly{
         .topology = vk::PrimitiveTopology::eTriangleList,
-        .primitiveRestartEnable = vk::False,
     };
 
     static constexpr std::array dynamicStates = {
@@ -737,18 +731,14 @@ void VulkanRenderer::createGraphicsPipeline() {
     };
 
     constexpr vk::PipelineRasterizationStateCreateInfo rasterizer{
-        .depthClampEnable = vk::False,
-        .rasterizerDiscardEnable = vk::False,
         .polygonMode = vk::PolygonMode::eFill,
         .cullMode = vk::CullModeFlagBits::eBack,
         .frontFace = vk::FrontFace::eCounterClockwise,
-        .depthBiasEnable = vk::False,
         .lineWidth = 1.0f,
     };
 
     const vk::PipelineMultisampleStateCreateInfo multisampling{
         .rasterizationSamples = msaaSampleCount,
-        .sampleShadingEnable = vk::False,
         .minSampleShading = 1.0f,
     };
 
@@ -781,11 +771,11 @@ void VulkanRenderer::createGraphicsPipeline() {
         .pSetLayouts = descriptorSetLayouts.data(),
     };
 
-    graphicsPipelineLayout = make_unique<vk::raii::PipelineLayout>(*ctx.device, pipelineLayoutInfo);
+    scenePipelineLayout = make_unique<vk::raii::PipelineLayout>(*ctx.device, pipelineLayoutInfo);
 
     const vk::GraphicsPipelineCreateInfo pipelineInfo{
-        .stageCount = 2,
-        .pStages = shaderStages,
+        .stageCount = shaderStages.size(),
+        .pStages = shaderStages.data(),
         .pVertexInputState = &vertexInputInfo,
         .pInputAssemblyState = &inputAssembly,
         .pViewportState = &viewportState,
@@ -794,12 +784,130 @@ void VulkanRenderer::createGraphicsPipeline() {
         .pDepthStencilState = &depthStencil,
         .pColorBlendState = &colorBlending,
         .pDynamicState = &dynamicState,
-        .layout = **graphicsPipelineLayout,
+        .layout = **scenePipelineLayout,
         .renderPass = **renderPass,
         .subpass = 0,
     };
 
-    graphicsPipeline = make_unique<vk::raii::Pipeline>(*ctx.device, nullptr, pipelineInfo);
+    scenePipeline = make_unique<vk::raii::Pipeline>(*ctx.device, nullptr, pipelineInfo);
+}
+
+void VulkanRenderer::createSkyboxPipeline() {
+    const auto shaderStages = makeShaderStages("../shaders/skybox-vert.spv", "../shaders/skybox-frag.spv");
+
+    const auto bindingDescription = Vertex::getBindingDescription();
+    const auto attributeDescriptions = Vertex::getAttributeDescriptions();
+
+    const vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &bindingDescription,
+        .vertexAttributeDescriptionCount = static_cast<std::uint32_t>(attributeDescriptions.size()),
+        .pVertexAttributeDescriptions = attributeDescriptions.data()
+    };
+
+    constexpr vk::PipelineInputAssemblyStateCreateInfo inputAssembly{
+        .topology = vk::PrimitiveTopology::eTriangleList,
+    };
+
+    static constexpr std::array dynamicStates = {
+        vk::DynamicState::eViewport,
+        vk::DynamicState::eScissor,
+    };
+
+    static constexpr vk::PipelineDynamicStateCreateInfo dynamicState{
+        .dynamicStateCount = static_cast<std::uint32_t>(dynamicStates.size()),
+        .pDynamicStates = dynamicStates.data(),
+    };
+
+    constexpr vk::PipelineViewportStateCreateInfo viewportState{
+        .viewportCount = 1U,
+        .scissorCount = 1U,
+    };
+
+    constexpr vk::PipelineRasterizationStateCreateInfo rasterizer{
+        .polygonMode = vk::PolygonMode::eFill,
+        .cullMode = vk::CullModeFlagBits::eNone,
+        .frontFace = vk::FrontFace::eCounterClockwise,
+        .lineWidth = 1.0f,
+    };
+
+    const vk::PipelineMultisampleStateCreateInfo multisampling{
+        .rasterizationSamples = msaaSampleCount,
+        .minSampleShading = 1.0f,
+    };
+
+    static constexpr vk::PipelineColorBlendAttachmentState colorBlendAttachment{
+        .blendEnable = vk::False,
+        .colorWriteMask = vk::ColorComponentFlagBits::eR
+                          | vk::ColorComponentFlagBits::eG
+                          | vk::ColorComponentFlagBits::eB
+                          | vk::ColorComponentFlagBits::eA,
+    };
+
+    static constexpr vk::PipelineColorBlendStateCreateInfo colorBlending{
+        .logicOpEnable = vk::False,
+        .attachmentCount = 1u,
+        .pAttachments = &colorBlendAttachment,
+    };
+
+    static constexpr vk::PipelineDepthStencilStateCreateInfo depthStencil{
+        .depthTestEnable = vk::True,
+        .depthWriteEnable = vk::True,
+        .depthCompareOp = vk::CompareOp::eLess,
+    };
+
+    const std::array descriptorSetLayouts = {
+        **graphicsSetLayout,
+    };
+
+    const vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
+        .setLayoutCount = descriptorSetLayouts.size(),
+        .pSetLayouts = descriptorSetLayouts.data(),
+    };
+
+    skyboxPipelineLayout = make_unique<vk::raii::PipelineLayout>(*ctx.device, pipelineLayoutInfo);
+
+    const vk::GraphicsPipelineCreateInfo pipelineInfo{
+        .stageCount = shaderStages.size(),
+        .pStages = shaderStages.data(),
+        .pVertexInputState = &vertexInputInfo,
+        .pInputAssemblyState = &inputAssembly,
+        .pViewportState = &viewportState,
+        .pRasterizationState = &rasterizer,
+        .pMultisampleState = &multisampling,
+        .pDepthStencilState = &depthStencil,
+        .pColorBlendState = &colorBlending,
+        .pDynamicState = &dynamicState,
+        .layout = **skyboxPipelineLayout,
+        .renderPass = **renderPass,
+        .subpass = 0,
+    };
+
+    skyboxPipeline = make_unique<vk::raii::Pipeline>(*ctx.device, nullptr, pipelineInfo);
+}
+
+std::vector<vk::PipelineShaderStageCreateInfo>
+VulkanRenderer::makeShaderStages(const std::filesystem::path &vertexShaderPath,
+                                 const std::filesystem::path &fragShaderPath) const {
+    const vk::raii::ShaderModule vertShaderModule = createShaderModule(vertexShaderPath);
+    const vk::raii::ShaderModule fragShaderModule = createShaderModule(fragShaderPath);
+
+    const vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
+        .stage = vk::ShaderStageFlagBits::eVertex,
+        .module = *vertShaderModule,
+        .pName = "main",
+    };
+
+    const vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
+        .stage = vk::ShaderStageFlagBits::eFragment,
+        .module = *fragShaderModule,
+        .pName = "main",
+    };
+
+    return {
+        vertShaderStageInfo,
+        fragShaderStageInfo,
+    };
 }
 
 [[nodiscard]]
@@ -906,7 +1014,7 @@ void VulkanRenderer::createUniformBuffers() {
 }
 
 void VulkanRenderer::copyBuffer(const vk::Buffer srcBuffer, const vk::Buffer dstBuffer,
-                                   const vk::DeviceSize size) const {
+                                const vk::DeviceSize size) const {
     const vk::raii::CommandBuffer commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
 
     const vk::BufferCopy copyRegion{
@@ -991,7 +1099,7 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
 
     commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInlineAndSecondaryCommandBuffersEXT);
 
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, **graphicsPipeline);
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, **scenePipeline);
 
     static constexpr std::array<vk::DeviceSize, 1> offsets{};
     commandBuffer.bindVertexBuffers(0, vertexBuffer->get(), offsets);
@@ -1021,7 +1129,7 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
 
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        **graphicsPipelineLayout,
+        **scenePipelineLayout,
         0,
         descriptorSets,
         nullptr

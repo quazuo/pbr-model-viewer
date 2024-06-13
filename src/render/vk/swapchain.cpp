@@ -98,8 +98,7 @@ vk::Extent2D SwapChain::chooseExtent(const vk::SurfaceCapabilitiesKHR &capabilit
     };
 }
 
-vk::SurfaceFormatKHR SwapChain::chooseSurfaceFormat(
-    const std::vector<vk::SurfaceFormatKHR> &availableFormats) {
+vk::SurfaceFormatKHR SwapChain::chooseSurfaceFormat(const std::vector<vk::SurfaceFormatKHR> &availableFormats) {
     if (availableFormats.empty()) {
         throw std::runtime_error("unexpected empty list of available formats");
     }

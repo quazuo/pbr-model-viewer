@@ -94,8 +94,11 @@ public:
     ~VmaAllocatorWrapper();
 
     VmaAllocatorWrapper(const VmaAllocatorWrapper &other) = delete;
+
     VmaAllocatorWrapper(VmaAllocatorWrapper &&other) = delete;
+
     VmaAllocatorWrapper &operator=(const VmaAllocatorWrapper &other) = delete;
+
     VmaAllocatorWrapper &operator=(VmaAllocatorWrapper &&other) = delete;
 
     [[nodiscard]]
@@ -138,8 +141,10 @@ class VulkanRenderer {
     unique_ptr<vk::raii::RenderPass> renderPass;
 
     unique_ptr<vk::raii::DescriptorSetLayout> graphicsSetLayout;
-    unique_ptr<vk::raii::PipelineLayout> graphicsPipelineLayout;
-    unique_ptr<vk::raii::Pipeline> graphicsPipeline;
+    unique_ptr<vk::raii::PipelineLayout> scenePipelineLayout;
+    unique_ptr<vk::raii::PipelineLayout> skyboxPipelineLayout;
+    unique_ptr<vk::raii::Pipeline> scenePipeline;
+    unique_ptr<vk::raii::Pipeline> skyboxPipeline;
 
     unique_ptr<vk::raii::CommandPool> commandPool;
 
@@ -193,8 +198,11 @@ public:
     ~VulkanRenderer();
 
     VulkanRenderer(const VulkanRenderer &other) = delete;
+
     VulkanRenderer(VulkanRenderer &&other) = delete;
+
     VulkanRenderer &operator=(const VulkanRenderer &other) = delete;
+
     VulkanRenderer &operator=(VulkanRenderer &&other) = delete;
 
     [[nodiscard]] GLFWwindow *getWindow() const { return window; }
@@ -285,7 +293,15 @@ private:
 
     void createRenderPass();
 
-    void createGraphicsPipeline();
+    void createPipelines();
+
+    void createScenePipeline();
+
+    void createSkyboxPipeline();
+
+    [[nodiscard]]
+    std::vector<vk::PipelineShaderStageCreateInfo> makeShaderStages(const std::filesystem::path &vertexShaderPath,
+                                                                    const std::filesystem::path &fragShaderPath) const;
 
     [[nodiscard]]
     vk::raii::ShaderModule createShaderModule(const std::filesystem::path &path) const;

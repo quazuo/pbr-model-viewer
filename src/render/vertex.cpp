@@ -32,3 +32,24 @@ std::array<vk::VertexInputAttributeDescription, 3> Vertex::getAttributeDescripti
         }
     };
 }
+
+vk::VertexInputBindingDescription SkyboxVertex::getBindingDescription() {
+    return {
+        .binding = static_cast<std::uint32_t>(0U),
+        .stride = static_cast<std::uint32_t>(sizeof(Vertex)),
+        .inputRate = vk::VertexInputRate::eVertex
+    };
+}
+
+std::array<vk::VertexInputAttributeDescription, 1> SkyboxVertex::getAttributeDescriptions() {
+    return {
+            {
+                {
+                    .location = 0U,
+                    .binding = 0U,
+                    .format = vk::Format::eR32G32B32Sfloat,
+                    .offset = static_cast<std::uint32_t>(offsetof(Vertex, pos)),
+                },
+            }
+    };
+}
