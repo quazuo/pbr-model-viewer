@@ -699,7 +699,25 @@ void VulkanRenderer::createPipelines() {
 }
 
 void VulkanRenderer::createScenePipeline() {
-    const auto shaderStages = makeShaderStages("../shaders/shader-vert.spv", "../shaders/shader-frag.spv");
+    vk::raii::ShaderModule vertShaderModule = createShaderModule("../shaders/shader-vert.spv");
+    vk::raii::ShaderModule fragShaderModule = createShaderModule("../shaders/shader-frag.spv");
+
+    const vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
+        .stage = vk::ShaderStageFlagBits::eVertex,
+        .module = *vertShaderModule,
+        .pName = "main",
+    };
+
+    const vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
+        .stage = vk::ShaderStageFlagBits::eFragment,
+        .module = *fragShaderModule,
+        .pName = "main",
+    };
+
+    const std::vector shaderStages {
+        vertShaderStageInfo,
+        fragShaderStageInfo
+    };
 
     const auto bindingDescription = Vertex::getBindingDescription();
     const auto attributeDescriptions = Vertex::getAttributeDescriptions();
@@ -793,7 +811,25 @@ void VulkanRenderer::createScenePipeline() {
 }
 
 void VulkanRenderer::createSkyboxPipeline() {
-    const auto shaderStages = makeShaderStages("../shaders/skybox-vert.spv", "../shaders/skybox-frag.spv");
+    vk::raii::ShaderModule vertShaderModule = createShaderModule("../shaders/skybox-vert.spv");
+    vk::raii::ShaderModule fragShaderModule = createShaderModule("../shaders/skybox-frag.spv");
+
+    const vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
+        .stage = vk::ShaderStageFlagBits::eVertex,
+        .module = *vertShaderModule,
+        .pName = "main",
+    };
+
+    const vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
+        .stage = vk::ShaderStageFlagBits::eFragment,
+        .module = *fragShaderModule,
+        .pName = "main",
+    };
+
+    const std::vector shaderStages {
+        vertShaderStageInfo,
+        fragShaderStageInfo
+    };
 
     const auto bindingDescription = Vertex::getBindingDescription();
     const auto attributeDescriptions = Vertex::getAttributeDescriptions();
@@ -884,30 +920,6 @@ void VulkanRenderer::createSkyboxPipeline() {
     };
 
     skyboxPipeline = make_unique<vk::raii::Pipeline>(*ctx.device, nullptr, pipelineInfo);
-}
-
-std::vector<vk::PipelineShaderStageCreateInfo>
-VulkanRenderer::makeShaderStages(const std::filesystem::path &vertexShaderPath,
-                                 const std::filesystem::path &fragShaderPath) const {
-    const vk::raii::ShaderModule vertShaderModule = createShaderModule(vertexShaderPath);
-    const vk::raii::ShaderModule fragShaderModule = createShaderModule(fragShaderPath);
-
-    const vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
-        .stage = vk::ShaderStageFlagBits::eVertex,
-        .module = *vertShaderModule,
-        .pName = "main",
-    };
-
-    const vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
-        .stage = vk::ShaderStageFlagBits::eFragment,
-        .module = *fragShaderModule,
-        .pName = "main",
-    };
-
-    return {
-        vertShaderStageInfo,
-        fragShaderStageInfo,
-    };
 }
 
 [[nodiscard]]
@@ -1157,10 +1169,6 @@ void VulkanRenderer::createSyncObjects() {
     };
 
     constexpr vk::SemaphoreCreateInfo binarySemaphoreInfo;
-
-    constexpr vk::FenceCreateInfo fenceInfo{
-        .flags = vk::FenceCreateFlagBits::eSignaled
-    };
 
     for (auto &res: frameResources) {
         res.sync = {

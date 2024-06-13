@@ -1,3 +1,4 @@
+
 @echo off
 for /D %%i in (C:\VulkanSDK\*) do set "SDK_DIR=%%i"
 set "IS_ERROR=0"

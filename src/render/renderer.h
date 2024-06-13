@@ -300,10 +300,6 @@ private:
     void createSkyboxPipeline();
 
     [[nodiscard]]
-    std::vector<vk::PipelineShaderStageCreateInfo> makeShaderStages(const std::filesystem::path &vertexShaderPath,
-                                                                    const std::filesystem::path &fragShaderPath) const;
-
-    [[nodiscard]]
     vk::raii::ShaderModule createShaderModule(const std::filesystem::path &path) const;
 
     // ==================== multisampling ====================
