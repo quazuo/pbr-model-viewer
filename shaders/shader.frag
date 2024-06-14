@@ -20,4 +20,6 @@ void main() {
     outColor = texture(texSampler, fragTexCoord);
 
     outColor *= clamp(dot(normal, normalize(lightDirection)), 0, 1);
+
+    outColor = pow(outColor, vec4(1 / 2.2));
 }

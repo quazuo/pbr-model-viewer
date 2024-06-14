@@ -7,6 +7,7 @@ struct Matrices {
     mat4 view;
     mat4 proj;
     mat4 inverse_vp;
+    mat4 static_view;
 };
 
 struct MiscData {

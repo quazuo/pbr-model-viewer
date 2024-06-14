@@ -71,6 +71,7 @@ struct GraphicsUBO {
         glm::mat4 view;
         glm::mat4 proj;
         glm::mat4 inverseVp;
+        glm::mat4 staticView;
     };
 
     struct MiscData {
@@ -140,7 +141,8 @@ class VulkanRenderer {
 
     unique_ptr<vk::raii::RenderPass> renderPass;
 
-    unique_ptr<vk::raii::DescriptorSetLayout> graphicsSetLayout;
+    unique_ptr<vk::raii::DescriptorSetLayout> sceneGraphicsSetLayout;
+    unique_ptr<vk::raii::DescriptorSetLayout> skyboxGraphicsSetLayout;
     unique_ptr<vk::raii::PipelineLayout> scenePipelineLayout;
     unique_ptr<vk::raii::PipelineLayout> skyboxPipelineLayout;
     unique_ptr<vk::raii::Pipeline> scenePipeline;
@@ -150,6 +152,8 @@ class VulkanRenderer {
 
     unique_ptr<Buffer> vertexBuffer;
     unique_ptr<Buffer> indexBuffer;
+
+    unique_ptr<Buffer> skyboxVertexBuffer;
 
     struct FrameResources {
         struct {
@@ -168,7 +172,9 @@ class VulkanRenderer {
         unique_ptr<Buffer> graphicsUniformBuffer;
         void *graphicsUboMapped{};
 
-        unique_ptr<vk::raii::DescriptorSet> graphicsDescriptorSet;
+        unique_ptr<vk::raii::DescriptorSet> sceneDescriptorSet;
+        unique_ptr<vk::raii::DescriptorSet> skyboxDescriptorSet;
+
     };
 
     static constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
@@ -281,13 +287,17 @@ private:
 
     void createDescriptorSetLayouts();
 
-    void createGraphicsDescriptorSetLayouts();
+    void createSceneDescriptorSetLayouts();
+
+    void createSkyboxDescriptorSetLayouts();
 
     void createDescriptorPool();
 
     void createDescriptorSets();
 
-    void createGraphicsDescriptorSets();
+    void createSceneDescriptorSets();
+
+    void createSkyboxDescriptorSets();
 
     // ==================== graphics pipeline ====================
 
@@ -309,13 +319,14 @@ private:
 
     // ==================== buffers ====================
 
-    void createVertexBuffer();
+    void createVertexBuffers();
 
     void createIndexBuffer();
 
-    void createUniformBuffers();
+    template<typename ElemType>
+    unique_ptr<Buffer> createLocalBuffer(const std::vector<ElemType> &contents, vk::BufferUsageFlags usage);
 
-    void copyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size) const;
+    void createUniformBuffers();
 
     // ==================== commands ====================
 

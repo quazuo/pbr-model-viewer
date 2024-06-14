@@ -13,6 +13,7 @@ struct RendererContext;
  * These images are allocated using VMA and are mostly suited for swap chain related logic.
  */
 class Image {
+protected:
     VmaAllocator allocator{};
     std::unique_ptr<VmaAllocation> allocation{};
     std::unique_ptr<vk::raii::Image> image;
@@ -23,7 +24,7 @@ public:
     explicit Image(const RendererContext &ctx, const vk::ImageCreateInfo &imageInfo,
                    vk::MemoryPropertyFlags properties);
 
-    ~Image();
+    virtual ~Image();
 
     Image(const Image &other) = delete;
 
@@ -50,8 +51,8 @@ public:
     [[nodiscard]]
     vk::Extent3D getExtent() const { return extent; }
 
-    void createView(const RendererContext &ctx, vk::Format format, vk::ImageAspectFlags aspectFlags,
-                    std::uint32_t mipLevels);
+    virtual void createView(const RendererContext &ctx, vk::Format format, vk::ImageAspectFlags aspectFlags,
+                            std::uint32_t mipLevels);
 
     /**
      * Copies the contents of a given buffer to this image and waits until completion.
@@ -61,8 +62,20 @@ public:
      * @param cmdPool Command pool from which a single-time command buffer should be allocated.
      * @param queue Queue to which the commands should be submitted.
      */
-    void copyFromBuffer(const RendererContext &ctx, vk::Buffer buffer, const vk::raii::CommandPool &cmdPool,
-                        const vk::raii::Queue &queue);
+    virtual void copyFromBuffer(const RendererContext &ctx, vk::Buffer buffer, const vk::raii::CommandPool &cmdPool,
+                                const vk::raii::Queue &queue);
+};
+
+class CubeImage final : public Image {
+public:
+    explicit CubeImage(const RendererContext &ctx, const vk::ImageCreateInfo &imageInfo,
+                       vk::MemoryPropertyFlags properties);
+
+    void createView(const RendererContext &ctx, vk::Format format, vk::ImageAspectFlags aspectFlags,
+                    std::uint32_t mipLevels) override;
+
+    virtual void copyFromBuffer(const RendererContext &ctx, vk::Buffer buffer, const vk::raii::CommandPool &cmdPool,
+                                const vk::raii::Queue &queue);
 };
 
 class Texture {
@@ -95,6 +108,7 @@ class TextureBuilder {
     vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eTransferSrc
                                 | vk::ImageUsageFlagBits::eTransferDst
                                 | vk::ImageUsageFlagBits::eSampled;
+    bool isCubemap = false;
     bool hasMipmaps = false;
     std::uint32_t layerCount = 1;
 
@@ -114,6 +128,8 @@ public:
 
     TextureBuilder &useUsage(vk::ImageUsageFlags u);
 
+    TextureBuilder &asCubemap();
+
     TextureBuilder &makeMipmaps();
 
     TextureBuilder &fromPaths(const std::vector<std::filesystem::path> &paths);
@@ -122,6 +138,9 @@ public:
 
     [[nodiscard]] Texture create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
                                  const vk::raii::Queue &queue) const;
+
+private:
+    void checkParams() const;
 };
 
 namespace utils::img {
@@ -130,8 +149,13 @@ namespace utils::img {
                                                          vk::Format format, vk::ImageAspectFlags aspectFlags,
                                                          std::uint32_t mipLevels);
 
+    [[nodiscard]]
+    std::unique_ptr<vk::raii::ImageView> createCubeImageView(const RendererContext &ctx, vk::Image image,
+                                                             vk::Format format, vk::ImageAspectFlags aspectFlags,
+                                                             std::uint32_t mipLevels);
+
     void transitionImageLayout(const RendererContext &ctx, vk::Image image, vk::ImageLayout oldLayout,
-                               vk::ImageLayout newLayout, std::uint32_t mipLevels,
+                               vk::ImageLayout newLayout, std::uint32_t mipLevels, std::uint32_t layerCount,
                                const vk::raii::CommandPool &cmdPool, const vk::raii::Queue &queue);
 
     [[nodiscard]]

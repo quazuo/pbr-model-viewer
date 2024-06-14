@@ -1,5 +1,8 @@
 #include "buffer.h"
 
+#include "cmd.h"
+#include "src/render/renderer.h"
+
 Buffer::Buffer(const VmaAllocator _allocator, const vk::DeviceSize size, const vk::BufferUsageFlags usage,
                const vk::MemoryPropertyFlags properties)
     : allocator(_allocator) {
@@ -59,4 +62,20 @@ void Buffer::unmap() {
 
     vmaUnmapMemory(allocator, allocation);
     mapped = nullptr;
+}
+
+void Buffer::copyFromBuffer(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
+                            const vk::raii::Queue &queue, const Buffer &buffer, const vk::DeviceSize size,
+                            const vk::DeviceSize srcOffset, const vk::DeviceSize dstOffset) const {
+    const vk::raii::CommandBuffer commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, cmdPool);
+
+    const vk::BufferCopy copyRegion{
+        .srcOffset = srcOffset,
+        .dstOffset = dstOffset,
+        .size = size,
+    };
+
+    commandBuffer.copyBuffer(buffer.get(), get(), copyRegion);
+
+    utils::cmd::endSingleTimeCommands(commandBuffer, queue);
 }

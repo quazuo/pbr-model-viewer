@@ -16,4 +16,6 @@ layout(binding = 1) uniform samplerCube skyboxTexSampler;
 
 void main() {
     outColor = texture(skyboxTexSampler, texCoord);
+
+    outColor = pow(outColor, vec4(1 / 2.2));
 }
