@@ -8,12 +8,14 @@
 
 #include "deps/vma/vk_mem_alloc.h"
 
-#include "vertex.h"
 #include "libs.h"
-#include "camera.h"
-#include "vk/buffer.h"
-#include "vk/swapchain.h"
-#include "gui/gui.h"
+
+class Mesh;
+class Camera;
+class Buffer;
+class Texture;
+class SwapChain;
+class GuiRenderer;
 
 using std::unique_ptr, std::make_unique;
 
@@ -134,6 +136,8 @@ class VulkanRenderer {
 
     unique_ptr<SwapChain> swapChain;
 
+    unique_ptr<Mesh> mesh;
+
     unique_ptr<Texture> texture;
     unique_ptr<Texture> skyboxTexture;
 
@@ -194,9 +198,6 @@ class VulkanRenderer {
     bool framebufferResized = false;
 
     glm::vec3 backgroundColor = glm::vec3(26, 26, 26) / 255.0f;
-
-    std::vector<Vertex> vertices;
-    std::vector<std::uint32_t> indices;
 
 public:
     explicit VulkanRenderer();

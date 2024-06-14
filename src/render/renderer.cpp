@@ -3,7 +3,6 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include <chrono>
 #include <algorithm>
 #include <iostream>
 #include <stdexcept>
@@ -15,9 +14,12 @@
 #include <array>
 #include <random>
 
-#include "deps/tinyobjloader/tiny_obj_loader.h"
-
-#include "vk/cmd.h"
+#include "gui/gui.h"
+#include "mesh/mesh.h"
+#include "mesh/vertex.h"
+#include "vk/buffer.h"
+#include "vk/swapchain.h"
+#include "camera.h"
 
 VmaAllocatorWrapper::VmaAllocatorWrapper(const vk::PhysicalDevice physicalDevice, const vk::Device device,
                                          const vk::Instance instance) {
@@ -409,47 +411,8 @@ void VulkanRenderer::createLogicalDevice() {
 
 // ==================== models ====================
 
-static const std::string MODEL_PATH = "../assets/default-model/viking_room.obj";
-
 void VulkanRenderer::loadModel() {
-    tinyobj::attrib_t attrib;
-    std::vector<tinyobj::shape_t> shapes;
-    std::vector<tinyobj::material_t> materials;
-    std::string warn, err;
-
-    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str())) {
-        throw std::runtime_error(warn + err);
-    }
-
-    std::unordered_map<Vertex, uint32_t> uniqueVertices{};
-
-    for (const auto &shape: shapes) {
-        for (const auto &index: shape.mesh.indices) {
-            const Vertex vertex{
-                .pos = {
-                    attrib.vertices[3 * index.vertex_index + 0],
-                    attrib.vertices[3 * index.vertex_index + 1],
-                    attrib.vertices[3 * index.vertex_index + 2]
-                },
-                .texCoord = {
-                    attrib.texcoords[2 * index.texcoord_index + 0],
-                    1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
-                },
-                .normal = {
-                    attrib.normals[3 * index.normal_index + 0],
-                    attrib.normals[3 * index.normal_index + 1],
-                    attrib.normals[3 * index.normal_index + 2]
-                }
-            };
-
-            if (!uniqueVertices.contains(vertex)) {
-                uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
-                vertices.push_back(vertex);
-            }
-
-            indices.push_back(uniqueVertices.at(vertex));
-        }
-    }
+    mesh = make_unique<Mesh>("../assets/default-model/viking_room.obj");
 }
 
 void VulkanRenderer::createTextures() {
@@ -1103,12 +1066,12 @@ static std::vector<SkyboxVertex> skyboxVertices = {
 };
 
 void VulkanRenderer::createVertexBuffers() {
-    vertexBuffer = createLocalBuffer<Vertex>(vertices, vk::BufferUsageFlagBits::eVertexBuffer);
+    vertexBuffer = createLocalBuffer<Vertex>(mesh->getVertices(), vk::BufferUsageFlagBits::eVertexBuffer);
     skyboxVertexBuffer = createLocalBuffer<SkyboxVertex>(skyboxVertices, vk::BufferUsageFlagBits::eVertexBuffer);
 }
 
 void VulkanRenderer::createIndexBuffer() {
-    indexBuffer = createLocalBuffer<std::uint32_t>(indices, vk::BufferUsageFlagBits::eIndexBuffer);
+    indexBuffer = createLocalBuffer<std::uint32_t>(mesh->getIndices(), vk::BufferUsageFlagBits::eIndexBuffer);
 }
 
 template<typename ElemType>
@@ -1276,7 +1239,7 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
         nullptr
     );
 
-    commandBuffer.drawIndexed(static_cast<std::uint32_t>(indices.size()), 1, 0, 0, 0);
+    commandBuffer.drawIndexed(static_cast<std::uint32_t>(mesh->getIndices().size()), 1, 0, 0, 0);
 
     commandBuffer.executeCommands(**frameResources[currentFrameIdx].guiCmdBuf);
 

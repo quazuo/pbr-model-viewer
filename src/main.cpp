@@ -1,10 +1,11 @@
 #include <iostream>
 
-#include "render/renderer.h"
-#include "utils/key-manager.h"
-
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
+
+#include "render/renderer.h"
+#include "utils/key-manager.h"
+#include "render/gui/gui.h"
 
 class Engine {
     GLFWwindow *window = nullptr;

@@ -47,6 +47,7 @@ file(GLOB pbr_SRCS
         "src/render/*"
         "src/render/vk/*"
         "src/render/gui/*"
+        "src/render/mesh/*"
         "src/utils/*"
 )
 
