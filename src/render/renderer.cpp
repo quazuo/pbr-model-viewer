@@ -120,12 +120,11 @@ VulkanRenderer::VulkanRenderer() {
 
     swapChain->createFramebuffers(ctx, *renderPass);
 
-    skyboxVertexBuffer = createLocalBuffer<SkyboxVertex>(skyboxVertices, vk::BufferUsageFlagBits::eVertexBuffer);
-    createSkyboxTexture();
-
     createDescriptorPool();
 
     createUniformBuffers();
+
+    createSkyboxResources();
 
     loadModel("../assets/default-model/viking_room.obj", "../assets/default-model/viking_room.png");
 
@@ -457,7 +456,17 @@ void VulkanRenderer::createLogicalDevice() {
 // ==================== models ====================
 
 void VulkanRenderer::loadModel(const std::filesystem::path &meshPath, const std::filesystem::path &texturePath) {
+    waitIdle();
+
     mesh = make_unique<Mesh>(meshPath);
+
+    // this is only relevant when loading a new mesh and rebuilding the descriptors
+    texture.reset();
+    vertexBuffer.reset();
+    indexBuffer.reset();
+    for (auto &res: frameResources) {
+        res.sceneDescriptorSet.reset();
+    }
 
     Texture t = TextureBuilder()
             .fromPaths({texturePath})
@@ -468,7 +477,7 @@ void VulkanRenderer::loadModel(const std::filesystem::path &meshPath, const std:
 
     createVertexBuffer();
     createIndexBuffer();
-    createDescriptorSets();
+    createSceneDescriptorSets();
 }
 
 void VulkanRenderer::createSkyboxTexture() {
@@ -522,8 +531,22 @@ void VulkanRenderer::createSceneDescriptorSetLayouts() {
         .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
     };
 
-    static constexpr vk::DescriptorSetLayoutBinding samplerLayoutBinding{
+    static constexpr vk::DescriptorSetLayoutBinding albedoSamplerLayoutBinding{
         .binding = 1U,
+        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+        .descriptorCount = 1U,
+        .stageFlags = vk::ShaderStageFlagBits::eFragment,
+    };
+
+    static constexpr vk::DescriptorSetLayoutBinding normalSamplerLayoutBinding{
+        .binding = 2U,
+        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+        .descriptorCount = 1U,
+        .stageFlags = vk::ShaderStageFlagBits::eFragment,
+    };
+
+    static constexpr vk::DescriptorSetLayoutBinding ormSamplerLayoutBinding{
+        .binding = 3U,
         .descriptorType = vk::DescriptorType::eCombinedImageSampler,
         .descriptorCount = 1U,
         .stageFlags = vk::ShaderStageFlagBits::eFragment,
@@ -531,7 +554,9 @@ void VulkanRenderer::createSceneDescriptorSetLayouts() {
 
     static constexpr std::array setBindings{
         uboLayoutBinding,
-        samplerLayoutBinding,
+        albedoSamplerLayoutBinding,
+        normalSamplerLayoutBinding,
+        ormSamplerLayoutBinding,
     };
 
     static constexpr vk::DescriptorSetLayoutCreateInfo setLayoutInfo{
@@ -578,7 +603,7 @@ void VulkanRenderer::createDescriptorPool() {
 
     static constexpr vk::DescriptorPoolSize samplerPoolSize{
         .type = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = static_cast<std::uint32_t>(MAX_FRAMES_IN_FLIGHT) * 2,
+        .descriptorCount = static_cast<std::uint32_t>(MAX_FRAMES_IN_FLIGHT) * 4,
     };
 
     static constexpr std::array poolSizes = {
@@ -594,17 +619,6 @@ void VulkanRenderer::createDescriptorPool() {
     };
 
     descriptorPool = make_unique<vk::raii::DescriptorPool>(*ctx.device, poolInfo);
-}
-
-void VulkanRenderer::createDescriptorSets() {
-    for (auto &res: frameResources) {
-        // this is only relevant when loading a different mesh and rebuilding the descriptors
-        res.sceneDescriptorSet.reset();
-        res.skyboxDescriptorSet.reset();
-    }
-
-    createSceneDescriptorSets();
-    createSkyboxDescriptorSets();
 }
 
 void VulkanRenderer::createSceneDescriptorSets() {
@@ -636,24 +650,56 @@ void VulkanRenderer::createSceneDescriptorSets() {
             .pBufferInfo = &uboBufferInfo
         };
 
-        const vk::DescriptorImageInfo imageInfo{
+        const vk::DescriptorImageInfo albedoImageInfo{
             .sampler = *texture->getSampler(),
             .imageView = *texture->getView(),
             .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
         };
 
-        const vk::WriteDescriptorSet samplerDescriptorWrite{
+        const vk::WriteDescriptorSet albedoSamplerDescriptorWrite{
             .dstSet = *descriptorSets[i],
             .dstBinding = 1U,
             .dstArrayElement = 0U,
             .descriptorCount = 1U,
             .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-            .pImageInfo = &imageInfo
+            .pImageInfo = &albedoImageInfo
+        };
+
+        const vk::DescriptorImageInfo normalImageInfo{
+            .sampler = *texture->getSampler(),
+            .imageView = *texture->getView(),
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+        };
+
+        const vk::WriteDescriptorSet normalSamplerDescriptorWrite{
+            .dstSet = *descriptorSets[i],
+            .dstBinding = 2U,
+            .dstArrayElement = 0U,
+            .descriptorCount = 1U,
+            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+            .pImageInfo = &normalImageInfo
+        };
+
+        const vk::DescriptorImageInfo ormImageInfo{
+            .sampler = *texture->getSampler(),
+            .imageView = *texture->getView(),
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+        };
+
+        const vk::WriteDescriptorSet ormSamplerDescriptorWrite{
+            .dstSet = *descriptorSets[i],
+            .dstBinding = 3U,
+            .dstArrayElement = 0U,
+            .descriptorCount = 1U,
+            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+            .pImageInfo = &ormImageInfo
         };
 
         const std::array descriptorWrites = {
             uboDescriptorWrite,
-            samplerDescriptorWrite
+            albedoSamplerDescriptorWrite,
+            normalSamplerDescriptorWrite,
+            ormSamplerDescriptorWrite
         };
 
         ctx.device->updateDescriptorSets(descriptorWrites, nullptr);
@@ -1003,7 +1049,7 @@ void VulkanRenderer::createSkyboxPipeline() {
     };
 
     const std::array descriptorSetLayouts = {
-        **sceneGraphicsSetLayout,
+        **skyboxGraphicsSetLayout,
     };
 
     const vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
@@ -1070,6 +1116,12 @@ vk::SampleCountFlagBits VulkanRenderer::getMaxUsableSampleCount() const {
     if (counts & vk::SampleCountFlagBits::e2) { return vk::SampleCountFlagBits::e2; }
 
     return vk::SampleCountFlagBits::e1;
+}
+
+void VulkanRenderer::createSkyboxResources() {
+    skyboxVertexBuffer = createLocalBuffer<SkyboxVertex>(skyboxVertices, vk::BufferUsageFlagBits::eVertexBuffer);
+    createSkyboxTexture();
+    createSkyboxDescriptorSets();
 }
 
 // ==================== buffers ====================
@@ -1209,7 +1261,6 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
     commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInlineAndSecondaryCommandBuffersEXT);
 
     commandBuffer.setViewport(0, viewport);
-
     commandBuffer.setScissor(0, scissor);
 
     // skybox
@@ -1220,7 +1271,7 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
 
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        **scenePipelineLayout,
+        **skyboxPipelineLayout,
         0,
         {
             **frameResources[currentFrameIdx].skyboxDescriptorSet,

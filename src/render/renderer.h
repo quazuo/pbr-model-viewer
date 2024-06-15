@@ -298,8 +298,6 @@ private:
 
     void createDescriptorPool();
 
-    void createDescriptorSets();
-
     void createSceneDescriptorSets();
 
     void createSkyboxDescriptorSets();
@@ -321,6 +319,10 @@ private:
 
     [[nodiscard]]
     vk::SampleCountFlagBits getMaxUsableSampleCount() const;
+
+    // ==================== skybox ====================
+
+    void createSkyboxResources();
 
     // ==================== buffers ====================
 

@@ -14,10 +14,24 @@ layout(binding = 0) uniform UniformBufferObject {
     MiscData misc;
 } ubo;
 
-layout(binding = 1) uniform sampler2D texSampler;
+layout(binding = 1) uniform sampler2D albedoSampler;
+layout(binding = 2) uniform sampler2D normalSampler;
+layout(binding = 3) uniform sampler2D ormSampler;
+
+float get_ao() {
+    return texture(ormSampler, fragTexCoord).x;
+}
+
+float get_roughness() {
+    return texture(ormSampler, fragTexCoord).y;
+}
+
+float get_metallic() {
+    return texture(ormSampler, fragTexCoord).z;
+}
 
 void main() {
-    outColor = texture(texSampler, fragTexCoord);
+    outColor = texture(albedoSampler, fragTexCoord);
 
     outColor *= clamp(dot(normal, normalize(lightDirection)), 0, 1);
 
