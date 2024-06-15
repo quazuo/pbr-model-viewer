@@ -212,7 +212,11 @@ public:
 
     VulkanRenderer &operator=(VulkanRenderer &&other) = delete;
 
-    [[nodiscard]] GLFWwindow *getWindow() const { return window; }
+    [[nodiscard]]
+    GLFWwindow *getWindow() const { return window; }
+
+    [[nodiscard]]
+    GuiRenderer& getGuiRenderer() const { return *guiRenderer; }
 
     void tick(float deltaTime);
 
@@ -227,6 +231,8 @@ public:
      * visible and free to move around the screen; most importantly able to use the GUI.
      */
     void setIsCursorLocked(bool b) const;
+
+    void loadModel(const std::filesystem::path& meshPath, const std::filesystem::path& texturePath);
 
 private:
     static void framebufferResizeCallback(GLFWwindow *window, int width, int height);
@@ -274,11 +280,9 @@ private:
 
     void createLogicalDevice();
 
-    // ==================== models ====================
+    // ==================== assets ====================
 
-    void loadModel();
-
-    void createTextures();
+    void createSkyboxTexture();
 
     // ==================== swap chain ====================
 
@@ -320,7 +324,7 @@ private:
 
     // ==================== buffers ====================
 
-    void createVertexBuffers();
+    void createVertexBuffer();
 
     void createIndexBuffer();
 

@@ -1,11 +1,13 @@
 #pragma once
 
 #define IMGUI_DEFINE_MATH_OPERATORS
+#define NOMINMAX 1
 
 #include "GLFW/glfw3.h"
 #include "deps/imgui/imgui.h"
 #include "deps/imgui/backends/imgui_impl_glfw.h"
 #include "deps/imgui/backends/imgui_impl_vulkan.h"
+#include "deps/imgui-filebrowser/imfilebrowser.h"
 
 #include "../libs.h"
 

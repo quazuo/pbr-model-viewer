@@ -42,6 +42,52 @@ VmaAllocatorWrapper::~VmaAllocatorWrapper() {
     vmaDestroyAllocator(allocator);
 }
 
+// vertices of a the skybox cube.
+// might change this to be generated more intelligently... but it's good enough for now
+static std::vector<SkyboxVertex> skyboxVertices = {
+    {{-1.0f, 1.0f, -1.0f}},
+    {{-1.0f, -1.0f, -1.0f}},
+    {{1.0f, -1.0f, -1.0f}},
+    {{1.0f, -1.0f, -1.0f}},
+    {{1.0f, 1.0f, -1.0f}},
+    {{-1.0f, 1.0f, -1.0f}},
+
+    {{-1.0f, -1.0f, 1.0f}},
+    {{-1.0f, -1.0f, -1.0f}},
+    {{-1.0f, 1.0f, -1.0f}},
+    {{-1.0f, 1.0f, -1.0f}},
+    {{-1.0f, 1.0f, 1.0f}},
+    {{-1.0f, -1.0f, 1.0f}},
+
+    {{1.0f, -1.0f, -1.0f}},
+    {{1.0f, -1.0f, 1.0f}},
+    {{1.0f, 1.0f, 1.0f}},
+    {{1.0f, 1.0f, 1.0f}},
+    {{1.0f, 1.0f, -1.0f}},
+    {{1.0f, -1.0f, -1.0f}},
+
+    {{-1.0f, -1.0f, 1.0f}},
+    {{-1.0f, 1.0f, 1.0f}},
+    {{1.0f, 1.0f, 1.0f}},
+    {{1.0f, 1.0f, 1.0f}},
+    {{1.0f, -1.0f, 1.0f}},
+    {{-1.0f, -1.0f, 1.0f}},
+
+    {{-1.0f, 1.0f, -1.0f}},
+    {{1.0f, 1.0f, -1.0f}},
+    {{1.0f, 1.0f, 1.0f}},
+    {{1.0f, 1.0f, 1.0f}},
+    {{-1.0f, 1.0f, 1.0f}},
+    {{-1.0f, 1.0f, -1.0f}},
+
+    {{-1.0f, -1.0f, -1.0f}},
+    {{-1.0f, -1.0f, 1.0f}},
+    {{1.0f, -1.0f, -1.0f}},
+    {{1.0f, -1.0f, -1.0f}},
+    {{-1.0f, -1.0f, 1.0f}},
+    {{1.0f, -1.0f, 1.0f}}
+};
+
 VulkanRenderer::VulkanRenderer() {
     constexpr int INIT_WINDOW_WIDTH = 1200;
     constexpr int INIT_WINDOW_HEIGHT = 800;
@@ -74,15 +120,14 @@ VulkanRenderer::VulkanRenderer() {
 
     swapChain->createFramebuffers(ctx, *renderPass);
 
-    loadModel();
-    createTextures();
-
-    createVertexBuffers();
-    createIndexBuffer();
-    createUniformBuffers();
+    skyboxVertexBuffer = createLocalBuffer<SkyboxVertex>(skyboxVertices, vk::BufferUsageFlagBits::eVertexBuffer);
+    createSkyboxTexture();
 
     createDescriptorPool();
-    createDescriptorSets();
+
+    createUniformBuffers();
+
+    loadModel("../assets/default-model/viking_room.obj", "../assets/default-model/viking_room.png");
 
     createCommandBuffers();
 
@@ -411,19 +456,23 @@ void VulkanRenderer::createLogicalDevice() {
 
 // ==================== models ====================
 
-void VulkanRenderer::loadModel() {
-    mesh = make_unique<Mesh>("../assets/default-model/viking_room.obj");
-}
+void VulkanRenderer::loadModel(const std::filesystem::path &meshPath, const std::filesystem::path &texturePath) {
+    mesh = make_unique<Mesh>(meshPath);
 
-void VulkanRenderer::createTextures() {
     Texture t = TextureBuilder()
-            .fromPaths({"../assets/default-model/viking_room.png"})
+            .fromPaths({texturePath})
             .makeMipmaps()
             .create(ctx, *commandPool, *graphicsQueue);
 
     texture = make_unique<Texture>(std::move(t));
 
-    std::vector<std::filesystem::path> cubemapPaths {6, "../assets/skyboxes"};
+    createVertexBuffer();
+    createIndexBuffer();
+    createDescriptorSets();
+}
+
+void VulkanRenderer::createSkyboxTexture() {
+    std::vector<std::filesystem::path> cubemapPaths{6, "../assets/skyboxes"};
     cubemapPaths[0].append("right.jpg");
     cubemapPaths[1].append("left.jpg");
     cubemapPaths[2].append("top.jpg");
@@ -548,6 +597,12 @@ void VulkanRenderer::createDescriptorPool() {
 }
 
 void VulkanRenderer::createDescriptorSets() {
+    for (auto &res: frameResources) {
+        // this is only relevant when loading a different mesh and rebuilding the descriptors
+        res.sceneDescriptorSet.reset();
+        res.skyboxDescriptorSet.reset();
+    }
+
     createSceneDescriptorSets();
     createSkyboxDescriptorSets();
 }
@@ -1019,55 +1074,8 @@ vk::SampleCountFlagBits VulkanRenderer::getMaxUsableSampleCount() const {
 
 // ==================== buffers ====================
 
-// vertices of a the skybox cube.
-// might change this to be generated more intelligently... but it's good enough for now
-static std::vector<SkyboxVertex> skyboxVertices = {
-    {{-1.0f, 1.0f, -1.0f}},
-    {{-1.0f, -1.0f, -1.0f}},
-    {{1.0f, -1.0f, -1.0f}},
-    {{1.0f, -1.0f, -1.0f}},
-    {{1.0f, 1.0f, -1.0f}},
-    {{-1.0f, 1.0f, -1.0f}},
-
-    {{-1.0f, -1.0f, 1.0f}},
-    {{-1.0f, -1.0f, -1.0f}},
-    {{-1.0f, 1.0f, -1.0f}},
-    {{-1.0f, 1.0f, -1.0f}},
-    {{-1.0f, 1.0f, 1.0f}},
-    {{-1.0f, -1.0f, 1.0f}},
-
-    {{1.0f, -1.0f, -1.0f}},
-    {{1.0f, -1.0f, 1.0f}},
-    {{1.0f, 1.0f, 1.0f}},
-    {{1.0f, 1.0f, 1.0f}},
-    {{1.0f, 1.0f, -1.0f}},
-    {{1.0f, -1.0f, -1.0f}},
-
-    {{-1.0f, -1.0f, 1.0f}},
-    {{-1.0f, 1.0f, 1.0f}},
-    {{1.0f, 1.0f, 1.0f}},
-    {{1.0f, 1.0f, 1.0f}},
-    {{1.0f, -1.0f, 1.0f}},
-    {{-1.0f, -1.0f, 1.0f}},
-
-    {{-1.0f, 1.0f, -1.0f}},
-    {{1.0f, 1.0f, -1.0f}},
-    {{1.0f, 1.0f, 1.0f}},
-    {{1.0f, 1.0f, 1.0f}},
-    {{-1.0f, 1.0f, 1.0f}},
-    {{-1.0f, 1.0f, -1.0f}},
-
-    {{-1.0f, -1.0f, -1.0f}},
-    {{-1.0f, -1.0f, 1.0f}},
-    {{1.0f, -1.0f, -1.0f}},
-    {{1.0f, -1.0f, -1.0f}},
-    {{-1.0f, -1.0f, 1.0f}},
-    {{1.0f, -1.0f, 1.0f}}
-};
-
-void VulkanRenderer::createVertexBuffers() {
+void VulkanRenderer::createVertexBuffer() {
     vertexBuffer = createLocalBuffer<Vertex>(mesh->getVertices(), vk::BufferUsageFlagBits::eVertexBuffer);
-    skyboxVertexBuffer = createLocalBuffer<SkyboxVertex>(skyboxVertices, vk::BufferUsageFlagBits::eVertexBuffer);
 }
 
 void VulkanRenderer::createIndexBuffer() {
@@ -1316,9 +1324,9 @@ void VulkanRenderer::initImgui() {
 void VulkanRenderer::renderGuiSection() {
     constexpr auto sectionFlags = ImGuiTreeNodeFlags_DefaultOpen;
 
-    if (ImGui::CollapsingHeader("Renderer ", sectionFlags)) {
-        ImGui::ColorEdit3("Background color", &backgroundColor.r);
-    }
+    // if (ImGui::CollapsingHeader("Renderer ", sectionFlags)) {
+    //     ImGui::ColorEdit3("Background color", &backgroundColor.r);
+    // }
 
     camera->renderGuiSection();
 }
