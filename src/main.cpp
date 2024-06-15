@@ -76,11 +76,6 @@ private:
     }
 
     void bindKeyActions() {
-        keyManager->bindCallback(GLFW_KEY_ESCAPE, EActivationType::PRESS_ONCE, [&](const float deltaTime) {
-            (void) deltaTime;
-            glfwSetWindowShouldClose(window, true);
-        });
-
         keyManager->bindCallback(GLFW_KEY_GRAVE_ACCENT, EActivationType::PRESS_ONCE, [&](const float deltaTime) {
             (void) deltaTime;
             doShowGui = !doShowGui;
