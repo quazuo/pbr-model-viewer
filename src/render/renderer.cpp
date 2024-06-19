@@ -126,7 +126,12 @@ VulkanRenderer::VulkanRenderer() {
 
     createSkyboxResources();
 
-    loadModel("../assets/default-model/viking_room.obj", "../assets/default-model/viking_room.png");
+    loadModel(
+        "../assets/default-model/czajnik.obj",
+        "../assets/default-model/czajnik-albedo.png",
+        "../assets/default-model/czajnik-normal.png",
+        "../assets/default-model/czajnik-orm.png"
+    );
 
     createCommandBuffers();
 
@@ -455,25 +460,43 @@ void VulkanRenderer::createLogicalDevice() {
 
 // ==================== models ====================
 
-void VulkanRenderer::loadModel(const std::filesystem::path &meshPath, const std::filesystem::path &texturePath) {
+void VulkanRenderer::loadModel(const std::filesystem::path &meshPath, const std::filesystem::path &albedoPath,
+                               const std::filesystem::path &normalPath, const std::filesystem::path &ormPath) {
     waitIdle();
 
     mesh = make_unique<Mesh>(meshPath);
 
     // this is only relevant when loading a new mesh and rebuilding the descriptors
-    texture.reset();
+    albedoTexture.reset();
+    normalTexture.reset();
+    ormTexture.reset();
+
     vertexBuffer.reset();
     indexBuffer.reset();
     for (auto &res: frameResources) {
         res.sceneDescriptorSet.reset();
     }
 
-    Texture t = TextureBuilder()
-            .fromPaths({texturePath})
+    Texture albedoTexRaw = TextureBuilder()
+            .fromPaths({albedoPath})
             .makeMipmaps()
             .create(ctx, *commandPool, *graphicsQueue);
 
-    texture = make_unique<Texture>(std::move(t));
+    albedoTexture = make_unique<Texture>(std::move(albedoTexRaw));
+
+    Texture normalTexRaw = TextureBuilder()
+            .fromPaths({normalPath})
+            .makeMipmaps()
+            .create(ctx, *commandPool, *graphicsQueue);
+
+    normalTexture = make_unique<Texture>(std::move(normalTexRaw));
+
+    Texture ormTexRaw = TextureBuilder()
+            .fromPaths({ormPath})
+            .makeMipmaps()
+            .create(ctx, *commandPool, *graphicsQueue);
+
+    ormTexture = make_unique<Texture>(std::move(ormTexRaw));
 
     createVertexBuffer();
     createIndexBuffer();
@@ -651,8 +674,8 @@ void VulkanRenderer::createSceneDescriptorSets() {
         };
 
         const vk::DescriptorImageInfo albedoImageInfo{
-            .sampler = *texture->getSampler(),
-            .imageView = *texture->getView(),
+            .sampler = *albedoTexture->getSampler(),
+            .imageView = *albedoTexture->getView(),
             .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
         };
 
@@ -666,8 +689,8 @@ void VulkanRenderer::createSceneDescriptorSets() {
         };
 
         const vk::DescriptorImageInfo normalImageInfo{
-            .sampler = *texture->getSampler(),
-            .imageView = *texture->getView(),
+            .sampler = *normalTexture->getSampler(),
+            .imageView = *normalTexture->getView(),
             .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
         };
 
@@ -681,8 +704,8 @@ void VulkanRenderer::createSceneDescriptorSets() {
         };
 
         const vk::DescriptorImageInfo ormImageInfo{
-            .sampler = *texture->getSampler(),
-            .imageView = *texture->getView(),
+            .sampler = *ormTexture->getSampler(),
+            .imageView = *ormTexture->getView(),
             .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
         };
 
@@ -1553,7 +1576,8 @@ void VulkanRenderer::updateGraphicsUniformBuffer() const {
             .staticView = camera->getStaticViewMatrix(),
         },
         .misc = {
-            .camera_pos = camera->getPos()
+            .cameraPos = camera->getPos(),
+            .lightDir = glm::normalize(glm::vec3(-1, 2, -3))
         }
     };
 

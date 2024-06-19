@@ -1,6 +1,8 @@
 #include <iostream>
 
 #define GLFW_INCLUDE_VULKAN
+#include <ranges>
+
 #include "GLFW/glfw3.h"
 
 #include "render/renderer.h"
@@ -10,6 +12,7 @@
 enum class FileType {
     MESH_OBJ,
     ALBEDO_PNG,
+    NORMAL_PNG,
     ORM_PNG,
     RMA_PNG,
 };
@@ -91,6 +94,20 @@ private:
 
     // ========================== gui ==========================
 
+    void renderTexLoadButton(const std::string &label, const FileType fileType,
+                             const std::vector<std::string> &typeFilters) {
+        if (ImGui::Button(label.c_str(), ImVec2(180, 0))) {
+            currentTypeBeingChosen = fileType;
+            fileBrowser.SetTypeFilters(typeFilters);
+            fileBrowser.Open();
+        }
+
+        if (chosenPaths.contains(fileType)) {
+            ImGui::SameLine();
+            ImGui::Text(chosenPaths.at(fileType).filename().string().c_str());
+        }
+    }
+
     void renderGuiSection(const float deltaTime) {
         static float fps = 1 / deltaTime;
 
@@ -110,36 +127,40 @@ private:
             }
 
             if (ImGui::BeginPopupModal("Load model", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-                if (ImGui::Button("Choose mesh...", ImVec2(150, 0))) {
-                    currentTypeBeingChosen = FileType::MESH_OBJ;
-                    fileBrowser.SetTypeFilters({".obj"});
-                    fileBrowser.Open();
-                }
-
-                if (chosenPaths.contains(FileType::MESH_OBJ)) {
-                    ImGui::SameLine();
-                    ImGui::Text(chosenPaths.at(FileType::MESH_OBJ).filename().string().c_str());
-                }
-
-                if (ImGui::Button("Choose texture...", ImVec2(150, 0))) {
-                    currentTypeBeingChosen = FileType::ALBEDO_PNG;
-                    fileBrowser.SetTypeFilters({".png"});
-                    fileBrowser.Open();
-                }
-
-                if (chosenPaths.contains(FileType::ALBEDO_PNG)) {
-                    ImGui::SameLine();
-                    ImGui::Text(chosenPaths.at(FileType::ALBEDO_PNG).filename().string().c_str());
-                }
+                renderTexLoadButton("Choose mesh...", FileType::MESH_OBJ, {".obj"});
+                renderTexLoadButton("Choose albedo texture...", FileType::ALBEDO_PNG, {".png"});
+                renderTexLoadButton("Choose normal map...", FileType::NORMAL_PNG, {".png"});
+                renderTexLoadButton("Choose ORM map...", FileType::ORM_PNG, {".png"});
 
                 ImGui::Separator();
 
+                constexpr std::array requiredFileTypes = {
+                    FileType::MESH_OBJ,
+                    FileType::ALBEDO_PNG,
+                    FileType::NORMAL_PNG,
+                    FileType::ORM_PNG,
+                };
+
+                const bool canSubmit = std::ranges::all_of(requiredFileTypes, [&](const auto &t) {
+                    return chosenPaths.contains(t);
+                });
+
+                if (!canSubmit) {
+                    ImGui::BeginDisabled();
+                }
+
                 if (ImGui::Button("OK", ImVec2(120, 0))) {
                     const auto meshPath = chosenPaths.at(FileType::MESH_OBJ);
-                    const auto texturePath = chosenPaths.at(FileType::ALBEDO_PNG);
+                    const auto albedoPath = chosenPaths.at(FileType::ALBEDO_PNG);
+                    const auto normalPath = chosenPaths.at(FileType::ALBEDO_PNG);
+                    const auto ormPath = chosenPaths.at(FileType::ORM_PNG);
 
-                    renderer.loadModel(meshPath, texturePath);
+                    renderer.loadModel(meshPath, albedoPath, normalPath, ormPath);
                     ImGui::CloseCurrentPopup();
+                }
+
+                if (!canSubmit) {
+                    ImGui::EndDisabled();
                 }
 
                 ImGui::SameLine();

@@ -12,4 +12,5 @@ struct Matrices {
 
 struct MiscData {
     vec3 camera_pos;
+    vec3 light_direction;
 };

@@ -129,8 +129,8 @@ void Camera::renderGuiSection() {
         ImGui::Separator();
 
         ImGui::SliderFloat("Field of view", &fieldOfView, 20.0f, 160.0f, "%.0f");
-        ImGui::DragFloat("Rotation speed", &rotationSpeed, 1.0f, 0.0f, FLT_MAX, "%.0f");
-        ImGui::DragFloat("Movement speed", &movementSpeed, 1.0f, 0.0f, FLT_MAX, "%.0f");
+        ImGui::DragFloat("Rotation speed", &rotationSpeed, 0.1f, 0.0f, FLT_MAX, "%.1f");
+        ImGui::DragFloat("Movement speed", &movementSpeed, 0.1f, 0.0f, FLT_MAX, "%.1f");
 
         ImGui::Separator();
     }

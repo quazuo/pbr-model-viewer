@@ -77,7 +77,8 @@ struct GraphicsUBO {
     };
 
     struct MiscData {
-        glm::vec3 camera_pos;
+        glm::vec3 cameraPos;
+        glm::vec3 lightDir;
     };
 
     alignas(16) WindowRes window{};
@@ -138,7 +139,9 @@ class VulkanRenderer {
 
     unique_ptr<Mesh> mesh;
 
-    unique_ptr<Texture> texture;
+    unique_ptr<Texture> albedoTexture;
+    unique_ptr<Texture> normalTexture;
+    unique_ptr<Texture> ormTexture;
     unique_ptr<Texture> skyboxTexture;
 
     unique_ptr<vk::raii::DescriptorPool> descriptorPool;
@@ -178,7 +181,6 @@ class VulkanRenderer {
 
         unique_ptr<vk::raii::DescriptorSet> sceneDescriptorSet;
         unique_ptr<vk::raii::DescriptorSet> skyboxDescriptorSet;
-
     };
 
     static constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
@@ -216,7 +218,7 @@ public:
     GLFWwindow *getWindow() const { return window; }
 
     [[nodiscard]]
-    GuiRenderer& getGuiRenderer() const { return *guiRenderer; }
+    GuiRenderer &getGuiRenderer() const { return *guiRenderer; }
 
     void tick(float deltaTime);
 
@@ -232,7 +234,8 @@ public:
      */
     void setIsCursorLocked(bool b) const;
 
-    void loadModel(const std::filesystem::path& meshPath, const std::filesystem::path& texturePath);
+    void loadModel(const std::filesystem::path &meshPath, const std::filesystem::path &albedoPath,
+                   const std::filesystem::path &normalPath, const std::filesystem::path &ormPath);
 
 private:
     static void framebufferResizeCallback(GLFWwindow *window, int width, int height);
