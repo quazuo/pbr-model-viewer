@@ -5,18 +5,28 @@ set(CMAKE_CXX_STANDARD 20)
 
 find_package(Vulkan REQUIRED)
 
-add_subdirectory(deps)
-
 include_directories(
         deps/glfw/include/
         deps/glm/
+        deps/assimp/include/
+        cmake-build-debug/deps/assimp/include/
         .
 )
 
 set(ALL_LIBS
         Vulkan::Vulkan
         glfw
+        assimp
 )
+
+# glfw
+
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "GLFW build documentation" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "GLFW build documentation" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "GLFW build documentation" FORCE)
+add_subdirectory(deps/glfw)
+
+# imgui
 
 file(GLOB IMGUI_SRCS
         "deps/imgui/*.h"
@@ -36,13 +46,25 @@ set_source_files_properties(
         PROPERTIES COMPILE_FLAGS "-w"
 )
 
-file(GLOB deps_SRCS
+# assimp
+
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
+set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "Assimp build tests" FORCE)
+set(ASSIMP_INSTALL OFF CACHE BOOL "Assimp install" FORCE)
+set(ASSIMP_INSTALL_PDB OFF CACHE BOOL "Assimp install PDB" FORCE)
+add_subdirectory(deps/assimp)
+
+# header-only deps
+
+file(GLOB HEADER_ONLY_DEPS_SRCS
         "deps/stb/*"
         "deps/tinyobjloader/*"
         "deps/vma/*"
 )
 
-file(GLOB pbr_SRCS
+# source files
+
+file(GLOB PBR_SRCS
         "src/*"
         "src/render/*"
         "src/render/vk/*"
@@ -51,5 +73,5 @@ file(GLOB pbr_SRCS
         "src/utils/*"
 )
 
-add_executable(pbr ${pbr_SRCS} ${deps_SRCS} ${IMGUI_SRCS} ${IMGUI_IMPL_SRCS})
+add_executable(pbr ${PBR_SRCS} ${HEADER_ONLY_DEPS_SRCS} ${IMGUI_SRCS} ${IMGUI_IMPL_SRCS})
 target_link_libraries(pbr ${ALL_LIBS})

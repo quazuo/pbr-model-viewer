@@ -10,7 +10,7 @@
 
 #include "libs.h"
 
-class Mesh;
+class Model;
 class Camera;
 class Buffer;
 class Texture;
@@ -137,7 +137,7 @@ class VulkanRenderer {
 
     unique_ptr<SwapChain> swapChain;
 
-    unique_ptr<Mesh> mesh;
+    unique_ptr<Model> model;
 
     unique_ptr<Texture> albedoTexture;
     unique_ptr<Texture> normalTexture;

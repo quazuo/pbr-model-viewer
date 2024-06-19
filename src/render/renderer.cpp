@@ -13,9 +13,10 @@
 #include <filesystem>
 #include <array>
 #include <random>
+#include <ranges>
 
 #include "gui/gui.h"
-#include "mesh/mesh.h"
+#include "mesh/model.h"
 #include "mesh/vertex.h"
 #include "vk/buffer.h"
 #include "vk/swapchain.h"
@@ -127,10 +128,10 @@ VulkanRenderer::VulkanRenderer() {
     createSkyboxResources();
 
     loadModel(
-        "../assets/default-model/czajnik.obj",
-        "../assets/default-model/czajnik-albedo.png",
-        "../assets/default-model/czajnik-normal.png",
-        "../assets/default-model/czajnik-orm.png"
+        "../assets/t-60-helmet/source/T-60 HelmetU.fbx",
+        "../assets/t-60-helmet/textures/T-60_Helmet_DefaultMaterial_BaseColor.1001.png",
+        "../assets/t-60-helmet/textures/T-60_Helmet_DefaultMaterial_Normal.1001.png",
+        "../assets/t-60-helmet/textures/T-60_Helmet_DefaultMaterial_Roughness.1001.png"
     );
 
     createCommandBuffers();
@@ -464,7 +465,7 @@ void VulkanRenderer::loadModel(const std::filesystem::path &meshPath, const std:
                                const std::filesystem::path &normalPath, const std::filesystem::path &ormPath) {
     waitIdle();
 
-    mesh = make_unique<Mesh>(meshPath);
+    model = make_unique<Model>(meshPath);
 
     // this is only relevant when loading a new mesh and rebuilding the descriptors
     albedoTexture.reset();
@@ -1150,16 +1151,16 @@ void VulkanRenderer::createSkyboxResources() {
 // ==================== buffers ====================
 
 void VulkanRenderer::createVertexBuffer() {
-    vertexBuffer = createLocalBuffer<Vertex>(mesh->getVertices(), vk::BufferUsageFlagBits::eVertexBuffer);
+    vertexBuffer = createLocalBuffer(model->getVertices(), vk::BufferUsageFlagBits::eVertexBuffer);
 }
 
 void VulkanRenderer::createIndexBuffer() {
-    indexBuffer = createLocalBuffer<std::uint32_t>(mesh->getIndices(), vk::BufferUsageFlagBits::eIndexBuffer);
+    indexBuffer = createLocalBuffer(model->getIndices(), vk::BufferUsageFlagBits::eIndexBuffer);
 }
 
 template<typename ElemType>
 unique_ptr<Buffer>
-VulkanRenderer::createLocalBuffer(const std::vector<ElemType> &contents, const vk::BufferUsageFlags usage) {
+VulkanRenderer::createLocalBuffer(const std::vector<ElemType>& contents, const vk::BufferUsageFlags usage) {
     const vk::DeviceSize bufferSize = sizeof(contents[0]) * contents.size();
 
     Buffer stagingBuffer{
@@ -1321,7 +1322,13 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
         nullptr
     );
 
-    commandBuffer.drawIndexed(static_cast<std::uint32_t>(mesh->getIndices().size()), 1, 0, 0, 0);
+    std::uint32_t indexOffset = 0;
+    std::int32_t vertexOffset = 0;
+    for (const auto& mesh : model->getMeshes()) {
+        commandBuffer.drawIndexed(static_cast<std::uint32_t>(mesh.indices.size()), 1, indexOffset, vertexOffset, 0);
+        indexOffset += static_cast<std::uint32_t>(mesh.indices.size());
+        vertexOffset += static_cast<std::int32_t>(mesh.vertices.size());
+    }
 
     commandBuffer.executeCommands(**frameResources[currentFrameIdx].guiCmdBuf);
 

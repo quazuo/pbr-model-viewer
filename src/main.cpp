@@ -10,7 +10,7 @@
 #include "render/gui/gui.h"
 
 enum class FileType {
-    MESH_OBJ,
+    MODEL,
     ALBEDO_PNG,
     NORMAL_PNG,
     ORM_PNG,
@@ -127,7 +127,7 @@ private:
             }
 
             if (ImGui::BeginPopupModal("Load model", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-                renderTexLoadButton("Choose mesh...", FileType::MESH_OBJ, {".obj"});
+                renderTexLoadButton("Choose mesh...", FileType::MODEL, {".obj", ".fbx"});
                 renderTexLoadButton("Choose albedo texture...", FileType::ALBEDO_PNG, {".png"});
                 renderTexLoadButton("Choose normal map...", FileType::NORMAL_PNG, {".png"});
                 renderTexLoadButton("Choose ORM map...", FileType::ORM_PNG, {".png"});
@@ -135,7 +135,7 @@ private:
                 ImGui::Separator();
 
                 constexpr std::array requiredFileTypes = {
-                    FileType::MESH_OBJ,
+                    FileType::MODEL,
                     FileType::ALBEDO_PNG,
                     FileType::NORMAL_PNG,
                     FileType::ORM_PNG,
@@ -150,7 +150,7 @@ private:
                 }
 
                 if (ImGui::Button("OK", ImVec2(120, 0))) {
-                    const auto meshPath = chosenPaths.at(FileType::MESH_OBJ);
+                    const auto meshPath = chosenPaths.at(FileType::MODEL);
                     const auto albedoPath = chosenPaths.at(FileType::ALBEDO_PNG);
                     const auto normalPath = chosenPaths.at(FileType::ALBEDO_PNG);
                     const auto ormPath = chosenPaths.at(FileType::ORM_PNG);

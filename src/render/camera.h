@@ -13,7 +13,7 @@ class Camera {
     float zNear = 0.01f;
     float zFar = 500.0f;
 
-    glm::vec3 pos = {0, 0, -3};
+    glm::vec3 pos = {0, 0, -1.5};
     glm::vec2 rot = {0, 0};
     glm::vec3 front{}, right{}, up{};
 
