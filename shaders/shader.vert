@@ -19,15 +19,16 @@ layout(binding = 0) uniform UniformBufferObject {
 } ubo;
 
 void main() {
-    const mat4 mvp = ubo.matrices.proj * ubo.matrices.view * ubo.matrices.model;
+    const mat4 model = ubo.matrices.model * inInstanceTransform;
+    const mat4 mvp = ubo.matrices.proj * ubo.matrices.view * model;
 
-    gl_Position = mvp * inInstanceTransform * vec4(inPosition, 1.0);
+    gl_Position = mvp * vec4(inPosition, 1.0);
 
-    worldPosition = inPosition;
+    worldPosition = (model * vec4(inPosition, 1.0)).xyz;
     fragTexCoord = inTexCoord;
 
-    vec3 T = normalize(vec3(ubo.matrices.model * vec4(inTangent, 0.0)));
-    vec3 N = normalize(vec3(ubo.matrices.model * vec4(inNormal, 0.0)));
+    vec3 T = normalize(vec3(model * vec4(inTangent, 0.0)));
+    vec3 N = normalize(vec3(model * vec4(inNormal, 0.0)));
     T = normalize(T - dot(T, N) * N); // gramm-schmidt
     vec3 B = -cross(N, T);
     TBN = mat3(T, B, N);

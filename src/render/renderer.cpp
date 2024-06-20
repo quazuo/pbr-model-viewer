@@ -127,14 +127,14 @@ VulkanRenderer::VulkanRenderer() {
 
     createSkyboxResources();
 
-    // loadModel("../assets/t-60-helmet/source/T-60 HelmetU.fbx");
-    // loadAlbedoTexture("../assets/t-60-helmet/textures/T-60_Helmet_DefaultMaterial_BaseColor.1001.png");
-    // loadNormalMap("../assets/t-60-helmet/textures/T-60_Helmet_DefaultMaterial_Normal.1001.png");
-    // loadOrmMap("../assets/t-60-helmet/textures/T-60_Helmet_DefaultMaterial_Roughness.1001.png");
-    loadModel("../assets/default-model/czajnik.obj");
-    loadAlbedoTexture("../assets/default-model/czajnik-albedo.png");
-    loadNormalMap("../assets/default-model/czajnik-normal.png");
-    loadOrmMap("../assets/default-model/czajnik-orm.png");
+    loadModel("../assets/t-60-helmet/source/T-60 HelmetU.fbx");
+    loadAlbedoTexture("../assets/t-60-helmet/textures/albedo.png");
+    loadNormalMap("../assets/t-60-helmet/textures/normal.png");
+    loadOrmMap("../assets/t-60-helmet/textures/orm.png");
+    // loadModel("../assets/default-model/czajnik.obj");
+    // loadAlbedoTexture("../assets/default-model/czajnik-albedo.png");
+    // loadNormalMap("../assets/default-model/czajnik-normal.png");
+    // loadOrmMap("../assets/default-model/czajnik-orm.png");
     buildDescriptors();
 
     createCommandBuffers();
@@ -495,6 +495,7 @@ void VulkanRenderer::loadNormalMap(const std::filesystem::path &path) {
     normalTexture.reset();
 
     Texture normalTexRaw = TextureBuilder()
+            .useFormat(vk::Format::eR8G8B8A8Unorm)
             .fromPaths({path})
             .create(ctx, *commandPool, *graphicsQueue);
 
@@ -507,6 +508,7 @@ void VulkanRenderer::loadOrmMap(const std::filesystem::path &path) {
     ormTexture.reset();
 
     Texture ormTexRaw = TextureBuilder()
+            .useFormat(vk::Format::eR8G8B8A8Unorm)
             .fromPaths({path})
             .create(ctx, *commandPool, *graphicsQueue);
 
@@ -1005,7 +1007,7 @@ void VulkanRenderer::createScenePipeline() {
     scenePipelineLayout = make_unique<vk::raii::PipelineLayout>(*ctx.device, pipelineLayoutInfo);
 
     const vk::GraphicsPipelineCreateInfo pipelineInfo{
-        .stageCount = shaderStages.size(),
+        .stageCount = static_cast<std::uint32_t>(shaderStages.size()),
         .pStages = shaderStages.data(),
         .pVertexInputState = &vertexInputInfo,
         .pInputAssemblyState = &inputAssembly,
@@ -1116,7 +1118,7 @@ void VulkanRenderer::createSkyboxPipeline() {
     skyboxPipelineLayout = make_unique<vk::raii::PipelineLayout>(*ctx.device, pipelineLayoutInfo);
 
     const vk::GraphicsPipelineCreateInfo pipelineInfo{
-        .stageCount = shaderStages.size(),
+        .stageCount = static_cast<std::uint32_t>(shaderStages.size()),
         .pStages = shaderStages.data(),
         .pVertexInputState = &vertexInputInfo,
         .pInputAssemblyState = &inputAssembly,
@@ -1630,7 +1632,7 @@ void VulkanRenderer::updateGraphicsUniformBuffer() const {
         },
         .misc = {
             .cameraPos = camera->getPos(),
-            .lightDir = glm::normalize(glm::vec3(-1, 1.5, -2))
+            .lightDir = glm::normalize(glm::vec3(1, 1.5, -2))
         }
     };
 

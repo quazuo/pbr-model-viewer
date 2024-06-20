@@ -238,11 +238,11 @@ void Texture::generateMipmaps(const RendererContext &ctx, const vk::raii::Comman
 void Texture::createSampler(const RendererContext &ctx) {
     const vk::PhysicalDeviceProperties properties = ctx.physicalDevice->getProperties();
 
-    const bool isFormatUint = format == vk::Format::eR8Uint || format == vk::Format::eR8G8B8A8Uint;
-    const vk::Filter filter = isFormatUint
+    const bool shouldUseNearest = false; // leftover from earlier versions, might remove altogether
+    const vk::Filter filter = shouldUseNearest
                                   ? vk::Filter::eNearest
                                   : vk::Filter::eLinear;
-    const vk::SamplerMipmapMode mipmapMode = isFormatUint
+    const vk::SamplerMipmapMode mipmapMode = shouldUseNearest
                                                  ? vk::SamplerMipmapMode::eNearest
                                                  : vk::SamplerMipmapMode::eLinear;
 
@@ -428,7 +428,7 @@ TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererCo
 
     }
 
-    const size_t layerCount = isSeparateChannels ? paths.size() / 3 : paths.size();
+    const std::uint32_t layerCount = isSeparateChannels ? paths.size() / 3 : paths.size();
     const vk::DeviceSize layerSize = texWidth * texHeight * utils::img::getFormatSizeInBytes(format);
     const vk::DeviceSize textureSize = layerSize * layerCount;
 
@@ -559,10 +559,8 @@ size_t utils::img::getFormatSizeInBytes(const vk::Format format) {
     switch (format) {
         case vk::Format::eB8G8R8A8Srgb:
         case vk::Format::eR8G8B8A8Srgb:
-        case vk::Format::eR8G8B8A8Uint:
+        case vk::Format::eR8G8B8A8Unorm:
             return 4;
-        case vk::Format::eR8Uint:
-            return 1;
         default:
             throw std::runtime_error("unexpected format in utils::img::getFormatSizeInBytes");
     }
