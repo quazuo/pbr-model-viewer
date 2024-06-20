@@ -150,12 +150,17 @@ private:
                 }
 
                 if (ImGui::Button("OK", ImVec2(120, 0))) {
-                    const auto meshPath = chosenPaths.at(FileType::MODEL);
+                    const auto modelPath = chosenPaths.at(FileType::MODEL);
                     const auto albedoPath = chosenPaths.at(FileType::ALBEDO_PNG);
                     const auto normalPath = chosenPaths.at(FileType::ALBEDO_PNG);
                     const auto ormPath = chosenPaths.at(FileType::ORM_PNG);
 
-                    renderer.loadModel(meshPath, albedoPath, normalPath, ormPath);
+                    renderer.loadModel(modelPath);
+                    renderer.loadAlbedoTexture(albedoPath);
+                    renderer.loadNormalMap(normalPath);
+                    renderer.loadOrmMap(ormPath);
+                    renderer.buildDescriptors();
+
                     ImGui::CloseCurrentPopup();
                 }
 

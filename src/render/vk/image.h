@@ -6,6 +6,7 @@
 #include "deps/vma/vk_mem_alloc.h"
 #include "src/render/libs.h"
 
+class Buffer;
 struct RendererContext;
 
 /**
@@ -109,17 +110,16 @@ class TextureBuilder {
                                 | vk::ImageUsageFlagBits::eTransferDst
                                 | vk::ImageUsageFlagBits::eSampled;
     bool isCubemap = false;
+    bool isSeparateChannels = false;
     bool hasMipmaps = false;
-    std::uint32_t layerCount = 1;
 
-    using ptr_source_t = std::pair<vk::Extent3D, void *>;
-    using path_vec_t = std::vector<std::filesystem::path>;
+    std::vector<std::filesystem::path> paths;
 
-    std::variant<
-        std::nullopt_t,
-        path_vec_t,
-        ptr_source_t
-    > sources = std::nullopt;
+    struct LoadedTextureData {
+        std::unique_ptr<Buffer> stagingBuffer;
+        vk::Extent3D extent;
+        std::uint32_t layerCount;
+    };
 
 public:
     TextureBuilder &useFormat(vk::Format f);
@@ -130,17 +130,20 @@ public:
 
     TextureBuilder &asCubemap();
 
+    TextureBuilder &asSeparateChannels();
+
     TextureBuilder &makeMipmaps();
 
-    TextureBuilder &fromPaths(const std::vector<std::filesystem::path> &paths);
-
-    TextureBuilder &fromDataPtr(vk::Extent3D extent, void *data, size_t layerCount = 1);
+    TextureBuilder &fromPaths(const std::vector<std::filesystem::path> &sources);
 
     [[nodiscard]] Texture create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
                                  const vk::raii::Queue &queue) const;
 
 private:
     void checkParams() const;
+
+    [[nodiscard]]
+    LoadedTextureData loadFromPaths(const RendererContext &ctx) const;
 };
 
 namespace utils::img {

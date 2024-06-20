@@ -127,12 +127,15 @@ VulkanRenderer::VulkanRenderer() {
 
     createSkyboxResources();
 
-    loadModel(
-        "../assets/t-60-helmet/source/T-60 HelmetU.fbx",
-        "../assets/t-60-helmet/textures/T-60_Helmet_DefaultMaterial_BaseColor.1001.png",
-        "../assets/t-60-helmet/textures/T-60_Helmet_DefaultMaterial_Normal.1001.png",
-        "../assets/t-60-helmet/textures/T-60_Helmet_DefaultMaterial_Roughness.1001.png"
-    );
+    // loadModel("../assets/t-60-helmet/source/T-60 HelmetU.fbx");
+    // loadAlbedoTexture("../assets/t-60-helmet/textures/T-60_Helmet_DefaultMaterial_BaseColor.1001.png");
+    // loadNormalMap("../assets/t-60-helmet/textures/T-60_Helmet_DefaultMaterial_Normal.1001.png");
+    // loadOrmMap("../assets/t-60-helmet/textures/T-60_Helmet_DefaultMaterial_Roughness.1001.png");
+    loadModel("../assets/default-model/czajnik.obj");
+    loadAlbedoTexture("../assets/default-model/czajnik-albedo.png");
+    loadNormalMap("../assets/default-model/czajnik-normal.png");
+    loadOrmMap("../assets/default-model/czajnik-orm.png");
+    buildDescriptors();
 
     createCommandBuffers();
 
@@ -461,46 +464,75 @@ void VulkanRenderer::createLogicalDevice() {
 
 // ==================== models ====================
 
-void VulkanRenderer::loadModel(const std::filesystem::path &meshPath, const std::filesystem::path &albedoPath,
-                               const std::filesystem::path &normalPath, const std::filesystem::path &ormPath) {
+void VulkanRenderer::loadModel(const std::filesystem::path &path) {
     waitIdle();
 
-    model = make_unique<Model>(meshPath);
-
-    // this is only relevant when loading a new mesh and rebuilding the descriptors
-    albedoTexture.reset();
-    normalTexture.reset();
-    ormTexture.reset();
+    model = make_unique<Model>(path);
 
     vertexBuffer.reset();
     indexBuffer.reset();
-    for (auto &res: frameResources) {
-        res.sceneDescriptorSet.reset();
-    }
+
+    createVertexBuffer();
+    createIndexBuffer();
+}
+
+void VulkanRenderer::loadAlbedoTexture(const std::filesystem::path &path) {
+    waitIdle();
+
+    albedoTexture.reset();
 
     Texture albedoTexRaw = TextureBuilder()
-            .fromPaths({albedoPath})
+            .fromPaths({path})
             .makeMipmaps()
             .create(ctx, *commandPool, *graphicsQueue);
 
     albedoTexture = make_unique<Texture>(std::move(albedoTexRaw));
+}
+
+void VulkanRenderer::loadNormalMap(const std::filesystem::path &path) {
+    waitIdle();
+
+    normalTexture.reset();
 
     Texture normalTexRaw = TextureBuilder()
-            .fromPaths({normalPath})
-            .makeMipmaps()
+            .fromPaths({path})
             .create(ctx, *commandPool, *graphicsQueue);
 
     normalTexture = make_unique<Texture>(std::move(normalTexRaw));
+}
+
+void VulkanRenderer::loadOrmMap(const std::filesystem::path &path) {
+    waitIdle();
+
+    ormTexture.reset();
 
     Texture ormTexRaw = TextureBuilder()
-            .fromPaths({ormPath})
+            .fromPaths({path})
+            .create(ctx, *commandPool, *graphicsQueue);
+
+    ormTexture = make_unique<Texture>(std::move(ormTexRaw));
+}
+
+void VulkanRenderer::loadOrmMap(const std::filesystem::path &aoPath, const std::filesystem::path &roughnessPath,
+                                const std::filesystem::path &metallicPath) {
+    waitIdle();
+
+    ormTexture.reset();
+
+    Texture ormTexRaw = TextureBuilder()
+            .asSeparateChannels()
+            .fromPaths({aoPath, roughnessPath, metallicPath})
             .makeMipmaps()
             .create(ctx, *commandPool, *graphicsQueue);
 
     ormTexture = make_unique<Texture>(std::move(ormTexRaw));
+}
 
-    createVertexBuffer();
-    createIndexBuffer();
+void VulkanRenderer::buildDescriptors() {
+    for (auto &res: frameResources) {
+        res.sceneDescriptorSet.reset();
+    }
+
     createSceneDescriptorSets();
 }
 
@@ -1161,7 +1193,7 @@ void VulkanRenderer::createIndexBuffer() {
 
 template<typename ElemType>
 unique_ptr<Buffer>
-VulkanRenderer::createLocalBuffer(const std::vector<ElemType>& contents, const vk::BufferUsageFlags usage) {
+VulkanRenderer::createLocalBuffer(const std::vector<ElemType> &contents, const vk::BufferUsageFlags usage) {
     const vk::DeviceSize bufferSize = sizeof(contents[0]) * contents.size();
 
     Buffer stagingBuffer{
@@ -1244,13 +1276,13 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
     const vk::ClearColorValue clearColor{backgroundColor.x, backgroundColor.y, backgroundColor.z, 1.0f};
 
     const std::array<vk::ClearValue, 2> clearValues{
-            {
-                clearColor,
-                vk::ClearDepthStencilValue{
-                    .depth = 1.0f,
-                    .stencil = 0,
-                }
+        {
+            clearColor,
+            vk::ClearDepthStencilValue{
+                .depth = 1.0f,
+                .stencil = 0,
             }
+        }
     };
 
     const vk::Extent2D swapChainExtent = swapChain->getExtent();
@@ -1329,7 +1361,7 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
     std::int32_t vertexOffset = 0;
     std::uint32_t instanceOffset = 0;
 
-    for (const auto& mesh : model->getMeshes()) {
+    for (const auto &mesh: model->getMeshes()) {
         commandBuffer.drawIndexed(
             static_cast<std::uint32_t>(mesh.indices.size()),
             static_cast<std::uint32_t>(mesh.instances.size()),
@@ -1598,7 +1630,7 @@ void VulkanRenderer::updateGraphicsUniformBuffer() const {
         },
         .misc = {
             .cameraPos = camera->getPos(),
-            .lightDir = glm::normalize(glm::vec3(-1, 2, -3))
+            .lightDir = glm::normalize(glm::vec3(-1, 1.5, -2))
         }
     };
 

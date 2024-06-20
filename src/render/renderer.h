@@ -143,6 +143,7 @@ class VulkanRenderer {
     unique_ptr<Texture> albedoTexture;
     unique_ptr<Texture> normalTexture;
     unique_ptr<Texture> ormTexture;
+
     unique_ptr<Texture> skyboxTexture;
 
     unique_ptr<vk::raii::DescriptorPool> descriptorPool;
@@ -236,8 +237,18 @@ public:
      */
     void setIsCursorLocked(bool b) const;
 
-    void loadModel(const std::filesystem::path &meshPath, const std::filesystem::path &albedoPath,
-                   const std::filesystem::path &normalPath, const std::filesystem::path &ormPath);
+    void loadModel(const std::filesystem::path &path);
+
+    void loadAlbedoTexture(const std::filesystem::path &path);
+
+    void loadNormalMap(const std::filesystem::path &path);
+
+    void loadOrmMap(const std::filesystem::path &path);
+
+    void loadOrmMap(const std::filesystem::path &aoPath, const std::filesystem::path &roughnessPath,
+                    const std::filesystem::path &metallicPath);
+
+    void buildDescriptors();
 
 private:
     static void framebufferResizeCallback(GLFWwindow *window, int width, int height);

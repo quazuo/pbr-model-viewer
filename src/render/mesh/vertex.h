@@ -6,14 +6,17 @@ struct Vertex {
     glm::vec3 pos;
     glm::vec2 texCoord;
     glm::vec3 normal;
+    glm::vec3 tangent;
 
     bool operator==(const Vertex &other) const {
-        return pos == other.pos && texCoord == other.texCoord && normal == other.normal;
+        return pos == other.pos
+               && texCoord == other.texCoord
+               && tangent == other.tangent;
     }
 
     static std::array<vk::VertexInputBindingDescription, 2> getBindingDescription();
 
-    static std::array<vk::VertexInputAttributeDescription, 7> getAttributeDescriptions();
+    static std::array<vk::VertexInputAttributeDescription, 8> getAttributeDescriptions();
 };
 
 struct SkyboxVertex {

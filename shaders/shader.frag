@@ -6,7 +6,7 @@
 
 layout (location = 0) in vec3 worldPosition;
 layout (location = 1) in vec2 fragTexCoord;
-layout (location = 2) in vec3 normal;
+layout (location = 2) in mat3 TBN;
 
 layout (location = 0) out vec4 outColor;
 
@@ -56,16 +56,19 @@ vec3 fresnel_schlick(float cos_theta, vec3 f0) {
 
 void main() {
     vec3 albedo = vec3(texture(albedoSampler, fragTexCoord));
+
+    vec3 normal = texture(normalSampler, fragTexCoord).rgb;
+    normal = normalize(normal * 2.0 - 1.0);
+    normal = normalize(TBN * normal);
+
     float ao = texture(ormSampler, fragTexCoord).r;
     float roughness = texture(ormSampler, fragTexCoord).g;
     float metallic = texture(ormSampler, fragTexCoord).b;
 
     // light related values
-    vec3 light_dir = ubo.misc.light_direction;
+    vec3 light_dir = normalize(ubo.misc.light_direction);
     vec3 light_color = vec3(23.47, 21.31, 20.79);
-    vec3 wi = vec3(0, 1, 0);
-    float cos_theta = max(dot(normal, wi), 0.0);
-    vec3 radiance = light_color * cos_theta;
+    vec3 radiance = light_color;
 
     // utility vectors
     vec3 view = normalize(ubo.misc.camera_pos - worldPosition);
@@ -89,11 +92,13 @@ void main() {
     float n_dot_l = max(dot(normal, light_dir), 0.0);
     vec3 out_radiance = (k_diffuse * albedo / PI + specular) * radiance * n_dot_l;
     vec3 ambient = vec3(0.03) * albedo * ao;
-    outColor = vec4(ambient + out_radiance, 1.0);
+    vec3 color = ambient + out_radiance;
 
-    // apply hdr
-    outColor = outColor / (outColor + vec4(1.0));
+    // apply hdr tonemapping
+    color = color / (color + vec3(1.0));
 
     // apply gamma correction
-    outColor = pow(outColor, vec4(1 / 2.2));
+    color = pow(color, vec3(1 / 2.2));
+
+    outColor = vec4(color, 1.0);
 }

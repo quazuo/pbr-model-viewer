@@ -6,6 +6,21 @@
 
 #include "vertex.h"
 
+static glm::vec3 assimpVecToGlm(const aiVector3D& v) {
+    return { v.x, v.y, v.z };
+}
+
+static glm::mat4 assimpMatrixToGlm(const aiMatrix4x4& m) {
+    glm::mat4 res;
+
+    res[0][0] = m.a1; res[1][0] = m.a2; res[2][0] = m.a3; res[3][0] = m.a4;
+    res[0][1] = m.b1; res[1][1] = m.b2; res[2][1] = m.b3; res[3][1] = m.b4;
+    res[0][2] = m.c1; res[1][2] = m.c2; res[2][2] = m.c3; res[3][2] = m.c4;
+    res[0][3] = m.d1; res[1][3] = m.d2; res[2][3] = m.d3; res[3][3] = m.d4;
+
+    return res;
+}
+
 Mesh::Mesh(const aiMesh *assimpMesh) {
     std::unordered_map<Vertex, std::uint32_t> uniqueVertices;
 
@@ -14,20 +29,13 @@ Mesh::Mesh(const aiMesh *assimpMesh) {
 
         for (size_t i = 0; i < face.mNumIndices; i++) {
             const Vertex vertex{
-                .pos = {
-                    assimpMesh->mVertices[face.mIndices[i]].x,
-                    assimpMesh->mVertices[face.mIndices[i]].y,
-                    assimpMesh->mVertices[face.mIndices[i]].z
-                },
+                .pos = assimpVecToGlm(assimpMesh->mVertices[face.mIndices[i]]),
                 .texCoord = {
                     assimpMesh->mTextureCoords[0][face.mIndices[i]].x,
                     1.0f - assimpMesh->mTextureCoords[0][face.mIndices[i]].y
                 },
-                .normal = {
-                    assimpMesh->mNormals[face.mIndices[i]].x,
-                    assimpMesh->mNormals[face.mIndices[i]].y,
-                    assimpMesh->mNormals[face.mIndices[i]].z
-                }
+                .normal = assimpVecToGlm(assimpMesh->mNormals[face.mIndices[i]]),
+                .tangent = assimpVecToGlm(assimpMesh->mTangents[face.mIndices[i]]),
             };
 
             if (!uniqueVertices.contains(vertex)) {
@@ -58,18 +66,6 @@ Model::Model(const std::filesystem::path &path) {
     }
 
     addInstances(scene->mRootNode, glm::identity<glm::mat4>());
-}
-
-static inline glm::mat4 assimpMatrixToGlm(const aiMatrix4x4& m) {
-    glm::mat4 res;
-
-    //the a,b,c,d in assimp is the row ; the 1,2,3,4 is the column
-    res[0][0] = m.a1; res[1][0] = m.a2; res[2][0] = m.a3; res[3][0] = m.a4;
-    res[0][1] = m.b1; res[1][1] = m.b2; res[2][1] = m.b3; res[3][1] = m.b4;
-    res[0][2] = m.c1; res[1][2] = m.c2; res[2][2] = m.c3; res[3][2] = m.c4;
-    res[0][3] = m.d1; res[1][3] = m.d2; res[2][3] = m.d3; res[3][3] = m.d4;
-
-    return res;
 }
 
 void Model::addInstances(const aiNode *node, const glm::mat4& baseTransform) {

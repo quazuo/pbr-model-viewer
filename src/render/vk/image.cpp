@@ -289,20 +289,18 @@ TextureBuilder &TextureBuilder::asCubemap() {
     return *this;
 }
 
+TextureBuilder &TextureBuilder::asSeparateChannels() {
+    isSeparateChannels = true;
+    return *this;
+}
+
 TextureBuilder &TextureBuilder::makeMipmaps() {
     hasMipmaps = true;
     return *this;
 }
 
-TextureBuilder &TextureBuilder::fromPaths(const std::vector<std::filesystem::path> &paths) {
-    layerCount = paths.size();
-    sources = paths;
-    return *this;
-}
-
-TextureBuilder &TextureBuilder::fromDataPtr(vk::Extent3D extent, void *data, const size_t layers) {
-    layerCount = layers;
-    sources = std::make_pair(extent, data);
+TextureBuilder &TextureBuilder::fromPaths(const std::vector<std::filesystem::path> &sources) {
+    paths = sources;
     return *this;
 }
 
@@ -311,66 +309,19 @@ Texture TextureBuilder::create(const RendererContext &ctx, const vk::raii::Comma
     checkParams();
 
     Texture texture;
-
     texture.format = format;
 
-    std::vector<void *> dataSources;
-    int texWidth, texHeight, texChannels;
-
-    if (std::holds_alternative<path_vec_t>(sources)) {
-        const auto &paths = std::get<path_vec_t>(sources);
-
-        for (const auto &path: paths) {
-            void *src = stbi_load(path.string().c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-            if (!src) {
-                throw std::runtime_error("failed to load texture image!");
-            }
-
-            dataSources.push_back(src);
-        }
-    } else if (std::holds_alternative<ptr_source_t>(sources)) {
-        const auto &[extent, ptr] = std::get<ptr_source_t>(sources);
-        texWidth = extent.width;
-        texHeight = extent.height;
-        dataSources.push_back(ptr);
-    }
+    const auto [stagingBuffer, extent, layerCount] = loadFromPaths(ctx);
 
     texture.mipLevels = hasMipmaps
-                            ? static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1
+                            ? static_cast<uint32_t>(std::floor(std::log2(std::max(extent.width, extent.height)))) + 1
                             : 1;
-    const vk::DeviceSize layerSize = texWidth * texHeight * utils::img::getFormatSizeInBytes(format);
-    const vk::DeviceSize textureSize = layerSize * layerCount;
-
-    Buffer stagingBuffer{
-        ctx.allocator->get(),
-        textureSize,
-        vk::BufferUsageFlagBits::eTransferSrc,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-    };
-
-    void *data = stagingBuffer.map();
-
-    if (std::holds_alternative<path_vec_t>(sources)) {
-        for (size_t i = 0; i < dataSources.size(); i++) {
-            const size_t offset = layerSize * i;
-            memcpy(static_cast<char *>(data) + offset, dataSources[i], static_cast<size_t>(layerSize));
-            stbi_image_free(dataSources[i]);
-        }
-    } else if (std::holds_alternative<ptr_source_t>(sources)) {
-        memcpy(data, dataSources[0], static_cast<size_t>(textureSize));
-    }
-
-    stagingBuffer.unmap();
 
     const vk::ImageCreateInfo imageInfo{
         .flags = isCubemap ? vk::ImageCreateFlagBits::eCubeCompatible : static_cast<vk::ImageCreateFlags>(0),
         .imageType = vk::ImageType::e2D,
         .format = format,
-        .extent = {
-            .width = static_cast<uint32_t>(texWidth),
-            .height = static_cast<uint32_t>(texHeight),
-            .depth = 1,
-        },
+        .extent = extent,
         .mipLevels = texture.mipLevels,
         .arrayLayers = layerCount,
         .samples = vk::SampleCountFlagBits::e1,
@@ -405,7 +356,7 @@ Texture TextureBuilder::create(const RendererContext &ctx, const vk::raii::Comma
         queue
     );
 
-    texture.image->copyFromBuffer(ctx, stagingBuffer.get(), cmdPool, queue);
+    texture.image->copyFromBuffer(ctx, stagingBuffer->get(), cmdPool, queue);
 
     texture.image->createView(
         ctx,
@@ -435,17 +386,78 @@ Texture TextureBuilder::create(const RendererContext &ctx, const vk::raii::Comma
 }
 
 void TextureBuilder::checkParams() const {
-    if (std::holds_alternative<std::nullopt_t>(sources)) {
+    if (paths.empty()) {
         throw std::runtime_error("no specified data source for texture!");
     }
 
-    if (isCubemap && layerCount != 6) {
-        throw std::runtime_error("invalid layer count for cubemap texture!");
+    if (isCubemap) {
+        if (isSeparateChannels) {
+            throw std::runtime_error("cubemaps from separated channels are currently not supported!");
+        }
+
+        if (paths.size() != 6) {
+            throw std::runtime_error("invalid layer count for cubemap texture!");
+        }
+    } else {
+        // non-cubemap
+        if (isSeparateChannels) {
+            if (paths.size() != 3) {
+                throw std::runtime_error("unsupported channel count for separate-channelled non-cubemap texture!");
+            }
+        } else if (paths.size() != 1) {
+            throw std::runtime_error("invalid layer count for non-cubemap texture!");
+        }
+    }
+}
+
+TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererContext &ctx) const {
+    std::vector<void *> dataSources;
+    int texWidth, texHeight, texChannels;
+
+    for (const auto &path: paths) {
+        const int desiredChannels = isSeparateChannels ? STBI_grey : STBI_rgb_alpha;
+        void *src = stbi_load(path.string().c_str(), &texWidth, &texHeight, &texChannels, desiredChannels);
+        if (!src) {
+            throw std::runtime_error("failed to load texture image!");
+        }
+
+        dataSources.push_back(src);
     }
 
-    if (!isCubemap && layerCount != 1) {
-        throw std::runtime_error("invalid layer count for non-cubemap texture!");
+    if (isSeparateChannels) {
+
     }
+
+    const size_t layerCount = isSeparateChannels ? paths.size() / 3 : paths.size();
+    const vk::DeviceSize layerSize = texWidth * texHeight * utils::img::getFormatSizeInBytes(format);
+    const vk::DeviceSize textureSize = layerSize * layerCount;
+
+    auto stagingBuffer = std::make_unique<Buffer>(
+        ctx.allocator->get(),
+        textureSize,
+        vk::BufferUsageFlagBits::eTransferSrc,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+    );
+
+    void *data = stagingBuffer->map();
+
+    for (size_t i = 0; i < dataSources.size(); i++) {
+        const size_t offset = layerSize * i;
+        memcpy(static_cast<char *>(data) + offset, dataSources[i], static_cast<size_t>(layerSize));
+        stbi_image_free(dataSources[i]);
+    }
+
+    stagingBuffer->unmap();
+
+    return {
+        .stagingBuffer = std::move(stagingBuffer),
+        .extent = {
+            .width = static_cast<std::uint32_t>(texWidth),
+            .height = static_cast<std::uint32_t>(texHeight),
+            .depth = 1u
+        },
+        .layerCount = layerCount
+    };
 }
 
 // ==================== utils ====================
