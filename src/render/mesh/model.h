@@ -24,7 +24,7 @@ class Model {
 public:
     explicit Model(const std::filesystem::path& path);
 
-    void addInstances(const aiNode* node);
+    void addInstances(const aiNode* node, const glm::mat4& baseTransform);
 
     [[nodiscard]]
     const std::vector<Mesh>& getMeshes() const { return meshes; }

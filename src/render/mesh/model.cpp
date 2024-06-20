@@ -57,7 +57,7 @@ Model::Model(const std::filesystem::path &path) {
         meshes.emplace_back(scene->mMeshes[i]);
     }
 
-    addInstances(scene->mRootNode);
+    addInstances(scene->mRootNode, glm::identity<glm::mat4>());
 }
 
 static inline glm::mat4 assimpMatrixToGlm(const aiMatrix4x4& m) {
@@ -72,13 +72,15 @@ static inline glm::mat4 assimpMatrixToGlm(const aiMatrix4x4& m) {
     return res;
 }
 
-void Model::addInstances(const aiNode *node) {
+void Model::addInstances(const aiNode *node, const glm::mat4& baseTransform) {
+    const glm::mat4 transform = baseTransform * assimpMatrixToGlm(node->mTransformation);
+
     for (size_t i = 0; i < node->mNumMeshes; i++) {
-        meshes[node->mMeshes[i]].instances.push_back(assimpMatrixToGlm(node->mTransformation));
+        meshes[node->mMeshes[i]].instances.push_back(transform);
     }
 
     for (size_t i = 0; i < node->mNumChildren; i++) {
-        addInstances(node->mChildren[i]);
+        addInstances(node->mChildren[i], transform);
     }
 }
 
