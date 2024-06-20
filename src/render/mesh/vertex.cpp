@@ -1,14 +1,23 @@
 #include "vertex.h"
 
-vk::VertexInputBindingDescription Vertex::getBindingDescription() {
+std::array<vk::VertexInputBindingDescription, 2> Vertex::getBindingDescription() {
     return {
-        .binding = static_cast<std::uint32_t>(0U),
-        .stride = static_cast<std::uint32_t>(sizeof(Vertex)),
-        .inputRate = vk::VertexInputRate::eVertex
+        {
+            {
+                .binding = 0u,
+                .stride = static_cast<std::uint32_t>(sizeof(Vertex)),
+                .inputRate = vk::VertexInputRate::eVertex
+            },
+            {
+                .binding = 1u,
+                .stride = static_cast<std::uint32_t>(sizeof(glm::mat4)),
+                .inputRate = vk::VertexInputRate::eInstance
+            }
+        }
     };
 }
 
-std::array<vk::VertexInputAttributeDescription, 3> Vertex::getAttributeDescriptions() {
+std::array<vk::VertexInputAttributeDescription, 7> Vertex::getAttributeDescriptions() {
     return {
         {
             {
@@ -28,6 +37,30 @@ std::array<vk::VertexInputAttributeDescription, 3> Vertex::getAttributeDescripti
                 .binding = 0U,
                 .format = vk::Format::eR32G32B32Sfloat,
                 .offset = static_cast<std::uint32_t>(offsetof(Vertex, normal)),
+            },
+            {
+                .location = 3U,
+                .binding = 1U,
+                .format = vk::Format::eR32G32B32A32Sfloat,
+                .offset = 0U,
+            },
+            {
+                .location = 4U,
+                .binding = 1U,
+                .format = vk::Format::eR32G32B32A32Sfloat,
+                .offset = static_cast<std::uint32_t>(sizeof(glm::vec4)),
+            },
+            {
+                .location = 5U,
+                .binding = 1U,
+                .format = vk::Format::eR32G32B32A32Sfloat,
+                .offset = static_cast<std::uint32_t>(2 * sizeof(glm::vec4)),
+            },
+            {
+                .location = 6U,
+                .binding = 1U,
+                .format = vk::Format::eR32G32B32A32Sfloat,
+                .offset = static_cast<std::uint32_t>(3 * sizeof(glm::vec4)),
             },
         }
     };

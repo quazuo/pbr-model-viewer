@@ -900,12 +900,12 @@ void VulkanRenderer::createScenePipeline() {
         fragShaderStageInfo
     };
 
-    const auto bindingDescription = Vertex::getBindingDescription();
+    const auto bindingDescriptions = Vertex::getBindingDescription();
     const auto attributeDescriptions = Vertex::getAttributeDescriptions();
 
     const vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
-        .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = &bindingDescription,
+        .vertexBindingDescriptionCount = static_cast<std::uint32_t>(bindingDescriptions.size()),
+        .pVertexBindingDescriptions = bindingDescriptions.data(),
         .vertexAttributeDescriptionCount = static_cast<std::uint32_t>(attributeDescriptions.size()),
         .pVertexAttributeDescriptions = attributeDescriptions.data()
     };
@@ -1152,6 +1152,7 @@ void VulkanRenderer::createSkyboxResources() {
 
 void VulkanRenderer::createVertexBuffer() {
     vertexBuffer = createLocalBuffer(model->getVertices(), vk::BufferUsageFlagBits::eVertexBuffer);
+    instanceDataBuffer = createLocalBuffer(model->getInstanceTransforms(), vk::BufferUsageFlagBits::eVertexBuffer);
 }
 
 void VulkanRenderer::createIndexBuffer() {
@@ -1243,13 +1244,13 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
     const vk::ClearColorValue clearColor{backgroundColor.x, backgroundColor.y, backgroundColor.z, 1.0f};
 
     const std::array<vk::ClearValue, 2> clearValues{
-        {
-            clearColor,
-            vk::ClearDepthStencilValue{
-                .depth = 1.0f,
-                .stencil = 0,
+            {
+                clearColor,
+                vk::ClearDepthStencilValue{
+                    .depth = 1.0f,
+                    .stencil = 0,
+                }
             }
-        }
     };
 
     const vk::Extent2D swapChainExtent = swapChain->getExtent();
@@ -1310,6 +1311,8 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, **scenePipeline);
 
     commandBuffer.bindVertexBuffers(0, vertexBuffer->get(), {0});
+    commandBuffer.bindVertexBuffers(1, instanceDataBuffer->get(), {0});
+
     commandBuffer.bindIndexBuffer(indexBuffer->get(), 0, vk::IndexType::eUint32);
 
     commandBuffer.bindDescriptorSets(
@@ -1324,10 +1327,20 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
 
     std::uint32_t indexOffset = 0;
     std::int32_t vertexOffset = 0;
+    std::uint32_t instanceOffset = 0;
+
     for (const auto& mesh : model->getMeshes()) {
-        commandBuffer.drawIndexed(static_cast<std::uint32_t>(mesh.indices.size()), 1, indexOffset, vertexOffset, 0);
+        commandBuffer.drawIndexed(
+            static_cast<std::uint32_t>(mesh.indices.size()),
+            static_cast<std::uint32_t>(mesh.instances.size()),
+            indexOffset,
+            vertexOffset,
+            instanceOffset
+        );
+
         indexOffset += static_cast<std::uint32_t>(mesh.indices.size());
         vertexOffset += static_cast<std::int32_t>(mesh.vertices.size());
+        instanceOffset += static_cast<std::uint32_t>(mesh.instances.size());
     }
 
     commandBuffer.executeCommands(**frameResources[currentFrameIdx].guiCmdBuf);
@@ -1577,6 +1590,7 @@ void VulkanRenderer::updateGraphicsUniformBuffer() const {
             .windowHeight = static_cast<std::uint32_t>(windowSize.y),
         },
         .matrices = {
+            .model = glm::identity<glm::mat4>(),
             .view = view,
             .proj = proj,
             .inverseVp = glm::inverse(proj * view),

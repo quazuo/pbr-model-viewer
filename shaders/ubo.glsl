@@ -4,6 +4,7 @@ struct WindowRes {
 };
 
 struct Matrices {
+    mat4 model;
     mat4 view;
     mat4 proj;
     mat4 inverse_vp;

@@ -3,7 +3,9 @@
 #include <filesystem>
 #include <vector>
 
-struct Vertex;
+#include "vertex.h"
+#include "src/render/libs.h"
+
 struct aiScene;
 struct aiMesh;
 struct aiNode;
@@ -11,6 +13,7 @@ struct aiNode;
 struct Mesh {
     std::vector<Vertex> vertices;
     std::vector<std::uint32_t> indices;
+    std::vector<glm::mat4> instances;
 
     explicit Mesh(const aiMesh* assimpMesh);
 };
@@ -21,6 +24,8 @@ class Model {
 public:
     explicit Model(const std::filesystem::path& path);
 
+    void addInstances(const aiNode* node);
+
     [[nodiscard]]
     const std::vector<Mesh>& getMeshes() const { return meshes; }
 
@@ -29,4 +34,7 @@ public:
 
     [[nodiscard]]
     std::vector<std::uint32_t> getIndices() const;
+
+    [[nodiscard]]
+    std::vector<glm::mat4> getInstanceTransforms() const;
 };

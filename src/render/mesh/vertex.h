@@ -11,9 +11,9 @@ struct Vertex {
         return pos == other.pos && texCoord == other.texCoord && normal == other.normal;
     }
 
-    static vk::VertexInputBindingDescription getBindingDescription();
+    static std::array<vk::VertexInputBindingDescription, 2> getBindingDescription();
 
-    static std::array<vk::VertexInputAttributeDescription, 3> getAttributeDescriptions();
+    static std::array<vk::VertexInputAttributeDescription, 7> getAttributeDescriptions();
 };
 
 struct SkyboxVertex {

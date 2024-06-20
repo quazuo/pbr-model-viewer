@@ -70,6 +70,7 @@ struct GraphicsUBO {
     };
 
     struct Matrices {
+        glm::mat4 model;
         glm::mat4 view;
         glm::mat4 proj;
         glm::mat4 inverseVp;
@@ -159,6 +160,7 @@ class VulkanRenderer {
 
     unique_ptr<Buffer> vertexBuffer;
     unique_ptr<Buffer> indexBuffer;
+    unique_ptr<Buffer> instanceDataBuffer;
 
     unique_ptr<Buffer> skyboxVertexBuffer;
 
