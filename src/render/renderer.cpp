@@ -334,15 +334,6 @@ bool VulkanRenderer::isDeviceSuitable(const vk::raii::PhysicalDevice &physicalDe
         return false;
     }
 
-    const vk::PhysicalDeviceVulkan12Features features12 = physicalDevice
-            .getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan12Features>()
-            .get<vk::PhysicalDeviceVulkan12Features>();
-
-    if (!features12.shaderInt8 || !features12.uniformAndStorageBuffer8BitAccess || !features12.
-        storageBuffer8BitAccess) {
-        return false;
-    }
-
     return true;
 }
 
@@ -391,26 +382,6 @@ bool VulkanRenderer::checkDeviceExtensionSupport(const vk::raii::PhysicalDevice 
     return requiredExtensions.empty();
 }
 
-bool VulkanRenderer::checkDeviceSubgroupSupport(const vk::raii::PhysicalDevice &physicalDevice) {
-    const vk::PhysicalDeviceSubgroupProperties subgroupProperties = physicalDevice
-            .getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceSubgroupProperties>()
-            .get<vk::PhysicalDeviceSubgroupProperties>();
-
-    if (!(subgroupProperties.supportedStages & vk::ShaderStageFlagBits::eCompute)) {
-        return false;
-    }
-
-    if (!(subgroupProperties.supportedOperations & vk::SubgroupFeatureFlagBits::eShuffle)) {
-        return false;
-    }
-
-    if (subgroupProperties.subgroupSize < 8) {
-        return false;
-    }
-
-    return true;
-}
-
 // ==================== logical device ====================
 
 void VulkanRenderer::createLogicalDevice() {
@@ -439,9 +410,6 @@ void VulkanRenderer::createLogicalDevice() {
 
     vk::PhysicalDeviceVulkan12Features vulkan12Features{
         .pNext = &sync2Features,
-        .storageBuffer8BitAccess = vk::True,
-        .uniformAndStorageBuffer8BitAccess = vk::True,
-        .shaderInt8 = vk::True,
         .timelineSemaphore = vk::True,
     };
 
@@ -1261,19 +1229,21 @@ void VulkanRenderer::createCommandBuffers() {
     };
 
     vk::raii::CommandBuffers graphicsCommandBuffers{*ctx.device, primaryAllocInfo};
+    vk::raii::CommandBuffers sceneCommandBuffers{*ctx.device, secondaryAllocInfo};
     vk::raii::CommandBuffers guiCommandBuffers{*ctx.device, secondaryAllocInfo};
-    vk::raii::CommandBuffers computeCommandBuffers{*ctx.device, primaryAllocInfo};
 
     for (size_t i = 0; i < graphicsCommandBuffers.size(); i++) {
-        frameResources[i].graphicsCmdBuf =
+        frameResources[i].graphicsCmdBuffer =
                 make_unique<vk::raii::CommandBuffer>(std::move(graphicsCommandBuffers[i]));
-        frameResources[i].guiCmdBuf =
-                make_unique<vk::raii::CommandBuffer>(std::move(guiCommandBuffers[i]));
+        frameResources[i].sceneCmdBuffer =
+                {make_unique<vk::raii::CommandBuffer>(std::move(sceneCommandBuffers[i]))};
+        frameResources[i].guiCmdBuffer =
+                {make_unique<vk::raii::CommandBuffer>(std::move(guiCommandBuffers[i]))};
     }
 }
 
 void VulkanRenderer::recordGraphicsCommandBuffer() {
-    const auto &commandBuffer = *frameResources[currentFrameIdx].graphicsCmdBuf;
+    const auto &commandBuffer = *frameResources[currentFrameIdx].graphicsCmdBuffer;
 
     const vk::ClearColorValue clearColor{backgroundColor.x, backgroundColor.y, backgroundColor.z, 1.0f};
 
@@ -1288,20 +1258,6 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
     };
 
     const vk::Extent2D swapChainExtent = swapChain->getExtent();
-
-    const vk::Viewport viewport{
-        .x = 0.0f,
-        .y = static_cast<float>(swapChainExtent.height), // flip the y-axis
-        .width = static_cast<float>(swapChainExtent.width),
-        .height = -1 * static_cast<float>(swapChainExtent.height), // flip the y-axis
-        .minDepth = 0.0f,
-        .maxDepth = 1.0f,
-    };
-
-    const vk::Rect2D scissor{
-        .offset = {0, 0},
-        .extent = swapChainExtent
-    };
 
     const vk::RenderPassBeginInfo renderPassInfo{
         .renderPass = **renderPass,
@@ -1319,65 +1275,13 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
 
     commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInlineAndSecondaryCommandBuffersEXT);
 
-    commandBuffer.setViewport(0, viewport);
-    commandBuffer.setScissor(0, scissor);
-
-    // skybox
-
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, **skyboxPipeline);
-
-    commandBuffer.bindVertexBuffers(0, skyboxVertexBuffer->get(), {0});
-
-    commandBuffer.bindDescriptorSets(
-        vk::PipelineBindPoint::eGraphics,
-        **skyboxPipelineLayout,
-        0,
-        {
-            **frameResources[currentFrameIdx].skyboxDescriptorSet,
-        },
-        nullptr
-    );
-
-    commandBuffer.draw(static_cast<std::uint32_t>(skyboxVertices.size()), 1, 0, 0);
-
-    // scene
-
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, **scenePipeline);
-
-    commandBuffer.bindVertexBuffers(0, vertexBuffer->get(), {0});
-    commandBuffer.bindVertexBuffers(1, instanceDataBuffer->get(), {0});
-
-    commandBuffer.bindIndexBuffer(indexBuffer->get(), 0, vk::IndexType::eUint32);
-
-    commandBuffer.bindDescriptorSets(
-        vk::PipelineBindPoint::eGraphics,
-        **scenePipelineLayout,
-        0,
-        {
-            **frameResources[currentFrameIdx].sceneDescriptorSet,
-        },
-        nullptr
-    );
-
-    std::uint32_t indexOffset = 0;
-    std::int32_t vertexOffset = 0;
-    std::uint32_t instanceOffset = 0;
-
-    for (const auto &mesh: model->getMeshes()) {
-        commandBuffer.drawIndexed(
-            static_cast<std::uint32_t>(mesh.indices.size()),
-            static_cast<std::uint32_t>(mesh.instances.size()),
-            indexOffset,
-            vertexOffset,
-            instanceOffset
-        );
-
-        indexOffset += static_cast<std::uint32_t>(mesh.indices.size());
-        vertexOffset += static_cast<std::int32_t>(mesh.vertices.size());
-        instanceOffset += static_cast<std::uint32_t>(mesh.instances.size());
+    if (frameResources[currentFrameIdx].sceneCmdBuffer.wasRecordedThisFrame) {
+        commandBuffer.executeCommands(**frameResources[currentFrameIdx].sceneCmdBuffer.buffer);
     }
 
-    commandBuffer.executeCommands(**frameResources[currentFrameIdx].guiCmdBuf);
+    if (frameResources[currentFrameIdx].guiCmdBuffer.wasRecordedThisFrame) {
+        commandBuffer.executeCommands(**frameResources[currentFrameIdx].guiCmdBuffer.buffer);
+    }
 
     commandBuffer.endRenderPass();
 
@@ -1466,8 +1370,8 @@ void VulkanRenderer::tick(const float deltaTime) {
     camera->tick(deltaTime);
 }
 
-void VulkanRenderer::renderGui(const std::function<void()> &renderCommands) const {
-    const auto &commandBuffer = *frameResources[currentFrameIdx].guiCmdBuf;
+void VulkanRenderer::renderGui(const std::function<void()> &renderCommands) {
+    const auto &commandBuffer = *frameResources[currentFrameIdx].guiCmdBuffer.buffer;
 
     const vk::CommandBufferInheritanceInfo inheritanceInfo{
         .renderPass = **renderPass,
@@ -1481,18 +1385,17 @@ void VulkanRenderer::renderGui(const std::function<void()> &renderCommands) cons
 
     commandBuffer.begin(beginInfo);
 
-    if (doShowGui) {
-        guiRenderer->startRendering();
-        renderCommands();
-        guiRenderer->finishRendering(commandBuffer);
-    }
+    guiRenderer->startRendering();
+    renderCommands();
+    guiRenderer->finishRendering(commandBuffer);
 
     commandBuffer.end();
+
+    frameResources[currentFrameIdx].guiCmdBuffer.wasRecordedThisFrame = true;
 }
 
 void VulkanRenderer::startFrame() {
     const auto &sync = frameResources[currentFrameIdx].sync;
-    const auto &graphicsCmdBuf = frameResources[currentFrameIdx].graphicsCmdBuf;
 
     const std::vector waitSemaphores = {
         **sync.renderFinishedTimeline.semaphore,
@@ -1524,12 +1427,19 @@ void VulkanRenderer::startFrame() {
         throw std::runtime_error("failed to acquire swap chain image!");
     }
 
-    graphicsCmdBuf->reset();
+    frameResources[currentFrameIdx].graphicsCmdBuffer->reset();
+
+    frameResources[currentFrameIdx].sceneCmdBuffer.wasRecordedThisFrame = false;
+    frameResources[currentFrameIdx].sceneCmdBuffer.buffer->reset();
+
+    frameResources[currentFrameIdx].guiCmdBuffer.wasRecordedThisFrame = false;
+    frameResources[currentFrameIdx].guiCmdBuffer.buffer->reset();
 }
 
 void VulkanRenderer::endFrame() {
+    recordGraphicsCommandBuffer();
+
     auto &sync = frameResources[currentFrameIdx].sync;
-    const auto &graphicsCmdBuf = frameResources[currentFrameIdx].graphicsCmdBuf;
 
     const std::vector waitSemaphores = {
         **sync.imageAvailableSemaphore
@@ -1568,7 +1478,7 @@ void VulkanRenderer::endFrame() {
         .pWaitSemaphores = waitSemaphores.data(),
         .pWaitDstStageMask = waitStages,
         .commandBufferCount = 1U,
-        .pCommandBuffers = &**graphicsCmdBuf,
+        .pCommandBuffers = &**frameResources[currentFrameIdx].graphicsCmdBuffer,
         .signalSemaphoreCount = signalSemaphores.size(),
         .pSignalSemaphores = signalSemaphores.data(),
     };
@@ -1582,7 +1492,7 @@ void VulkanRenderer::endFrame() {
     const vk::PresentInfoKHR presentInfo{
         .waitSemaphoreCount = presentWaitSemaphores.size(),
         .pWaitSemaphores = presentWaitSemaphores.data(),
-        .swapchainCount = 1,
+        .swapchainCount = 1U,
         .pSwapchains = &*swapChain->get(),
         .pImageIndices = imageIndices.data(),
     };
@@ -1608,7 +1518,95 @@ void VulkanRenderer::endFrame() {
 }
 
 void VulkanRenderer::drawScene() {
-    recordGraphicsCommandBuffer();
+    const auto &commandBuffer = *frameResources[currentFrameIdx].sceneCmdBuffer.buffer;
+
+    const vk::Extent2D swapChainExtent = swapChain->getExtent();
+
+    const vk::Viewport viewport{
+        .x = 0.0f,
+        .y = static_cast<float>(swapChainExtent.height), // flip the y-axis
+        .width = static_cast<float>(swapChainExtent.width),
+        .height = -1 * static_cast<float>(swapChainExtent.height), // flip the y-axis
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
+    };
+
+    const vk::Rect2D scissor{
+        .offset = {0, 0},
+        .extent = swapChainExtent
+    };
+
+    const vk::CommandBufferInheritanceInfo inheritanceInfo{
+        .renderPass = **renderPass,
+        .framebuffer = *swapChain->getCurrentFramebuffer(),
+    };
+
+    const vk::CommandBufferBeginInfo beginInfo{
+        .flags = vk::CommandBufferUsageFlagBits::eRenderPassContinue,
+        .pInheritanceInfo = &inheritanceInfo,
+    };
+
+    commandBuffer.begin(beginInfo);
+
+    commandBuffer.setViewport(0, viewport);
+    commandBuffer.setScissor(0, scissor);
+
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, **skyboxPipeline);
+
+    commandBuffer.bindVertexBuffers(0, skyboxVertexBuffer->get(), {0});
+
+    commandBuffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        **skyboxPipelineLayout,
+        0,
+        {
+            **frameResources[currentFrameIdx].skyboxDescriptorSet,
+        },
+        nullptr
+    );
+
+    commandBuffer.draw(static_cast<std::uint32_t>(skyboxVertices.size()), 1, 0, 0);
+
+    // scene
+
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, **scenePipeline);
+
+    commandBuffer.bindVertexBuffers(0, vertexBuffer->get(), {0});
+    commandBuffer.bindVertexBuffers(1, instanceDataBuffer->get(), {0});
+
+    commandBuffer.bindIndexBuffer(indexBuffer->get(), 0, vk::IndexType::eUint32);
+
+    commandBuffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        **scenePipelineLayout,
+        0,
+        {
+            **frameResources[currentFrameIdx].sceneDescriptorSet,
+        },
+        nullptr
+    );
+
+    std::uint32_t indexOffset = 0;
+    std::int32_t vertexOffset = 0;
+    std::uint32_t instanceOffset = 0;
+
+    for (const auto &mesh: model->getMeshes()) {
+        commandBuffer.drawIndexed(
+            static_cast<std::uint32_t>(mesh.indices.size()),
+            static_cast<std::uint32_t>(mesh.instances.size()),
+            indexOffset,
+            vertexOffset,
+            instanceOffset
+        );
+
+        indexOffset += static_cast<std::uint32_t>(mesh.indices.size());
+        vertexOffset += static_cast<std::int32_t>(mesh.vertices.size());
+        instanceOffset += static_cast<std::uint32_t>(mesh.instances.size());
+    }
+
+    commandBuffer.end();
+
+    frameResources[currentFrameIdx].sceneCmdBuffer.wasRecordedThisFrame = true;
 }
 
 void VulkanRenderer::updateGraphicsUniformBuffer() const {

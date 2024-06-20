@@ -26,7 +26,6 @@ static constexpr std::array validationLayers{
 static constexpr std::array deviceExtensions{
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     VK_KHR_MAINTENANCE2_EXTENSION_NAME,
-    VK_KHR_8BIT_STORAGE_EXTENSION_NAME,
     VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
     VK_EXT_NESTED_COMMAND_BUFFER_EXTENSION_NAME,
     VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
@@ -177,7 +176,17 @@ class VulkanRenderer {
             Timeline renderFinishedTimeline;
         } sync;
 
-        unique_ptr<vk::raii::CommandBuffer> graphicsCmdBuf, guiCmdBuf;
+        // primary command buffers
+        unique_ptr<vk::raii::CommandBuffer> graphicsCmdBuffer;
+
+        // secondary command buffers
+        struct SecondaryCommandBuffer {
+            unique_ptr<vk::raii::CommandBuffer> buffer;
+            bool wasRecordedThisFrame = false;
+        };
+
+        SecondaryCommandBuffer sceneCmdBuffer;
+        SecondaryCommandBuffer guiCmdBuffer;
 
         unique_ptr<Buffer> graphicsUniformBuffer;
         void *graphicsUboMapped{};
@@ -186,7 +195,7 @@ class VulkanRenderer {
         unique_ptr<vk::raii::DescriptorSet> skyboxDescriptorSet;
     };
 
-    static constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
+    static constexpr size_t MAX_FRAMES_IN_FLIGHT = 3;
     std::array<FrameResources, MAX_FRAMES_IN_FLIGHT> frameResources;
 
     vk::SampleCountFlagBits msaaSampleCount = vk::SampleCountFlagBits::e1;
@@ -195,8 +204,6 @@ class VulkanRenderer {
     unique_ptr<GuiRenderer> guiRenderer;
 
     // miscellaneous state variables
-
-    bool doShowGui = false;
 
     std::uint32_t currentFrameIdx = 0;
 
@@ -290,8 +297,6 @@ private:
 
     static bool checkDeviceExtensionSupport(const vk::raii::PhysicalDevice &physicalDevice);
 
-    static bool checkDeviceSubgroupSupport(const vk::raii::PhysicalDevice &physicalDevice);
-
     // ==================== logical device ====================
 
     void createLogicalDevice();
@@ -370,15 +375,13 @@ private:
 public:
     void renderGuiSection();
 
-    void setDoShowGui(const bool b) { doShowGui = b; }
-
     // ==================== render loop ====================
 
     void startFrame();
 
     void endFrame();
 
-    void renderGui(const std::function<void()> &renderCommands) const;
+    void renderGui(const std::function<void()> &renderCommands);
 
     void drawScene();
 

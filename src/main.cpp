@@ -1,8 +1,6 @@
 #include <iostream>
 
 #define GLFW_INCLUDE_VULKAN
-#include <ranges>
-
 #include "GLFW/glfw3.h"
 
 #include "render/renderer.h"
@@ -25,7 +23,7 @@ class Engine {
     float lastTime = 0.0f;
 
     bool isCursorLocked = true;
-    bool doShowGui = false;
+    bool isGuiEnabled = false;
 
     ImGui::FileBrowser fileBrowser;
     std::optional<FileType> currentTypeBeingChosen;
@@ -36,7 +34,6 @@ public:
         window = renderer.getWindow();
 
         renderer.setIsCursorLocked(isCursorLocked);
-        renderer.setDoShowGui(doShowGui);
 
         keyManager = std::make_unique<KeyManager>(window);
         bindKeyActions();
@@ -61,10 +58,12 @@ private:
 
         renderer.startFrame();
 
-        renderer.renderGui([&] {
-            renderGuiSection(deltaTime);
-            renderer.renderGuiSection();
-        });
+        if (isGuiEnabled) {
+            renderer.renderGui([&] {
+                renderGuiSection(deltaTime);
+                renderer.renderGuiSection();
+            });
+        }
 
         renderer.drawScene();
 
@@ -81,8 +80,7 @@ private:
     void bindKeyActions() {
         keyManager->bindCallback(GLFW_KEY_GRAVE_ACCENT, EActivationType::PRESS_ONCE, [&](const float deltaTime) {
             (void) deltaTime;
-            doShowGui = !doShowGui;
-            renderer.setDoShowGui(doShowGui);
+            isGuiEnabled = !isGuiEnabled;
         });
 
         keyManager->bindCallback(GLFW_KEY_F1, EActivationType::PRESS_ONCE, [&](const float deltaTime) {
