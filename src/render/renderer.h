@@ -211,6 +211,8 @@ class VulkanRenderer {
 
     glm::vec3 backgroundColor = glm::vec3(26, 26, 26) / 255.0f;
 
+    float modelScale = 1.0f;
+
 public:
     explicit VulkanRenderer();
 

@@ -1356,9 +1356,9 @@ void VulkanRenderer::initImgui() {
 void VulkanRenderer::renderGuiSection() {
     constexpr auto sectionFlags = ImGuiTreeNodeFlags_DefaultOpen;
 
-    // if (ImGui::CollapsingHeader("Renderer ", sectionFlags)) {
-    //     ImGui::ColorEdit3("Background color", &backgroundColor.r);
-    // }
+    if (ImGui::CollapsingHeader("Renderer ", sectionFlags)) {
+        ImGui::DragFloat("Model scale", &modelScale, 0.01, 0, std::numeric_limits<float>::max());
+    }
 
     camera->renderGuiSection();
 }
@@ -1622,7 +1622,7 @@ void VulkanRenderer::updateGraphicsUniformBuffer() const {
             .windowHeight = static_cast<std::uint32_t>(windowSize.y),
         },
         .matrices = {
-            .model = glm::identity<glm::mat4>(),
+            .model = glm::scale(glm::identity<glm::mat4>(), glm::vec3(modelScale)),
             .view = view,
             .proj = proj,
             .inverseVp = glm::inverse(proj * view),
