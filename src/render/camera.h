@@ -3,7 +3,28 @@
 #include <memory>
 
 #include "libs.h"
-#include "src/utils/key-manager.h"
+#include "src/utils/input-manager.h"
+
+class Rotator {
+    glm::vec2 rot = {0, 0};
+
+public:
+    [[nodiscard]]
+    glm::vec2 operator*() const { return rot; }
+
+    Rotator& operator=(glm::vec2 other);
+
+    Rotator& operator+=(glm::vec2 other);
+
+    Rotator& operator-=(glm::vec2 other);
+
+    struct ViewVectors {
+        glm::vec3 front, right, up;
+    };
+
+    [[nodiscard]]
+    ViewVectors getViewVectors() const;
+};
 
 class Camera {
     struct GLFWwindow *window = nullptr;
@@ -14,14 +35,17 @@ class Camera {
     float zFar = 500.0f;
 
     glm::vec3 pos = {0, 0, -1.5};
-    glm::vec2 rot = {0, 0};
+    Rotator rotator;
     glm::vec3 front{}, right{}, up{};
+
+    bool isLocked = true;
+    float lockedRadius = 1.5f;
+    Rotator lockedRotator;
 
     float rotationSpeed = 2.5f;
     float movementSpeed = 1.0f;
-    bool isCursorLocked = true;
 
-    std::unique_ptr<KeyManager> keyManager;
+    std::unique_ptr<InputManager> inputManager;
 
 public:
     explicit Camera(GLFWwindow *w);
@@ -40,46 +64,33 @@ public:
     [[nodiscard]]
     glm::mat4 getProjectionMatrix() const;
 
-    void updateRotation(float dx = 0.0f, float dy = 0.0f);
-
-    /**
-     * Locks or unlocks the cursor. When the cursor is locked, it's confined to the center
-     * of the screen and camera rotates according to its movement. When it's unlocked, it's
-     * visible and free to move around the screen; most importantly able to use the GUI.
-     */
-    void setIsCursorLocked(bool b);
-
     void renderGuiSection();
 
 private:
+    static void scrollCallback(GLFWwindow *window, double dx, double dy);
+
     /**
      * Binds keys used to rotate the camera.
      */
-    void bindRotationKeys();
+    void bindMouseDragCallback();
 
     /**
-     * Binds keys used to move the camera.
+     * Binds keys used to rotate the camera in freecam mode.
      */
-    void bindMovementKeys();
+    void bindFreecamRotationKeys();
 
     /**
-     * When in locked cursor mode, rotates the camera according to the mouse's movement and centers it.
+     * Binds keys used to move the camera in freecam mode.
      */
+    void bindFreecamMovementKeys();
+
     void tickMouseMovement(float deltaTime);
 
-    /**
-     * Updates the aspect ratio to reflect the current window's dimensions.
-     */
+    void tickLockedMode();
+
     void updateAspectRatio();
 
-    /**
-     * Updates the `front`, `right` and `up` vectors, which are used to help determine
-     * what is visible to the camera.
-     */
     void updateVecs();
 
-    /**
-     * Moves the cursor to the center of the window.
-     */
     void centerCursor() const;
 };

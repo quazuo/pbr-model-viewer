@@ -239,13 +239,6 @@ public:
      */
     void waitIdle() const { ctx.device->waitIdle(); }
 
-    /**
-     * Locks or unlocks the cursor. When the cursor is locked, it's confined to the center
-     * of the screen and camera rotates according to its movement. When it's unlocked, it's
-     * visible and free to move around the screen; most importantly able to use the GUI.
-     */
-    void setIsCursorLocked(bool b) const;
-
     void loadModel(const std::filesystem::path &path);
 
     void loadAlbedoTexture(const std::filesystem::path &path);

@@ -148,11 +148,6 @@ VulkanRenderer::~VulkanRenderer() {
     glfwDestroyWindow(window);
 }
 
-void VulkanRenderer::setIsCursorLocked(const bool b) const {
-    camera->setIsCursorLocked(b);
-    glfwSetInputMode(window, GLFW_CURSOR, b ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
-}
-
 void VulkanRenderer::framebufferResizeCallback(GLFWwindow *window, const int width, const int height) {
     (void) (width + height);
     const auto app = static_cast<VulkanRenderer *>(glfwGetWindowUserPointer(window));

@@ -4,7 +4,7 @@
 #include "GLFW/glfw3.h"
 
 #include "render/renderer.h"
-#include "utils/key-manager.h"
+#include "utils/input-manager.h"
 #include "render/gui/gui.h"
 
 enum class FileType {
@@ -18,11 +18,10 @@ enum class FileType {
 class Engine {
     GLFWwindow *window = nullptr;
     VulkanRenderer renderer;
-    std::unique_ptr<KeyManager> keyManager;
+    std::unique_ptr<InputManager> inputManager;
 
     float lastTime = 0.0f;
 
-    bool isCursorLocked = true;
     bool isGuiEnabled = false;
 
     ImGui::FileBrowser fileBrowser;
@@ -33,9 +32,7 @@ public:
     Engine() {
         window = renderer.getWindow();
 
-        renderer.setIsCursorLocked(isCursorLocked);
-
-        keyManager = std::make_unique<KeyManager>(window);
+        inputManager = std::make_unique<InputManager>(window);
         bindKeyActions();
     }
 
@@ -53,7 +50,7 @@ private:
         const float deltaTime = currentTime - lastTime;
         lastTime = currentTime;
 
-        keyManager->tick(deltaTime);
+        inputManager->tick(deltaTime);
         renderer.tick(deltaTime);
 
         renderer.startFrame();
@@ -78,16 +75,12 @@ private:
     }
 
     void bindKeyActions() {
-        keyManager->bindCallback(GLFW_KEY_GRAVE_ACCENT, EActivationType::PRESS_ONCE, [&](const float deltaTime) {
+        inputManager->bindCallback(GLFW_KEY_GRAVE_ACCENT, EActivationType::PRESS_ONCE, [&](const float deltaTime) {
             (void) deltaTime;
             isGuiEnabled = !isGuiEnabled;
         });
 
-        keyManager->bindCallback(GLFW_KEY_F1, EActivationType::PRESS_ONCE, [&](const float deltaTime) {
-            (void) deltaTime;
-            isCursorLocked = !isCursorLocked;
-            renderer.setIsCursorLocked(isCursorLocked);
-        });
+
     }
 
     // ========================== gui ==========================

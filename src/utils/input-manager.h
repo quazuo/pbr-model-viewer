@@ -1,6 +1,9 @@
 #pragma once
 
 #include <functional>
+#include <optional>
+
+#include "src/render/libs.h"
 
 enum class EActivationType {
     PRESS_ANY,
@@ -9,16 +12,19 @@ enum class EActivationType {
 };
 
 using EKey = int;
-using EKeyCallback = std::function<void(float)>;
+using EInputCallback = std::function<void(float)>;
+
+using EMouseButton = int;
+using EMouseDragCallback = std::function<void(double, double)>;
 
 /**
- * Class managing keyboard events, detecting them and calling certain callbacks when they occur.
+ * Class managing keyboard and mouse events, detecting them and calling certain callbacks when they occur.
  * This can safely be instantiated multiple times, handling different events across different instances.
  */
-class KeyManager {
+class InputManager {
     struct GLFWwindow *window = nullptr;
 
-    using KeyCallbackInfo = std::pair<EActivationType, EKeyCallback>;
+    using KeyCallbackInfo = std::pair<EActivationType, EInputCallback>;
     std::unordered_map<EKey, KeyCallbackInfo> callbackMap;
 
     enum class KeyState {
@@ -28,8 +34,12 @@ class KeyManager {
 
     std::unordered_map<EKey, KeyState> keyStateMap;
 
+    std::unordered_map<EMouseButton, EMouseDragCallback> mouseDragCallbackMap;
+    std::unordered_map<EMouseButton, KeyState> mouseButtonStateMap;
+    glm::dvec2 lastMousePos{};
+
 public:
-    explicit KeyManager(GLFWwindow *w) : window(w) {}
+    explicit InputManager(GLFWwindow *w) : window(w) {}
 
     /**
      * Binds a given callback to a keyboard event. Only one callback can be bound at a time,
@@ -39,7 +49,16 @@ public:
      * @param type The way the key should be managed.
      * @param f The callback.
      */
-    void bindCallback(EKey k, EActivationType type, const EKeyCallback& f);
+    void bindCallback(EKey k, EActivationType type, const EInputCallback& f);
+
+    /**
+     * Binds a given callback to a mouse drag event. Only one callback can be bound at a time,
+     * so this will overwrite an earlier bound callback if there was any.
+     *
+     * @param button Mouse button which on drag should fire the callback.
+     * @param f The callback.
+     */
+    void bindMouseDragCallback(EMouseButton button, const EMouseDragCallback& f);
 
     void tick(float deltaTime);
 

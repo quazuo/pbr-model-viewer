@@ -1,14 +1,19 @@
-#include "key-manager.h"
+#include "input-manager.h"
 
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
 
-void KeyManager::bindCallback(const EKey k, const EActivationType type, const EKeyCallback& f) {
+void InputManager::bindCallback(const EKey k, const EActivationType type, const EInputCallback& f) {
     callbackMap.emplace(k, std::make_pair(type, f));
     keyStateMap.emplace(k, KeyState::RELEASED);
 }
 
-void KeyManager::tick(const float deltaTime) {
+void InputManager::bindMouseDragCallback(const EMouseButton button, const EMouseDragCallback &f) {
+    mouseDragCallbackMap.emplace(button, f);
+    mouseButtonStateMap.emplace(button, KeyState::RELEASED);
+}
+
+void InputManager::tick(const float deltaTime) {
     for (const auto &[key, callbackInfo]: callbackMap) {
         const auto &[activationType, callback] = callbackInfo;
 
@@ -16,6 +21,25 @@ void KeyManager::tick(const float deltaTime) {
             callback(deltaTime);
         }
     }
+
+    glm::dvec2 mousePos;
+    glfwGetCursorPos(window, &mousePos.x, &mousePos.y);
+
+    for (const auto &[button, callback]: mouseDragCallbackMap) {
+        if (glfwGetMouseButton(window, button) == GLFW_PRESS) {
+            if (mouseButtonStateMap.at(button) == KeyState::PRESSED) {
+                const glm::dvec2 mousePosDelta = mousePos - lastMousePos;
+                callback(mousePosDelta.x, mousePosDelta.y);
+
+            } else {
+                mouseButtonStateMap[button] = KeyState::PRESSED;
+            }
+        } else {
+            mouseButtonStateMap[button] = KeyState::RELEASED;
+        }
+    }
+
+    lastMousePos = mousePos;
 }
 
 static bool isPressed(GLFWwindow* window, const EKey key) {
@@ -26,7 +50,7 @@ static bool isReleased(GLFWwindow* window, const EKey key) {
     return glfwGetKey(window, key) == GLFW_RELEASE || glfwGetMouseButton(window, key) == GLFW_RELEASE;
 }
 
-bool KeyManager::checkKey(const EKey key, const EActivationType type) {
+bool InputManager::checkKey(const EKey key, const EActivationType type) {
     if (type == EActivationType::PRESS_ANY) {
         return isPressed(window, key);
     }
