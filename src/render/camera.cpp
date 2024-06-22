@@ -137,7 +137,7 @@ void Camera::renderGuiSection() {
 
 void Camera::scrollCallback(GLFWwindow *window, const double dx, const double dy) {
     const auto thisPtr = static_cast<Camera*>(glfwGetWindowUserPointer(window));
-    thisPtr->lockedRadius -= static_cast<float>(dy * 0.05);
+    thisPtr->lockedRadius /= static_cast<float>(1 + dy * 0.05);
 }
 
 void Camera::bindMouseDragCallback() {

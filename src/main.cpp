@@ -79,8 +79,6 @@ private:
             (void) deltaTime;
             isGuiEnabled = !isGuiEnabled;
         });
-
-
     }
 
     // ========================== gui ==========================

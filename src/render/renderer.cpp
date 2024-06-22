@@ -100,6 +100,9 @@ VulkanRenderer::VulkanRenderer() {
 
     camera = make_unique<Camera>(window);
 
+    inputManager = make_unique<InputManager>(window);
+    bindMouseDragActions();
+
     createInstance();
     setupDebugMessenger();
     createSurface();
@@ -152,6 +155,17 @@ void VulkanRenderer::framebufferResizeCallback(GLFWwindow *window, const int wid
     (void) (width + height);
     const auto app = static_cast<VulkanRenderer *>(glfwGetWindowUserPointer(window));
     app->framebufferResized = true;
+}
+
+void VulkanRenderer::bindMouseDragActions() {
+    inputManager->bindMouseDragCallback(GLFW_MOUSE_BUTTON_RIGHT, [&](const double dx, const double dy) {
+        static constexpr float speed = 0.002;
+        const auto viewVectors = camera->getViewVectors();
+        const float cameraDistance = glm::length(camera->getPos());
+
+        modelTranslate += cameraDistance * speed * viewVectors.right * static_cast<float>(dx);
+        modelTranslate -= cameraDistance * speed * viewVectors.up * static_cast<float>(dy);
+    });
 }
 
 // ==================== instance creation ====================
@@ -1363,6 +1377,7 @@ void VulkanRenderer::renderGuiSection() {
 void VulkanRenderer::tick(const float deltaTime) {
     glfwPollEvents();
     camera->tick(deltaTime);
+    inputManager->tick(deltaTime);
 }
 
 void VulkanRenderer::renderGui(const std::function<void()> &renderCommands) {
@@ -1605,6 +1620,13 @@ void VulkanRenderer::drawScene() {
 }
 
 void VulkanRenderer::updateGraphicsUniformBuffer() const {
+    const glm::mat4 model = glm::translate(
+        glm::scale(
+            glm::identity<glm::mat4>(),
+            glm::vec3(modelScale)
+        ),
+        modelTranslate
+    );
     const glm::mat4 view = camera->getViewMatrix();
     const glm::mat4 proj = camera->getProjectionMatrix();
 
@@ -1617,7 +1639,7 @@ void VulkanRenderer::updateGraphicsUniformBuffer() const {
             .windowHeight = static_cast<std::uint32_t>(windowSize.y),
         },
         .matrices = {
-            .model = glm::scale(glm::identity<glm::mat4>(), glm::vec3(modelScale)),
+            .model = model,
             .view = view,
             .proj = proj,
             .inverseVp = glm::inverse(proj * view),

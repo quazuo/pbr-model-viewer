@@ -64,6 +64,9 @@ public:
     [[nodiscard]]
     glm::mat4 getProjectionMatrix() const;
 
+    [[nodiscard]]
+    Rotator::ViewVectors getViewVectors() const { return rotator.getViewVectors(); }
+
     void renderGuiSection();
 
 private:

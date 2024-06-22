@@ -10,6 +10,7 @@
 
 #include "libs.h"
 
+class InputManager;
 class Model;
 class Camera;
 class Buffer;
@@ -125,6 +126,8 @@ class VulkanRenderer {
 
     unique_ptr<Camera> camera;
 
+    unique_ptr<InputManager> inputManager;
+
     vk::raii::Context vkCtx;
     unique_ptr<vk::raii::Instance> instance;
     unique_ptr<vk::raii::DebugUtilsMessengerEXT> debugMessenger;
@@ -212,6 +215,7 @@ class VulkanRenderer {
     glm::vec3 backgroundColor = glm::vec3(26, 26, 26) / 255.0f;
 
     float modelScale = 1.0f;
+    glm::vec3 modelTranslate{};
 
 public:
     explicit VulkanRenderer();
@@ -254,6 +258,8 @@ public:
 
 private:
     static void framebufferResizeCallback(GLFWwindow *window, int width, int height);
+
+    void bindMouseDragActions();
 
     // ==================== instance creation ====================
 
