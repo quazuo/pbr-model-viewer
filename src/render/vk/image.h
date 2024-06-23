@@ -68,15 +68,26 @@ public:
 };
 
 class CubeImage final : public Image {
+    std::vector<std::unique_ptr<vk::raii::ImageView> > layerViews;
+
 public:
     explicit CubeImage(const RendererContext &ctx, const vk::ImageCreateInfo &imageInfo,
                        vk::MemoryPropertyFlags properties);
 
+    /**
+     * Returns a raw handle to the actual Vulkan image view associated with a specific layer of this image.
+     * @return Handle to the layer's image view.
+     *
+     * @param layerIndex Layer index to which the view should refer.
+     */
+    [[nodiscard]]
+    const vk::raii::ImageView &getLayerView(const std::uint32_t layerIndex) const { return *layerViews[layerIndex]; }
+
     void createView(const RendererContext &ctx, vk::Format format, vk::ImageAspectFlags aspectFlags,
                     std::uint32_t mipLevels) override;
 
-    virtual void copyFromBuffer(const RendererContext &ctx, vk::Buffer buffer, const vk::raii::CommandPool &cmdPool,
-                                const vk::raii::Queue &queue);
+    void copyFromBuffer(const RendererContext &ctx, vk::Buffer buffer, const vk::raii::CommandPool &cmdPool,
+                        const vk::raii::Queue &queue) override;
 };
 
 class Texture {
@@ -91,10 +102,22 @@ class Texture {
 
 public:
     [[nodiscard]]
+    const vk::raii::Image &getImage() const { return image->get(); }
+
+    [[nodiscard]]
     const vk::raii::Sampler &getSampler() const { return *textureSampler; }
 
     [[nodiscard]]
     const vk::raii::ImageView &getView() const { return image->getView(); }
+
+    /**
+     * Returns a raw handle to the actual Vulkan image view associated with a specific layer of this image.
+     * @return Handle to the layer's image view.
+     *
+     * @param layerIndex Layer index to which the view should refer.
+     */
+    [[nodiscard]]
+    const vk::raii::ImageView &getLayerView(std::uint32_t layerIndex) const;
 
 private:
     void generateMipmaps(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
@@ -111,6 +134,7 @@ class TextureBuilder {
                                 | vk::ImageUsageFlagBits::eSampled;
     bool isCubemap = false;
     bool isSeparateChannels = false;
+    bool isHdr = false;
     bool hasMipmaps = false;
 
     std::vector<std::filesystem::path> paths;
@@ -132,12 +156,15 @@ public:
 
     TextureBuilder &asSeparateChannels();
 
+    TextureBuilder &asHdr();
+
     TextureBuilder &makeMipmaps();
 
     TextureBuilder &fromPaths(const std::vector<std::filesystem::path> &sources);
 
-    [[nodiscard]] Texture create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
-                                 const vk::raii::Queue &queue) const;
+    [[nodiscard]]
+    std::unique_ptr<Texture> create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
+                                    const vk::raii::Queue &queue) const;
 
 private:
     void checkParams() const;
@@ -150,7 +177,7 @@ namespace utils::img {
     [[nodiscard]]
     std::unique_ptr<vk::raii::ImageView> createImageView(const RendererContext &ctx, vk::Image image,
                                                          vk::Format format, vk::ImageAspectFlags aspectFlags,
-                                                         std::uint32_t mipLevels);
+                                                         std::uint32_t mipLevels, std::uint32_t layer);
 
     [[nodiscard]]
     std::unique_ptr<vk::raii::ImageView> createCubeImageView(const RendererContext &ctx, vk::Image image,

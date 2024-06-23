@@ -10,10 +10,12 @@
 
 #include "libs.h"
 
+class Image;
 class InputManager;
 class Model;
 class Camera;
 class Buffer;
+class CubeTexture;
 class Texture;
 class SwapChain;
 class GuiRenderer;
@@ -49,17 +51,6 @@ struct QueueFamilyIndices {
 };
 
 /**
- * Enumeration used to control the way the automaton's cells are colored.
- * These *have to* match the values #defined in the fragment shader.
- */
-enum class ColoringPreset : std::uint32_t {
-    COORD_RGB = 0,
-    STATE_GRADIENT = 1,
-    DISTANCE_GRADIENT = 2,
-    SOLID_COLOR = 3,
-};
-
-/**
  * Information held in the fragment shader's uniform buffer.
  * This (obviously) has to exactly match the corresponding definition in the fragment shader.
  */
@@ -85,6 +76,11 @@ struct GraphicsUBO {
     alignas(16) WindowRes window{};
     alignas(16) Matrices matrices{};
     alignas(16) MiscData misc{};
+};
+
+struct CubemapCapturePushConstants {
+    glm::mat4 view;
+    glm::mat4 proj;
 };
 
 /**
@@ -147,24 +143,27 @@ class VulkanRenderer {
     unique_ptr<Texture> ormTexture;
 
     unique_ptr<Texture> skyboxTexture;
+    unique_ptr<Texture> envmapTexture;
 
     unique_ptr<vk::raii::DescriptorPool> descriptorPool;
 
     unique_ptr<vk::raii::RenderPass> renderPass;
 
-    unique_ptr<vk::raii::DescriptorSetLayout> sceneGraphicsSetLayout;
-    unique_ptr<vk::raii::DescriptorSetLayout> skyboxGraphicsSetLayout;
-    unique_ptr<vk::raii::PipelineLayout> scenePipelineLayout;
-    unique_ptr<vk::raii::PipelineLayout> skyboxPipelineLayout;
-    unique_ptr<vk::raii::Pipeline> scenePipeline;
-    unique_ptr<vk::raii::Pipeline> skyboxPipeline;
+    struct GraphicsPipeline {
+        unique_ptr<vk::raii::DescriptorSetLayout> descriptorSetLayout;
+        unique_ptr<vk::raii::PipelineLayout> pipelineLayout;
+        std::vector<unique_ptr<vk::raii::Pipeline>> pipelines;
+    };
+
+    GraphicsPipeline scenePipeline;
+    GraphicsPipeline skyboxPipeline;
+    GraphicsPipeline cubemapCapturePipeline;
 
     unique_ptr<vk::raii::CommandPool> commandPool;
 
     unique_ptr<Buffer> vertexBuffer;
     unique_ptr<Buffer> indexBuffer;
     unique_ptr<Buffer> instanceDataBuffer;
-
     unique_ptr<Buffer> skyboxVertexBuffer;
 
     struct FrameResources {
@@ -179,17 +178,13 @@ class VulkanRenderer {
             Timeline renderFinishedTimeline;
         } sync;
 
-        // primary command buffers
+        // primary command buffer
         unique_ptr<vk::raii::CommandBuffer> graphicsCmdBuffer;
 
-        // secondary command buffers
         struct SecondaryCommandBuffer {
             unique_ptr<vk::raii::CommandBuffer> buffer;
             bool wasRecordedThisFrame = false;
-        };
-
-        SecondaryCommandBuffer sceneCmdBuffer;
-        SecondaryCommandBuffer guiCmdBuffer;
+        } sceneCmdBuffer, guiCmdBuffer;
 
         unique_ptr<Buffer> graphicsUniformBuffer;
         void *graphicsUboMapped{};
@@ -200,6 +195,14 @@ class VulkanRenderer {
 
     static constexpr size_t MAX_FRAMES_IN_FLIGHT = 3;
     std::array<FrameResources, MAX_FRAMES_IN_FLIGHT> frameResources;
+
+    struct CubemapCaptureResources {
+        vk::Extent2D extent = { 2048u, 2048u };
+        unique_ptr<vk::raii::CommandBuffer> commandBuffer;
+        unique_ptr<vk::raii::RenderPass> renderPass;
+        unique_ptr<vk::raii::Framebuffer> framebuffer;
+        unique_ptr<vk::raii::DescriptorSet> descriptorSet;
+    } cubemapCaptureResources;
 
     vk::SampleCountFlagBits msaaSampleCount = vk::SampleCountFlagBits::e1;
 
@@ -304,7 +307,7 @@ private:
 
     // ==================== assets ====================
 
-    void createSkyboxTexture();
+    void createSkyboxTextures();
 
     // ==================== swap chain ====================
 
@@ -318,21 +321,29 @@ private:
 
     void createSkyboxDescriptorSetLayouts();
 
+    void createCubemapCaptureDescriptorSetLayouts();
+
     void createDescriptorPool();
 
     void createSceneDescriptorSets();
 
     void createSkyboxDescriptorSets();
 
+    void createCubemapCaptureDescriptorSets();
+
     // ==================== graphics pipeline ====================
 
     void createRenderPass();
+
+    void createCubemapCaptureRenderPass();
 
     void createPipelines();
 
     void createScenePipeline();
 
     void createSkyboxPipeline();
+
+    void createCubemapCapturePipeline();
 
     [[nodiscard]]
     vk::raii::ShaderModule createShaderModule(const std::filesystem::path &path) const;
@@ -357,13 +368,17 @@ private:
 
     void createUniformBuffers();
 
+    // ==================== framebuffers ====================
+
+    void createCubemapCaptureFramebuffer();
+
     // ==================== commands ====================
 
     void createCommandPool();
 
     void createCommandBuffers();
 
-    void recordGraphicsCommandBuffer();
+    void recordGraphicsCommandBuffer() const;
 
     // ==================== sync ====================
 
@@ -385,6 +400,8 @@ public:
     void renderGui(const std::function<void()> &renderCommands);
 
     void drawScene();
+
+    void captureCubemap();
 
 private:
     void updateGraphicsUniformBuffer() const;

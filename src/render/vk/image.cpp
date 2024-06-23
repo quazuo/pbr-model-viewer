@@ -49,7 +49,7 @@ const vk::raii::ImageView &Image::getView() const {
 
 void Image::createView(const RendererContext &ctx, const vk::Format format, const vk::ImageAspectFlags aspectFlags,
                        const std::uint32_t mipLevels) {
-    view = utils::img::createImageView(ctx, **image, format, aspectFlags, mipLevels);
+    view = utils::img::createImageView(ctx, **image, format, aspectFlags, mipLevels, 0);
 }
 
 void Image::copyFromBuffer(const RendererContext &ctx, const vk::Buffer buffer, const vk::raii::CommandPool &cmdPool,
@@ -87,6 +87,11 @@ CubeImage::CubeImage(const RendererContext &ctx, const vk::ImageCreateInfo &imag
 void CubeImage::createView(const RendererContext &ctx, const vk::Format format, const vk::ImageAspectFlags aspectFlags,
                            const std::uint32_t mipLevels) {
     view = utils::img::createCubeImageView(ctx, **image, format, aspectFlags, mipLevels);
+
+    for (std::uint32_t i = 0; i < 6; i++) {
+        auto layerView = utils::img::createImageView(ctx, **image, format, aspectFlags, mipLevels, i);
+        layerViews.emplace_back(std::move(layerView));
+    }
 }
 
 void CubeImage::copyFromBuffer(const RendererContext &ctx, const vk::Buffer buffer,
@@ -116,6 +121,16 @@ void CubeImage::copyFromBuffer(const RendererContext &ctx, const vk::Buffer buff
 }
 
 // ==================== Texture ====================
+
+const vk::raii::ImageView &Texture::getLayerView(const std::uint32_t layerIndex) const {
+    const CubeImage *cubeImage = dynamic_cast<CubeImage *>(&*image);
+
+    if (!cubeImage) {
+        throw std::runtime_error("layer-specific views are only supported in cubemap images");
+    }
+
+    return cubeImage->getLayerView(layerIndex);
+}
 
 void Texture::generateMipmaps(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
                               const vk::raii::Queue &queue, const vk::ImageLayout finalLayout) const {
@@ -294,6 +309,11 @@ TextureBuilder &TextureBuilder::asSeparateChannels() {
     return *this;
 }
 
+TextureBuilder &TextureBuilder::asHdr() {
+    isHdr = true;
+    return *this;
+}
+
 TextureBuilder &TextureBuilder::makeMipmaps() {
     hasMipmaps = true;
     return *this;
@@ -304,25 +324,29 @@ TextureBuilder &TextureBuilder::fromPaths(const std::vector<std::filesystem::pat
     return *this;
 }
 
-Texture TextureBuilder::create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
-                               const vk::raii::Queue &queue) const {
+std::unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
+                                                const vk::raii::Queue &queue) const {
     checkParams();
 
-    Texture texture;
-    texture.format = format;
+    std::unique_ptr<Texture> texture; {
+        Texture t;
+        texture = std::make_unique<Texture>(std::move(t));
+    }
+
+    texture->format = format;
 
     const auto [stagingBuffer, extent, layerCount] = loadFromPaths(ctx);
 
-    texture.mipLevels = hasMipmaps
-                            ? static_cast<uint32_t>(std::floor(std::log2(std::max(extent.width, extent.height)))) + 1
-                            : 1;
+    texture->mipLevels = hasMipmaps
+                             ? static_cast<uint32_t>(std::floor(std::log2(std::max(extent.width, extent.height)))) + 1
+                             : 1;
 
     const vk::ImageCreateInfo imageInfo{
         .flags = isCubemap ? vk::ImageCreateFlagBits::eCubeCompatible : static_cast<vk::ImageCreateFlags>(0),
         .imageType = vk::ImageType::e2D,
         .format = format,
         .extent = extent,
-        .mipLevels = texture.mipLevels,
+        .mipLevels = texture->mipLevels,
         .arrayLayers = layerCount,
         .samples = vk::SampleCountFlagBits::e1,
         .tiling = vk::ImageTiling::eOptimal,
@@ -332,13 +356,13 @@ Texture TextureBuilder::create(const RendererContext &ctx, const vk::raii::Comma
     };
 
     if (isCubemap) {
-        texture.image = std::make_unique<CubeImage>(
+        texture->image = std::make_unique<CubeImage>(
             ctx,
             imageInfo,
             vk::MemoryPropertyFlagBits::eDeviceLocal
         );
     } else {
-        texture.image = std::make_unique<Image>(
+        texture->image = std::make_unique<Image>(
             ctx,
             imageInfo,
             vk::MemoryPropertyFlagBits::eDeviceLocal
@@ -347,35 +371,35 @@ Texture TextureBuilder::create(const RendererContext &ctx, const vk::raii::Comma
 
     utils::img::transitionImageLayout(
         ctx,
-        *texture.image->get(),
+        *texture->image->get(),
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eTransferDstOptimal,
-        texture.mipLevels,
+        texture->mipLevels,
         layerCount,
         cmdPool,
         queue
     );
 
-    texture.image->copyFromBuffer(ctx, stagingBuffer->get(), cmdPool, queue);
+    texture->image->copyFromBuffer(ctx, stagingBuffer->get(), cmdPool, queue);
 
-    texture.image->createView(
+    texture->image->createView(
         ctx,
         format,
         vk::ImageAspectFlagBits::eColor,
-        texture.mipLevels
+        texture->mipLevels
     );
 
-    texture.createSampler(ctx);
+    texture->createSampler(ctx);
 
     if (hasMipmaps) {
-        texture.generateMipmaps(ctx, cmdPool, queue, layout);
+        texture->generateMipmaps(ctx, cmdPool, queue, layout);
     } else {
         utils::img::transitionImageLayout(
             ctx,
-            *texture.image->get(),
+            *texture->image->get(),
             vk::ImageLayout::eTransferDstOptimal,
             layout,
-            texture.mipLevels,
+            texture->mipLevels,
             layerCount,
             cmdPool,
             queue
@@ -415,17 +439,29 @@ TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererCo
     int texWidth, texHeight, texChannels;
 
     for (const auto &path: paths) {
-        const int desiredChannels = isSeparateChannels ? STBI_grey : STBI_rgb_alpha;
-        void *src = stbi_load(path.string().c_str(), &texWidth, &texHeight, &texChannels, desiredChannels);
-        if (!src) {
-            throw std::runtime_error("failed to load texture image!");
-        }
+        if (isHdr) {
+            stbi_set_flip_vertically_on_load(true);
+            void *src = stbi_loadf(path.string().c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+            if (!src) {
+                throw std::runtime_error("failed to load HDR texture image!");
+            }
 
-        dataSources.push_back(src);
+            dataSources.push_back(src);
+        } else {
+            const int desiredChannels = isSeparateChannels ? STBI_grey : STBI_rgb_alpha;
+
+            stbi_set_flip_vertically_on_load(false);
+            void *src = stbi_load(path.string().c_str(), &texWidth, &texHeight, &texChannels, desiredChannels);
+            if (!src) {
+                throw std::runtime_error("failed to load texture image!");
+            }
+
+            dataSources.push_back(src);
+        }
     }
 
     if (isSeparateChannels) {
-
+        // todo - merge channels
     }
 
     const std::uint32_t layerCount = isSeparateChannels ? paths.size() / 3 : paths.size();
@@ -464,7 +500,8 @@ TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererCo
 
 std::unique_ptr<vk::raii::ImageView>
 utils::img::createImageView(const RendererContext &ctx, const vk::Image image, const vk::Format format,
-                            const vk::ImageAspectFlags aspectFlags, const std::uint32_t mipLevels) {
+                            const vk::ImageAspectFlags aspectFlags, const std::uint32_t mipLevels,
+                            const std::uint32_t layer) {
     const vk::ImageViewCreateInfo createInfo{
         .image = image,
         .viewType = vk::ImageViewType::e2D,
@@ -473,7 +510,7 @@ utils::img::createImageView(const RendererContext &ctx, const vk::Image image, c
             .aspectMask = aspectFlags,
             .baseMipLevel = 0,
             .levelCount = mipLevels,
-            .baseArrayLayer = 0,
+            .baseArrayLayer = layer,
             .layerCount = 1,
         }
     };
@@ -518,11 +555,12 @@ void utils::img::transitionImageLayout(const RendererContext &ctx, const vk::Ima
         dstAccessMask = vk::AccessFlagBits::eShaderRead;
         sourceStage = vk::PipelineStageFlagBits::eTransfer;
         destinationStage = vk::PipelineStageFlagBits::eFragmentShader;
-    } else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eGeneral) {
-        srcAccessMask = vk::AccessFlagBits::eShaderWrite;
+    } else if (oldLayout == vk::ImageLayout::eColorAttachmentOptimal
+               && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
+        srcAccessMask = vk::AccessFlagBits::eTransferWrite;
         dstAccessMask = vk::AccessFlagBits::eShaderRead;
-        sourceStage = vk::PipelineStageFlagBits::eComputeShader,
-                destinationStage = vk::PipelineStageFlagBits::eFragmentShader;
+        sourceStage = vk::PipelineStageFlagBits::eTransfer;
+        destinationStage = vk::PipelineStageFlagBits::eFragmentShader;
     } else {
         throw std::invalid_argument("unsupported layout transition!");
     }
@@ -561,6 +599,14 @@ size_t utils::img::getFormatSizeInBytes(const vk::Format format) {
         case vk::Format::eR8G8B8A8Srgb:
         case vk::Format::eR8G8B8A8Unorm:
             return 4;
+        case vk::Format::eR16G16B16Sfloat:
+            return 6;
+        case vk::Format::eR16G16B16A16Sfloat:
+            return 8;
+        case vk::Format::eR32G32B32Sfloat:
+            return 12;
+        case vk::Format::eR32G32B32A32Sfloat:
+            return 16;
         default:
             throw std::runtime_error("unexpected format in utils::img::getFormatSizeInBytes");
     }

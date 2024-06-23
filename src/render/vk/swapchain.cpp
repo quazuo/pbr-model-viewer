@@ -132,7 +132,8 @@ void SwapChain::createImageViews(const RendererContext &ctx) {
             image,
             imageFormat,
             vk::ImageAspectFlagBits::eColor,
-            1
+            1,
+            0
         );
 
         imageViews.push_back(std::move(imageView));
