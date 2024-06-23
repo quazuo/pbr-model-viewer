@@ -149,6 +149,8 @@ VulkanRenderer::VulkanRenderer() {
 
     createSyncObjects();
 
+    captureCubemap();
+
     initImgui();
 }
 
@@ -1657,12 +1659,6 @@ void VulkanRenderer::renderGuiSection() {
 
     if (ImGui::CollapsingHeader("Renderer ", sectionFlags)) {
         ImGui::DragFloat("Model scale", &modelScale, 0.01, 0, std::numeric_limits<float>::max());
-
-        ImGui::Separator();
-
-        if (ImGui::Button("Capture cubemap")) {
-            captureCubemap();
-        }
     }
 
     camera->renderGuiSection();
