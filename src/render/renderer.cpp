@@ -967,19 +967,25 @@ void VulkanRenderer::createCubemapCaptureRenderPass() {
 
     const std::vector attachments{6, colorAttachment};
 
+    std::vector<vk::AttachmentReference> attachmentRefs;
+
+    for (std::uint32_t i = 0; i < 6; i++) {
+        const vk::AttachmentReference colorAttachmentRef{
+            .attachment = i,
+            .layout = vk::ImageLayout::eColorAttachmentOptimal,
+        };
+
+        attachmentRefs.push_back(colorAttachmentRef);
+    }
+
     std::vector<vk::SubpassDescription> subpasses;
     std::vector<vk::SubpassDependency> dependencies;
 
     for (std::uint32_t i = 0; i < 6; i++) {
-        const vk::AttachmentReference colorAttachmentRef{
-            .attachment = static_cast<std::uint32_t>(i),
-            .layout = vk::ImageLayout::eColorAttachmentOptimal,
-        };
-
         const vk::SubpassDescription subpass{
             .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
             .colorAttachmentCount = 1,
-            .pColorAttachments = &colorAttachmentRef,
+            .pColorAttachments = &attachmentRefs[i],
         };
 
         subpasses.push_back(subpass);
@@ -1468,7 +1474,7 @@ void VulkanRenderer::createUniformBuffers() {
 void VulkanRenderer::createCubemapCaptureFramebuffer() {
     std::vector<vk::ImageView> attachments;
 
-    for (size_t i = 0; i < 6; i++) {
+    for (std::uint32_t i = 0; i < 6; i++) {
         attachments.push_back(*skyboxTexture->getLayerView(i));
     }
 
@@ -1939,7 +1945,7 @@ void VulkanRenderer::captureCubemap() {
         .framebuffer = **cubemapCaptureResources.framebuffer,
         .renderArea = {
             .offset = {0, 0},
-            .extent = cubemapCaptureResources.extent,
+            .extent = extent,
         },
         .clearValueCount = static_cast<std::uint32_t>(clearValues.size()),
         .pClearValues = clearValues.data()
@@ -1967,12 +1973,12 @@ void VulkanRenderer::captureCubemap() {
 
     const glm::mat4 captureProjection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
     const std::array captureViews{
-        glm::lookAt(glm::vec3(0), glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
-        glm::lookAt(glm::vec3(0), glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
-        glm::lookAt(glm::vec3(0), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
-        glm::lookAt(glm::vec3(0), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f)),
-        glm::lookAt(glm::vec3(0), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
-        glm::lookAt(glm::vec3(0), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, -1.0f, 0.0f))
+        glm::lookAt(glm::vec3(0), glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
+        glm::lookAt(glm::vec3(0), glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
+        glm::lookAt(glm::vec3(0), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f)),
+        glm::lookAt(glm::vec3(0), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+        glm::lookAt(glm::vec3(0), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
+        glm::lookAt(glm::vec3(0), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f))
     };
 
     for (size_t i = 0; i < 6; i++) {
