@@ -1,7 +1,5 @@
 #include "gui.h"
 
-#include <iostream>
-
 GuiRenderer::GuiRenderer(GLFWwindow *w, ImGui_ImplVulkan_InitInfo &imguiInitInfo,
                          const vk::raii::RenderPass &renderPass) : window(w) {
     IMGUI_CHECKVERSION();

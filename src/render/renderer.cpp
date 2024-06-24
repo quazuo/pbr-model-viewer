@@ -22,6 +22,7 @@
 #include "vk/swapchain.h"
 #include "camera.h"
 #include "vk/cmd.h"
+#include "src/utils/glfw-statics.h"
 
 VmaAllocatorWrapper::VmaAllocatorWrapper(const vk::PhysicalDevice physicalDevice, const vk::Device device,
                                          const vk::Instance instance) {
@@ -96,7 +97,12 @@ VulkanRenderer::VulkanRenderer() {
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     window = glfwCreateWindow(INIT_WINDOW_WIDTH, INIT_WINDOW_HEIGHT, "PBR Model Viewer", nullptr, nullptr);
-    glfwSetWindowUserPointer(window, this);
+
+    initGlfwUserPointer(window);
+    auto* userData = static_cast<GlfwStaticUserData*>(glfwGetWindowUserPointer(window));
+    if (!userData) throw std::runtime_error("unexpected null window user pointer");
+    userData->renderer = this;
+
     glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
 
     camera = make_unique<Camera>(window);
@@ -166,8 +172,9 @@ VulkanRenderer::~VulkanRenderer() {
 
 void VulkanRenderer::framebufferResizeCallback(GLFWwindow *window, const int width, const int height) {
     (void) (width + height);
-    const auto app = static_cast<VulkanRenderer *>(glfwGetWindowUserPointer(window));
-    app->framebufferResized = true;
+    const auto userData = static_cast<GlfwStaticUserData *>(glfwGetWindowUserPointer(window));
+    if (!userData) throw std::runtime_error("unexpected null window user pointer");
+    userData->renderer->framebufferResized = true;
 }
 
 void VulkanRenderer::bindMouseDragActions() {
@@ -1879,7 +1886,7 @@ void VulkanRenderer::recordGraphicsCommandBuffer() const {
     constexpr vk::CommandBufferBeginInfo beginInfo;
     commandBuffer.begin(beginInfo);
 
-    commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInlineAndSecondaryCommandBuffersEXT);
+    commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eSecondaryCommandBuffers);
 
     if (frameResources[currentFrameIdx].sceneCmdBuffer.wasRecordedThisFrame) {
         commandBuffer.executeCommands(**frameResources[currentFrameIdx].sceneCmdBuffer.buffer);

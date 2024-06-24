@@ -1,10 +1,10 @@
 #include "camera.h"
 
 #define GLFW_INCLUDE_VULKAN
-#include <iostream>
 #include <GLFW/glfw3.h>
 
 #include "gui/gui.h"
+#include "src/utils/glfw-statics.h"
 
 Rotator & Rotator::operator=(const glm::vec2 other) {
     rot = other;
@@ -51,7 +51,12 @@ Rotator::ViewVectors Rotator::getViewVectors() const {
 
 Camera::Camera(GLFWwindow *w) : window(w), inputManager(std::make_unique<InputManager>(w)) {
     bindMouseDragCallback();
-    glfwSetWindowUserPointer(window, this);
+
+    initGlfwUserPointer(window);
+    auto* userData = static_cast<GlfwStaticUserData*>(glfwGetWindowUserPointer(window));
+    if (!userData) throw std::runtime_error("unexpected null window user pointer");
+    userData->camera = this;
+
     glfwSetScrollCallback(window, &scrollCallback);
 }
 
@@ -136,8 +141,9 @@ void Camera::renderGuiSection() {
 }
 
 void Camera::scrollCallback(GLFWwindow *window, const double dx, const double dy) {
-    const auto thisPtr = static_cast<Camera*>(glfwGetWindowUserPointer(window));
-    thisPtr->lockedRadius /= static_cast<float>(1 + dy * 0.05);
+    const auto userData = static_cast<GlfwStaticUserData *>(glfwGetWindowUserPointer(window));
+    if (!userData) throw std::runtime_error("unexpected null window user pointer");
+    userData->camera->lockedRadius /= static_cast<float>(1 + dy * 0.05);
 }
 
 void Camera::bindMouseDragCallback() {
@@ -245,7 +251,7 @@ void Camera::tickLockedMode() {
 
     rotator = {
         rot.x - glm::pi<float>(),
-        rot.y + 0.01f // this tiny term tries to alleviate the "tiny horizontal hole" issue with rendering
+        rot.y
     };
 }
 
@@ -260,7 +266,12 @@ void Camera::updateVecs() {
 void Camera::updateAspectRatio() {
     glm::vec<2, int> windowSize{};
     glfwGetWindowSize(window, &windowSize.x, &windowSize.y);
-    aspectRatio = static_cast<float>(windowSize.x) / static_cast<float>(windowSize.y);
+
+    if (windowSize.y == 0) {
+        aspectRatio = 1;
+    } else {
+        aspectRatio = static_cast<float>(windowSize.x) / static_cast<float>(windowSize.y);
+    }
 }
 
 void Camera::centerCursor() const {

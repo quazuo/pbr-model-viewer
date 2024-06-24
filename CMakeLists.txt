@@ -3,6 +3,9 @@ project(pbr)
 
 set(CMAKE_CXX_STANDARD 20)
 
+add_compile_options(-fsanitize=address)
+add_link_options(-fsanitize=address)
+
 find_package(Vulkan REQUIRED)
 
 include_directories(
@@ -58,7 +61,6 @@ add_subdirectory(deps/assimp)
 
 file(GLOB HEADER_ONLY_DEPS_SRCS
         "deps/stb/*"
-        "deps/tinyobjloader/*"
         "deps/vma/*"
 )
 
