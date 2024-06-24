@@ -19,6 +19,7 @@ layout (binding = 0) uniform UniformBufferObject {
 layout (binding = 1) uniform sampler2D albedoSampler;
 layout (binding = 2) uniform sampler2D normalSampler;
 layout (binding = 3) uniform sampler2D ormSampler;
+layout (binding = 4) uniform samplerCube irradianceMapSampler;
 
 float distribution_ggx(vec3 normal, vec3 halfway, float roughness) {
     float roughness_sq = roughness * roughness;
@@ -54,6 +55,10 @@ vec3 fresnel_schlick(float cos_theta, vec3 f0) {
     return f0 + (1.0 - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
+vec3 fresnel_schlick_roughness(float cos_theta, vec3 f0, float roughness) {
+    return f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+}
+
 void main() {
     vec3 albedo = vec3(texture(albedoSampler, fragTexCoord));
 
@@ -86,12 +91,23 @@ void main() {
     vec3 specular = num / denom;
 
     // k-terms specifying reflection vs refraction contributions
-    vec3 k_specular = fresnel;
+    vec3 k_specular = ubo.misc.use_ibl == 1u
+        ? fresnel_schlick_roughness(max(dot(halfway, view), 0.0), f0, roughness)
+        : fresnel;
     vec3 k_diffuse = (vec3(1.0) - k_specular) * (1.0 - metallic);
 
     float n_dot_l = max(dot(normal, light_dir), 0.0);
     vec3 out_radiance = (k_diffuse * albedo / PI + specular) * radiance * n_dot_l;
-    vec3 ambient = vec3(0.03) * albedo * ao;
+
+    vec3 ambient;
+    if (ubo.misc.use_ibl == 1u) {
+        vec3 irradiance = texture(irradianceMapSampler, normal).rgb;
+        vec3 diffuse = irradiance * albedo;
+        ambient = k_diffuse * diffuse * ao;
+    } else {
+        ambient = vec3(0.03) * albedo * ao;
+    }
+
     vec3 color = ambient + out_radiance;
 
     // apply hdr tonemapping

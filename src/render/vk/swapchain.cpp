@@ -1,6 +1,7 @@
 #include "swapchain.h"
 
 #define GLFW_INCLUDE_VULKAN
+#include <iostream>
 #include <GLFW/glfw3.h>
 
 #include "src/render/renderer.h"
@@ -67,10 +68,14 @@ std::uint32_t SwapChain::getImageCount(const RendererContext &ctx, const vk::rai
 }
 
 std::pair<vk::Result, std::uint32_t> SwapChain::acquireNextImage(const vk::raii::Semaphore &semaphore) {
-    const auto &[result, imageIndex] = swapChain->acquireNextImage(UINT64_MAX, *semaphore);
-    currentImageIndex = imageIndex;
+    try {
+        const auto &[result, imageIndex] = swapChain->acquireNextImage(UINT64_MAX, *semaphore);
+        currentImageIndex = imageIndex;
+        return {result, imageIndex};
 
-    return {result, imageIndex};
+    } catch (...) {
+        return {vk::Result::eErrorOutOfDateKHR, 0};
+    }
 }
 
 vk::Extent2D SwapChain::chooseExtent(const vk::SurfaceCapabilitiesKHR &capabilities, GLFWwindow *window) {

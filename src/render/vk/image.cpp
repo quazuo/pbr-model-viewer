@@ -324,6 +324,12 @@ TextureBuilder &TextureBuilder::fromPaths(const std::vector<std::filesystem::pat
     return *this;
 }
 
+TextureBuilder &TextureBuilder::asUninitialized(vk::Extent3D extent) {
+    isUninitialized = true;
+    desiredExtent = extent;
+    return *this;
+}
+
 std::unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
                                                 const vk::raii::Queue &queue) const {
     checkParams();
@@ -335,7 +341,9 @@ std::unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx, cons
 
     texture->format = format;
 
-    const auto [stagingBuffer, extent, layerCount] = loadFromPaths(ctx);
+    const auto [stagingBuffer, extent, layerCount] = isUninitialized
+        ? LoadedTextureData { nullptr, *desiredExtent, getLayerCount() }
+        : loadFromPaths(ctx);
 
     texture->mipLevels = hasMipmaps
                              ? static_cast<uint32_t>(std::floor(std::log2(std::max(extent.width, extent.height)))) + 1
@@ -380,7 +388,9 @@ std::unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx, cons
         queue
     );
 
-    texture->image->copyFromBuffer(ctx, stagingBuffer->get(), cmdPool, queue);
+    if (!isUninitialized) {
+        texture->image->copyFromBuffer(ctx, stagingBuffer->get(), cmdPool, queue);
+    }
 
     texture->image->createView(
         ctx,
@@ -410,8 +420,16 @@ std::unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx, cons
 }
 
 void TextureBuilder::checkParams() const {
-    if (paths.empty()) {
+    if (paths.empty() && !isUninitialized) {
         throw std::runtime_error("no specified data source for texture!");
+    }
+
+    if (!paths.empty() && isUninitialized) {
+        throw std::runtime_error("cannot simultaneously specify texture as uninitialized and specify path sources!");
+    }
+
+    if (isUninitialized && isSeparateChannels) {
+        throw std::runtime_error("cannot specify texture as uninitialized and derived from separate channels!");
     }
 
     if (isCubemap) {
@@ -419,7 +437,7 @@ void TextureBuilder::checkParams() const {
             throw std::runtime_error("cubemaps from separated channels are currently not supported!");
         }
 
-        if (paths.size() != 6) {
+        if (paths.size() != 6 && !isUninitialized) {
             throw std::runtime_error("invalid layer count for cubemap texture!");
         }
     } else {
@@ -428,10 +446,15 @@ void TextureBuilder::checkParams() const {
             if (paths.size() != 3) {
                 throw std::runtime_error("unsupported channel count for separate-channelled non-cubemap texture!");
             }
-        } else if (paths.size() != 1) {
+        } else if (paths.size() != 1 && !isUninitialized) {
             throw std::runtime_error("invalid layer count for non-cubemap texture!");
         }
     }
+}
+
+std::uint32_t TextureBuilder::getLayerCount() const {
+    const std::uint32_t sourcesCount = isUninitialized ? (isCubemap ? 6 : 1) : paths.size();
+    return isSeparateChannels ? sourcesCount / 3 : sourcesCount;
 }
 
 TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererContext &ctx) const {
@@ -464,7 +487,7 @@ TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererCo
         // todo - merge channels
     }
 
-    const std::uint32_t layerCount = isSeparateChannels ? paths.size() / 3 : paths.size();
+    const std::uint32_t layerCount = getLayerCount();
     const vk::DeviceSize layerSize = texWidth * texHeight * utils::img::getFormatSizeInBytes(format);
     const vk::DeviceSize textureSize = layerSize * layerCount;
 

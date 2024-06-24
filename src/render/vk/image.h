@@ -102,10 +102,13 @@ class Texture {
 
 public:
     [[nodiscard]]
-    const vk::raii::Image &getImage() const { return image->get(); }
+    const Image &getImage() const { return *image; }
 
     [[nodiscard]]
     const vk::raii::Sampler &getSampler() const { return *textureSampler; }
+
+    [[nodiscard]]
+    vk::Format getFormat() const { return format; }
 
     [[nodiscard]]
     const vk::raii::ImageView &getView() const { return image->getView(); }
@@ -136,6 +139,9 @@ class TextureBuilder {
     bool isSeparateChannels = false;
     bool isHdr = false;
     bool hasMipmaps = false;
+    bool isUninitialized = false;
+
+    std::optional<vk::Extent3D> desiredExtent;
 
     std::vector<std::filesystem::path> paths;
 
@@ -162,12 +168,17 @@ public:
 
     TextureBuilder &fromPaths(const std::vector<std::filesystem::path> &sources);
 
+    TextureBuilder &asUninitialized(vk::Extent3D extent);
+
     [[nodiscard]]
     std::unique_ptr<Texture> create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
                                     const vk::raii::Queue &queue) const;
 
 private:
     void checkParams() const;
+
+    [[nodiscard]]
+    std::uint32_t getLayerCount() const;
 
     [[nodiscard]]
     LoadedTextureData loadFromPaths(const RendererContext &ctx) const;

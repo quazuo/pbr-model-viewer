@@ -53,18 +53,18 @@ private:
         inputManager->tick(deltaTime);
         renderer.tick(deltaTime);
 
-        renderer.startFrame();
+        if (renderer.startFrame()) {
+            if (isGuiEnabled) {
+                renderer.renderGui([&] {
+                    renderGuiSection(deltaTime);
+                    renderer.renderGuiSection();
+                });
+            }
 
-        if (isGuiEnabled) {
-            renderer.renderGui([&] {
-                renderGuiSection(deltaTime);
-                renderer.renderGuiSection();
-            });
+            renderer.drawScene();
+
+            renderer.endFrame();
         }
-
-        renderer.drawScene();
-
-        renderer.endFrame();
 
         if (fileBrowser.HasSelected()) {
             const std::filesystem::path path = fileBrowser.GetSelected().string();

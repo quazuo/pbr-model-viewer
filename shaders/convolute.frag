@@ -1,19 +1,17 @@
 #version 450
 
-#include "ubo.glsl"
-
 #define PI 3.1415926535897932384626433832795
 
 layout(location = 0) in vec3 localPosition;
 
 layout(location = 0) out vec4 outColor;
 
-layout(binding = 1) uniform samplerCube envmapSampler;
+layout(binding = 0) uniform samplerCube envmapSampler;
 
 void main() {
     vec3 normal = normalize(localPosition);
     vec3 irradiance = vec3(0);
-    uint delta = 0.025;
+    float delta = 0.025;
     uint nSamples = 0;
 
     vec3 up = vec3(0.0, 1.0, 0.0);

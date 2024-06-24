@@ -15,7 +15,6 @@ class InputManager;
 class Model;
 class Camera;
 class Buffer;
-class CubeTexture;
 class Texture;
 class SwapChain;
 class GuiRenderer;
@@ -69,6 +68,7 @@ struct GraphicsUBO {
     };
 
     struct MiscData {
+        std::uint32_t useIBL;
         glm::vec3 cameraPos;
         glm::vec3 lightDir;
     };
@@ -144,6 +144,7 @@ class VulkanRenderer {
 
     unique_ptr<Texture> skyboxTexture;
     unique_ptr<Texture> envmapTexture;
+    unique_ptr<Texture> irradianceMapTexture;
 
     unique_ptr<vk::raii::DescriptorPool> descriptorPool;
 
@@ -152,12 +153,13 @@ class VulkanRenderer {
     struct GraphicsPipeline {
         unique_ptr<vk::raii::DescriptorSetLayout> descriptorSetLayout;
         unique_ptr<vk::raii::PipelineLayout> pipelineLayout;
-        std::vector<unique_ptr<vk::raii::Pipeline>> pipelines;
+        std::vector<unique_ptr<vk::raii::Pipeline> > pipelines; // i-th subpass uses `pipelines[i]`
     };
 
     GraphicsPipeline scenePipeline;
     GraphicsPipeline skyboxPipeline;
     GraphicsPipeline cubemapCapturePipeline;
+    GraphicsPipeline irradianceCapturePipeline;
 
     unique_ptr<vk::raii::CommandPool> commandPool;
 
@@ -196,13 +198,13 @@ class VulkanRenderer {
     static constexpr size_t MAX_FRAMES_IN_FLIGHT = 3;
     std::array<FrameResources, MAX_FRAMES_IN_FLIGHT> frameResources;
 
-    struct CubemapCaptureResources {
-        vk::Extent2D extent = { 2048u, 2048u };
-        unique_ptr<vk::raii::CommandBuffer> commandBuffer;
+    vk::Extent2D cubemapExtent = {2048u, 2048u};
+
+    struct CaptureResources {
         unique_ptr<vk::raii::RenderPass> renderPass;
         unique_ptr<vk::raii::Framebuffer> framebuffer;
         unique_ptr<vk::raii::DescriptorSet> descriptorSet;
-    } cubemapCaptureResources;
+    } cubemapCaptureResources, irradianceCaptureResources;
 
     vk::SampleCountFlagBits msaaSampleCount = vk::SampleCountFlagBits::e1;
 
@@ -219,6 +221,8 @@ class VulkanRenderer {
 
     float modelScale = 1.0f;
     glm::vec3 modelTranslate{};
+
+    bool useIBL = true;
 
 public:
     explicit VulkanRenderer();
@@ -323,6 +327,8 @@ private:
 
     void createCubemapCaptureDescriptorSetLayouts();
 
+    void createIrradianceCaptureDescriptorSetLayouts();
+
     void createDescriptorPool();
 
     void createSceneDescriptorSets();
@@ -331,11 +337,15 @@ private:
 
     void createCubemapCaptureDescriptorSets();
 
+    void createIrradianceCaptureDescriptorSets();
+
     // ==================== graphics pipeline ====================
 
     void createRenderPass();
 
     void createCubemapCaptureRenderPass();
+
+    void createIrradianceCaptureRenderPass();
 
     void createPipelines();
 
@@ -344,6 +354,8 @@ private:
     void createSkyboxPipeline();
 
     void createCubemapCapturePipeline();
+
+    void createIrradianceCapturePipeline();
 
     [[nodiscard]]
     vk::raii::ShaderModule createShaderModule(const std::filesystem::path &path) const;
@@ -372,6 +384,12 @@ private:
 
     void createCubemapCaptureFramebuffer();
 
+    void createIrradianceCaptureFramebuffer();
+
+    [[nodiscard]]
+    unique_ptr<vk::raii::Framebuffer> createPerLayerCubemapFramebuffer(const Texture &texture,
+                                                                       const vk::raii::RenderPass &renderPass) const;
+
     // ==================== commands ====================
 
     void createCommandPool();
@@ -393,7 +411,7 @@ public:
 
     // ==================== render loop ====================
 
-    void startFrame();
+    bool startFrame();
 
     void endFrame();
 
@@ -402,6 +420,8 @@ public:
     void drawScene();
 
     void captureCubemap();
+
+    void captureIrradianceMap();
 
 private:
     void updateGraphicsUniformBuffer() const;
