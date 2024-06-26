@@ -19,6 +19,7 @@ protected:
     unique_ptr<VmaAllocation> allocation{};
     unique_ptr<vk::raii::Image> image;
     unique_ptr<vk::raii::ImageView> view;
+    unique_ptr<vk::raii::ImageView> attachmentView;
     vk::Extent3D extent;
 
 public:
@@ -50,6 +51,9 @@ public:
     const vk::raii::ImageView &getView() const;
 
     [[nodiscard]]
+    const vk::raii::ImageView &getAttachmentView() const;
+
+    [[nodiscard]]
     vk::Extent3D getExtent() const { return extent; }
 
     virtual void createView(const RendererContext &ctx, vk::Format format, vk::ImageAspectFlags aspectFlags,
@@ -69,6 +73,7 @@ public:
 
 class CubeImage final : public Image {
     std::vector<unique_ptr<vk::raii::ImageView> > layerViews;
+    std::vector<unique_ptr<vk::raii::ImageView> > attachmentLayerViews;
 
 public:
     explicit CubeImage(const RendererContext &ctx, const vk::ImageCreateInfo &imageInfo,
@@ -82,6 +87,11 @@ public:
      */
     [[nodiscard]]
     const vk::raii::ImageView &getLayerView(const uint32_t layerIndex) const { return *layerViews[layerIndex]; }
+
+    [[nodiscard]]
+    const vk::raii::ImageView &getAttachmentLayerView(const uint32_t layerIndex) const {
+        return *attachmentLayerViews[layerIndex];
+    }
 
     void createView(const RendererContext &ctx, vk::Format format, vk::ImageAspectFlags aspectFlags,
                     uint32_t mipLevels) override;
@@ -108,6 +118,9 @@ public:
     const vk::raii::Sampler &getSampler() const { return *textureSampler; }
 
     [[nodiscard]]
+    uint32_t getMipLevels() const { return mipLevels; }
+
+    [[nodiscard]]
     vk::Format getFormat() const { return format; }
 
     [[nodiscard]]
@@ -122,10 +135,13 @@ public:
     [[nodiscard]]
     const vk::raii::ImageView &getLayerView(uint32_t layerIndex) const;
 
-private:
+    [[nodiscard]]
+    const vk::raii::ImageView &getAttachmentLayerView(uint32_t layerIndex) const;
+
     void generateMipmaps(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
                          const vk::raii::Queue &queue, vk::ImageLayout finalLayout) const;
 
+private:
     void createSampler(const RendererContext &ctx);
 };
 
@@ -172,7 +188,7 @@ public:
 
     [[nodiscard]]
     unique_ptr<Texture> create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
-                                    const vk::raii::Queue &queue) const;
+                               const vk::raii::Queue &queue) const;
 
 private:
     void checkParams() const;
@@ -187,13 +203,13 @@ private:
 namespace utils::img {
     [[nodiscard]]
     unique_ptr<vk::raii::ImageView> createImageView(const RendererContext &ctx, vk::Image image,
-                                                         vk::Format format, vk::ImageAspectFlags aspectFlags,
-                                                         uint32_t mipLevels, uint32_t layer);
+                                                    vk::Format format, vk::ImageAspectFlags aspectFlags,
+                                                    uint32_t mipLevels, uint32_t layer);
 
     [[nodiscard]]
     unique_ptr<vk::raii::ImageView> createCubeImageView(const RendererContext &ctx, vk::Image image,
-                                                             vk::Format format, vk::ImageAspectFlags aspectFlags,
-                                                             uint32_t mipLevels);
+                                                        vk::Format format, vk::ImageAspectFlags aspectFlags,
+                                                        uint32_t mipLevels);
 
     void transitionImageLayout(const RendererContext &ctx, vk::Image image, vk::ImageLayout oldLayout,
                                vk::ImageLayout newLayout, uint32_t mipLevels, uint32_t layerCount,

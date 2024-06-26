@@ -11,7 +11,7 @@ layout(binding = 0) uniform samplerCube envmapSampler;
 void main() {
     vec3 normal = normalize(localPosition);
     vec3 irradiance = vec3(0);
-    float delta = 0.025;
+    float delta = 0.02;
     uint nSamples = 0;
 
     vec3 up = vec3(0.0, 1.0, 0.0);
@@ -31,7 +31,7 @@ void main() {
             vec3 sampleVec = tangentSample.x * right + tangentSample.y * up + tangentSample.z * normal;
 
             // add to riemann sum
-            irradiance += texture(envmapSampler, sampleVec).rgb * cos(theta) * sin(theta);
+            irradiance += texture(envmapSampler, sampleVec).rgb * cos(theta) * cos(theta); // sin(theta);
 
             nSamples++;
         }

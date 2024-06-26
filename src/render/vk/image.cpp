@@ -47,9 +47,18 @@ const vk::raii::ImageView &Image::getView() const {
     return *view;
 }
 
+const vk::raii::ImageView &Image::getAttachmentView() const {
+    if (!attachmentView) {
+        throw std::runtime_error("tried to acquire image view without creating it!");
+    }
+
+    return *attachmentView;
+}
+
 void Image::createView(const RendererContext &ctx, const vk::Format format, const vk::ImageAspectFlags aspectFlags,
                        const uint32_t mipLevels) {
     view = utils::img::createImageView(ctx, **image, format, aspectFlags, mipLevels, 0);
+    attachmentView = utils::img::createImageView(ctx, **image, format, aspectFlags, 1, 0);
 }
 
 void Image::copyFromBuffer(const RendererContext &ctx, const vk::Buffer buffer, const vk::raii::CommandPool &cmdPool,
@@ -87,10 +96,11 @@ CubeImage::CubeImage(const RendererContext &ctx, const vk::ImageCreateInfo &imag
 void CubeImage::createView(const RendererContext &ctx, const vk::Format format, const vk::ImageAspectFlags aspectFlags,
                            const uint32_t mipLevels) {
     view = utils::img::createCubeImageView(ctx, **image, format, aspectFlags, mipLevels);
+    attachmentView = utils::img::createCubeImageView(ctx, **image, format, aspectFlags, 1);
 
     for (uint32_t i = 0; i < 6; i++) {
-        auto layerView = utils::img::createImageView(ctx, **image, format, aspectFlags, mipLevels, i);
-        layerViews.emplace_back(std::move(layerView));
+        layerViews.emplace_back(utils::img::createImageView(ctx, **image, format, aspectFlags, mipLevels, i));
+        attachmentLayerViews.emplace_back(utils::img::createImageView(ctx, **image, format, aspectFlags, 1, i));
     }
 }
 
@@ -130,6 +140,16 @@ const vk::raii::ImageView &Texture::getLayerView(const uint32_t layerIndex) cons
     }
 
     return cubeImage->getLayerView(layerIndex);
+}
+
+const vk::raii::ImageView &Texture::getAttachmentLayerView(const uint32_t layerIndex) const {
+    const CubeImage *cubeImage = dynamic_cast<CubeImage *>(&*image);
+
+    if (!cubeImage) {
+        throw std::runtime_error("layer-specific views are only supported in cubemap images");
+    }
+
+    return cubeImage->getAttachmentLayerView(layerIndex);
 }
 
 void Texture::generateMipmaps(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
@@ -331,7 +351,7 @@ TextureBuilder &TextureBuilder::asUninitialized(vk::Extent3D extent) {
 }
 
 unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
-                                                const vk::raii::Queue &queue) const {
+                                           const vk::raii::Queue &queue) const {
     checkParams();
 
     unique_ptr<Texture> texture; {
@@ -342,8 +362,8 @@ unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx, const vk:
     texture->format = format;
 
     const auto [stagingBuffer, extent, layerCount] = isUninitialized
-        ? LoadedTextureData { nullptr, *desiredExtent, getLayerCount() }
-        : loadFromPaths(ctx);
+                                                         ? LoadedTextureData{nullptr, *desiredExtent, getLayerCount()}
+                                                         : loadFromPaths(ctx);
 
     texture->mipLevels = hasMipmaps
                              ? static_cast<uint32_t>(std::floor(std::log2(std::max(extent.width, extent.height)))) + 1
@@ -584,6 +604,12 @@ void utils::img::transitionImageLayout(const RendererContext &ctx, const vk::Ima
         dstAccessMask = vk::AccessFlagBits::eShaderRead;
         sourceStage = vk::PipelineStageFlagBits::eTransfer;
         destinationStage = vk::PipelineStageFlagBits::eFragmentShader;
+    } else if (oldLayout == vk::ImageLayout::eShaderReadOnlyOptimal
+               && newLayout == vk::ImageLayout::eTransferDstOptimal) {
+        srcAccessMask = vk::AccessFlagBits::eShaderRead;
+        dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+        sourceStage = vk::PipelineStageFlagBits::eFragmentShader;
+        destinationStage = vk::PipelineStageFlagBits::eTransfer;
     } else {
         throw std::invalid_argument("unsupported layout transition!");
     }

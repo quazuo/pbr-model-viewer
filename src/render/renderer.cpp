@@ -90,32 +90,27 @@ VulkanRenderer::VulkanRenderer() {
 
     createUniformBuffers();
 
-    createSkyboxResources();
+    createSkyboxVertexBuffer();
 
     createCubemapCaptureRenderPass();
     createCubemapCapturePipeline();
-    createCubemapCaptureDescriptorSets();
-    createCubemapCaptureFramebuffer();
 
     createIrradianceCaptureRenderPass();
     createIrradianceCapturePipeline();
-    createIrradianceCaptureDescriptorSets();
-    createIrradianceCaptureFramebuffer();
 
     // loadModel("../assets/t-60-helmet/source/T-60 HelmetU.fbx");
     // loadAlbedoTexture("../assets/t-60-helmet/textures/albedo.png");
     // loadNormalMap("../assets/t-60-helmet/textures/normal.png");
     // loadOrmMap("../assets/t-60-helmet/textures/orm.png");
+
     loadModel("../assets/default-model/czajnik.obj");
     loadAlbedoTexture("../assets/default-model/czajnik-albedo.png");
     loadNormalMap("../assets/default-model/czajnik-normal.png");
     loadOrmMap("../assets/default-model/czajnik-orm.png");
-    createSceneDescriptorSets();
+
+    loadEnvironmentMap("../assets/envmaps/gallery.hdr");
 
     createSyncObjects();
-
-    captureCubemap();
-    captureIrradianceMap();
 
     initImgui();
 }
@@ -134,11 +129,13 @@ void VulkanRenderer::framebufferResizeCallback(GLFWwindow *window, const int wid
 void VulkanRenderer::bindMouseDragActions() {
     inputManager->bindMouseDragCallback(GLFW_MOUSE_BUTTON_RIGHT, [&](const double dx, const double dy) {
         static constexpr float speed = 0.002;
-        const auto viewVectors = camera->getViewVectors();
         const float cameraDistance = glm::length(camera->getPos());
+        const float inverseScale = 1.0f / (modelScale + 0.001f);
 
-        modelTranslate += cameraDistance * speed * viewVectors.right * static_cast<float>(dx);
-        modelTranslate -= cameraDistance * speed * viewVectors.up * static_cast<float>(dy);
+        const auto viewVectors = camera->getViewVectors();
+
+        modelTranslate += cameraDistance * inverseScale * speed * viewVectors.right * static_cast<float>(dx);
+        modelTranslate -= cameraDistance * inverseScale * speed * viewVectors.up * static_cast<float>(dy);
     });
 }
 
@@ -473,6 +470,54 @@ void VulkanRenderer::loadOrmMap(const std::filesystem::path &aoPath, const std::
             .create(ctx, *commandPool, *graphicsQueue);
 }
 
+void VulkanRenderer::loadEnvironmentMap(const std::filesystem::path &path) {
+    waitIdle();
+
+    for (auto& res: frameResources) {
+        res.sceneDescriptorSet.reset();
+        res.skyboxDescriptorSet.reset();
+    }
+
+    cubemapCaptureResources.descriptorSet.reset();
+    irradianceCaptureResources.descriptorSet.reset();
+
+    createSkyboxTextures(path);
+
+    createSceneDescriptorSets();
+    createSkyboxDescriptorSets();
+    createCubemapCaptureDescriptorSets();
+    createIrradianceCaptureDescriptorSets();
+
+    createCubemapCaptureFramebuffer();
+    createIrradianceCaptureFramebuffer();
+
+    captureCubemap();
+    utils::img::transitionImageLayout(
+        ctx,
+        **skyboxTexture->getImage(),
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::ImageLayout::eTransferDstOptimal,
+        skyboxTexture->getMipLevels(),
+        6,
+        *commandPool,
+        *graphicsQueue
+    );
+    skyboxTexture->generateMipmaps(ctx, *commandPool, *graphicsQueue, vk::ImageLayout::eShaderReadOnlyOptimal);
+
+    captureIrradianceMap();
+    utils::img::transitionImageLayout(
+        ctx,
+        **irradianceMapTexture->getImage(),
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::ImageLayout::eTransferDstOptimal,
+        irradianceMapTexture->getMipLevels(),
+        6,
+        *commandPool,
+        *graphicsQueue
+    );
+    irradianceMapTexture->generateMipmaps(ctx, *commandPool, *graphicsQueue, vk::ImageLayout::eShaderReadOnlyOptimal);
+}
+
 void VulkanRenderer::buildDescriptors() {
     for (auto &res: frameResources) {
         res.sceneDescriptorSet.reset();
@@ -481,7 +526,7 @@ void VulkanRenderer::buildDescriptors() {
     createSceneDescriptorSets();
 }
 
-void VulkanRenderer::createSkyboxTextures() {
+void VulkanRenderer::createSkyboxTextures(const std::filesystem::path &path) {
     // std::vector<std::filesystem::path> cubemapPaths{6, "../assets/skyboxes"};
     // cubemapPaths[0].append("right.jpg");
     // cubemapPaths[1].append("left.jpg");
@@ -494,28 +539,31 @@ void VulkanRenderer::createSkyboxTextures() {
             .asCubemap()
             .asUninitialized({cubemapExtent.width, cubemapExtent.height, 1})
             .asHdr()
-            .useFormat(vk::Format::eR32G32B32A32Sfloat)
+            .useFormat(hdrEnvmapFormat)
             .useUsage(vk::ImageUsageFlagBits::eTransferSrc
                       | vk::ImageUsageFlagBits::eTransferDst
                       | vk::ImageUsageFlagBits::eSampled
                       | vk::ImageUsageFlagBits::eColorAttachment)
+            .makeMipmaps()
             .create(ctx, *commandPool, *graphicsQueue);
 
     envmapTexture = TextureBuilder()
             .asHdr()
-            .useFormat(vk::Format::eR32G32B32A32Sfloat)
-            .fromPaths({"../assets/envmaps/gallery.hdr"})
+            .useFormat(hdrEnvmapFormat)
+            .fromPaths({path})
+            .makeMipmaps()
             .create(ctx, *commandPool, *graphicsQueue);
 
     irradianceMapTexture = TextureBuilder()
             .asCubemap()
             .asUninitialized({32, 32, 1})
             .asHdr()
-            .useFormat(vk::Format::eR32G32B32A32Sfloat)
+            .useFormat(hdrEnvmapFormat)
             .useUsage(vk::ImageUsageFlagBits::eTransferSrc
                       | vk::ImageUsageFlagBits::eTransferDst
                       | vk::ImageUsageFlagBits::eSampled
                       | vk::ImageUsageFlagBits::eColorAttachment)
+            .makeMipmaps()
             .create(ctx, *commandPool, *graphicsQueue);
 }
 
@@ -1018,8 +1066,8 @@ void VulkanRenderer::createRenderPass() {
 }
 
 void VulkanRenderer::createCubemapCaptureRenderPass() {
-    const vk::AttachmentDescription colorAttachment{
-        .format = skyboxTexture->getFormat(),
+    static constexpr vk::AttachmentDescription colorAttachment{
+        .format = hdrEnvmapFormat,
         .samples = vk::SampleCountFlagBits::e1,
         .loadOp = vk::AttachmentLoadOp::eClear,
         .storeOp = vk::AttachmentStoreOp::eStore,
@@ -1082,8 +1130,8 @@ void VulkanRenderer::createCubemapCaptureRenderPass() {
 }
 
 void VulkanRenderer::createIrradianceCaptureRenderPass() {
-    const vk::AttachmentDescription colorAttachment{
-        .format = irradianceMapTexture->getFormat(),
+    static constexpr vk::AttachmentDescription colorAttachment{
+        .format = hdrEnvmapFormat,
         .samples = vk::SampleCountFlagBits::e1,
         .loadOp = vk::AttachmentLoadOp::eClear,
         .storeOp = vk::AttachmentStoreOp::eStore,
@@ -1275,10 +1323,8 @@ vk::SampleCountFlagBits VulkanRenderer::getMaxUsableSampleCount() const {
     return vk::SampleCountFlagBits::e1;
 }
 
-void VulkanRenderer::createSkyboxResources() {
+void VulkanRenderer::createSkyboxVertexBuffer() {
     skyboxVertexBuffer = createLocalBuffer<SkyboxVertex>(skyboxVertices, vk::BufferUsageFlagBits::eVertexBuffer);
-    createSkyboxTextures();
-    createSkyboxDescriptorSets();
 }
 
 // ==================== buffers ====================
@@ -1353,7 +1399,7 @@ VulkanRenderer::createPerLayerCubemapFramebuffer(const Texture &texture, const v
     std::vector<vk::ImageView> attachments;
 
     for (uint32_t i = 0; i < 6; i++) {
-        attachments.push_back(*texture.getLayerView(i));
+        attachments.push_back(*texture.getAttachmentLayerView(i));
     }
 
     const vk::FramebufferCreateInfo createInfo{

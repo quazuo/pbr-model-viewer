@@ -13,6 +13,7 @@ enum class FileType {
     NORMAL_PNG,
     ORM_PNG,
     RMA_PNG,
+    ENVMAP_HDR,
 };
 
 class Engine {
@@ -68,7 +69,13 @@ private:
 
         if (fileBrowser.HasSelected()) {
             const std::filesystem::path path = fileBrowser.GetSelected().string();
-            chosenPaths.emplace(*currentTypeBeingChosen, path);
+
+            if (*currentTypeBeingChosen == FileType::ENVMAP_HDR) {
+                renderer.loadEnvironmentMap(path);
+            } else {
+                chosenPaths.emplace(*currentTypeBeingChosen, path);
+            }
+
             fileBrowser.ClearSelected();
             currentTypeBeingChosen = {};
         }
@@ -167,6 +174,12 @@ private:
 
                 ImGui::EndPopup();
             }
+        }
+
+        if (ImGui::CollapsingHeader("Environment ", sectionFlags)) {
+            renderTexLoadButton("Choose environment map...", FileType::ENVMAP_HDR, {".hdr"});
+
+            fileBrowser.Display();
         }
     }
 };

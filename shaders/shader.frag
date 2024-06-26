@@ -73,7 +73,7 @@ void main() {
     // light related values
     vec3 light_dir = normalize(ubo.misc.light_direction);
     vec3 light_color = vec3(23.47, 21.31, 20.79);
-    vec3 radiance = light_color;
+    vec3 radiance = vec3(0); // light_color; // temporarily disable the directional light
 
     // utility vectors
     vec3 view = normalize(ubo.misc.camera_pos - worldPosition);

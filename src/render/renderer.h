@@ -197,6 +197,8 @@ class VulkanRenderer {
 
     vk::Extent2D cubemapExtent = {2048u, 2048u};
 
+    static constexpr auto hdrEnvmapFormat = vk::Format::eR32G32B32A32Sfloat;
+
     struct CaptureResources {
         unique_ptr<vk::raii::RenderPass> renderPass;
         unique_ptr<vk::raii::Framebuffer> framebuffer;
@@ -258,6 +260,8 @@ public:
     void loadOrmMap(const std::filesystem::path &aoPath, const std::filesystem::path &roughnessPath,
                     const std::filesystem::path &metallicPath);
 
+    void loadEnvironmentMap(const std::filesystem::path &path);
+
     void buildDescriptors();
 
 private:
@@ -308,7 +312,7 @@ private:
 
     // ==================== assets ====================
 
-    void createSkyboxTextures();
+    void createSkyboxTextures(const std::filesystem::path &path);
 
     // ==================== swap chain ====================
 
@@ -361,7 +365,7 @@ private:
 
     // ==================== skybox ====================
 
-    void createSkyboxResources();
+    void createSkyboxVertexBuffer();
 
     // ==================== buffers ====================
 
