@@ -1,10 +1,10 @@
 #pragma once
 
 #include <filesystem>
-#include <variant>
 
 #include "deps/vma/vk_mem_alloc.h"
 #include "src/render/libs.h"
+#include "src/render/globals.h"
 
 class Buffer;
 struct RendererContext;
@@ -16,9 +16,9 @@ struct RendererContext;
 class Image {
 protected:
     VmaAllocator allocator{};
-    std::unique_ptr<VmaAllocation> allocation{};
-    std::unique_ptr<vk::raii::Image> image;
-    std::unique_ptr<vk::raii::ImageView> view;
+    unique_ptr<VmaAllocation> allocation{};
+    unique_ptr<vk::raii::Image> image;
+    unique_ptr<vk::raii::ImageView> view;
     vk::Extent3D extent;
 
 public:
@@ -40,7 +40,7 @@ public:
      * @return Handle to the image.
      */
     [[nodiscard]]
-    const vk::raii::Image &get() const { return *image; }
+    const vk::raii::Image &operator*() const { return *image; }
 
     /**
      * Returns a raw handle to the actual Vulkan image view associated with this image.
@@ -53,7 +53,7 @@ public:
     vk::Extent3D getExtent() const { return extent; }
 
     virtual void createView(const RendererContext &ctx, vk::Format format, vk::ImageAspectFlags aspectFlags,
-                            std::uint32_t mipLevels);
+                            uint32_t mipLevels);
 
     /**
      * Copies the contents of a given buffer to this image and waits until completion.
@@ -68,7 +68,7 @@ public:
 };
 
 class CubeImage final : public Image {
-    std::vector<std::unique_ptr<vk::raii::ImageView> > layerViews;
+    std::vector<unique_ptr<vk::raii::ImageView> > layerViews;
 
 public:
     explicit CubeImage(const RendererContext &ctx, const vk::ImageCreateInfo &imageInfo,
@@ -81,18 +81,18 @@ public:
      * @param layerIndex Layer index to which the view should refer.
      */
     [[nodiscard]]
-    const vk::raii::ImageView &getLayerView(const std::uint32_t layerIndex) const { return *layerViews[layerIndex]; }
+    const vk::raii::ImageView &getLayerView(const uint32_t layerIndex) const { return *layerViews[layerIndex]; }
 
     void createView(const RendererContext &ctx, vk::Format format, vk::ImageAspectFlags aspectFlags,
-                    std::uint32_t mipLevels) override;
+                    uint32_t mipLevels) override;
 
     void copyFromBuffer(const RendererContext &ctx, vk::Buffer buffer, const vk::raii::CommandPool &cmdPool,
                         const vk::raii::Queue &queue) override;
 };
 
 class Texture {
-    std::unique_ptr<Image> image;
-    std::unique_ptr<vk::raii::Sampler> textureSampler;
+    unique_ptr<Image> image;
+    unique_ptr<vk::raii::Sampler> textureSampler;
     uint32_t mipLevels{};
     vk::Format format{};
 
@@ -120,7 +120,7 @@ public:
      * @param layerIndex Layer index to which the view should refer.
      */
     [[nodiscard]]
-    const vk::raii::ImageView &getLayerView(std::uint32_t layerIndex) const;
+    const vk::raii::ImageView &getLayerView(uint32_t layerIndex) const;
 
 private:
     void generateMipmaps(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
@@ -146,9 +146,9 @@ class TextureBuilder {
     std::vector<std::filesystem::path> paths;
 
     struct LoadedTextureData {
-        std::unique_ptr<Buffer> stagingBuffer;
+        unique_ptr<Buffer> stagingBuffer;
         vk::Extent3D extent;
-        std::uint32_t layerCount;
+        uint32_t layerCount;
     };
 
 public:
@@ -171,14 +171,14 @@ public:
     TextureBuilder &asUninitialized(vk::Extent3D extent);
 
     [[nodiscard]]
-    std::unique_ptr<Texture> create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
+    unique_ptr<Texture> create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
                                     const vk::raii::Queue &queue) const;
 
 private:
     void checkParams() const;
 
     [[nodiscard]]
-    std::uint32_t getLayerCount() const;
+    uint32_t getLayerCount() const;
 
     [[nodiscard]]
     LoadedTextureData loadFromPaths(const RendererContext &ctx) const;
@@ -186,17 +186,17 @@ private:
 
 namespace utils::img {
     [[nodiscard]]
-    std::unique_ptr<vk::raii::ImageView> createImageView(const RendererContext &ctx, vk::Image image,
+    unique_ptr<vk::raii::ImageView> createImageView(const RendererContext &ctx, vk::Image image,
                                                          vk::Format format, vk::ImageAspectFlags aspectFlags,
-                                                         std::uint32_t mipLevels, std::uint32_t layer);
+                                                         uint32_t mipLevels, uint32_t layer);
 
     [[nodiscard]]
-    std::unique_ptr<vk::raii::ImageView> createCubeImageView(const RendererContext &ctx, vk::Image image,
+    unique_ptr<vk::raii::ImageView> createCubeImageView(const RendererContext &ctx, vk::Image image,
                                                              vk::Format format, vk::ImageAspectFlags aspectFlags,
-                                                             std::uint32_t mipLevels);
+                                                             uint32_t mipLevels);
 
     void transitionImageLayout(const RendererContext &ctx, vk::Image image, vk::ImageLayout oldLayout,
-                               vk::ImageLayout newLayout, std::uint32_t mipLevels, std::uint32_t layerCount,
+                               vk::ImageLayout newLayout, uint32_t mipLevels, uint32_t layerCount,
                                const vk::raii::CommandPool &cmdPool, const vk::raii::Queue &queue);
 
     [[nodiscard]]

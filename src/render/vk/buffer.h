@@ -1,6 +1,7 @@
 #pragma once
 
 #include "deps/vma/vk_mem_alloc.h"
+
 #include "src/render/libs.h"
 
 struct RendererContext;
@@ -37,7 +38,7 @@ public:
      * @return Handle to the buffer.
      */
     [[nodiscard]]
-    const vk::Buffer &get() const { return buffer; }
+    const vk::Buffer &operator*() const { return buffer; }
 
     /**
      * Maps the buffer's memory to host memory. This requires the buffer to *not* be created
@@ -61,12 +62,12 @@ public:
      * @param ctx Renderer context.
      * @param cmdPool Command pool from which a single-time command buffer should be allocated.
      * @param queue Queue to which the commands should be submitted.
-     * @param buffer Buffer from which to copy.
+     * @param otherBuffer Buffer from which to copy.
      * @param size Size of the data to copy.
      * @param srcOffset Offset in the source buffer.
      * @param dstOffset Offset in this (destination) buffer.
      */
     void copyFromBuffer(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
-                        const vk::raii::Queue &queue, const Buffer &buffer, vk::DeviceSize size,
+                        const vk::raii::Queue &queue, const Buffer &otherBuffer, vk::DeviceSize size,
                         vk::DeviceSize srcOffset = 0, vk::DeviceSize dstOffset = 0) const;
 };

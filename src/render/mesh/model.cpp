@@ -22,7 +22,7 @@ static glm::mat4 assimpMatrixToGlm(const aiMatrix4x4& m) {
 }
 
 Mesh::Mesh(const aiMesh *assimpMesh) {
-    std::unordered_map<Vertex, std::uint32_t> uniqueVertices;
+    std::unordered_map<Vertex, uint32_t> uniqueVertices;
 
     for (size_t faceIdx = 0; faceIdx < assimpMesh->mNumFaces; faceIdx++) {
         const auto& face = assimpMesh->mFaces[faceIdx];
@@ -97,8 +97,8 @@ std::vector<Vertex> Model::getVertices() const {
     return vertices;
 }
 
-std::vector<std::uint32_t> Model::getIndices() const {
-    std::vector<std::uint32_t> indices;
+std::vector<uint32_t> Model::getIndices() const {
+    std::vector<uint32_t> indices;
 
     size_t totalSize = 0;
     for (const auto& mesh : meshes) {

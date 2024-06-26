@@ -9,7 +9,7 @@
 #include "src/render/renderer.h"
 
 Image::Image(const RendererContext &ctx, const vk::ImageCreateInfo &imageInfo, const vk::MemoryPropertyFlags properties)
-    : allocator(ctx.allocator->get()), extent(imageInfo.extent) {
+    : allocator(**ctx.allocator), extent(imageInfo.extent) {
     const VmaAllocationCreateInfo allocInfo{
         .usage = VMA_MEMORY_USAGE_AUTO,
         .requiredFlags = static_cast<VkMemoryPropertyFlags>(properties)
@@ -31,8 +31,8 @@ Image::Image(const RendererContext &ctx, const vk::ImageCreateInfo &imageInfo, c
         throw std::runtime_error("failed to allocate buffer!");
     }
 
-    image = std::make_unique<vk::raii::Image>(*ctx.device, newImage);
-    allocation = std::make_unique<VmaAllocation>(newAllocation);
+    image = make_unique<vk::raii::Image>(*ctx.device, newImage);
+    allocation = make_unique<VmaAllocation>(newAllocation);
 }
 
 Image::~Image() {
@@ -48,7 +48,7 @@ const vk::raii::ImageView &Image::getView() const {
 }
 
 void Image::createView(const RendererContext &ctx, const vk::Format format, const vk::ImageAspectFlags aspectFlags,
-                       const std::uint32_t mipLevels) {
+                       const uint32_t mipLevels) {
     view = utils::img::createImageView(ctx, **image, format, aspectFlags, mipLevels, 0);
 }
 
@@ -85,10 +85,10 @@ CubeImage::CubeImage(const RendererContext &ctx, const vk::ImageCreateInfo &imag
 }
 
 void CubeImage::createView(const RendererContext &ctx, const vk::Format format, const vk::ImageAspectFlags aspectFlags,
-                           const std::uint32_t mipLevels) {
+                           const uint32_t mipLevels) {
     view = utils::img::createCubeImageView(ctx, **image, format, aspectFlags, mipLevels);
 
-    for (std::uint32_t i = 0; i < 6; i++) {
+    for (uint32_t i = 0; i < 6; i++) {
         auto layerView = utils::img::createImageView(ctx, **image, format, aspectFlags, mipLevels, i);
         layerViews.emplace_back(std::move(layerView));
     }
@@ -122,7 +122,7 @@ void CubeImage::copyFromBuffer(const RendererContext &ctx, const vk::Buffer buff
 
 // ==================== Texture ====================
 
-const vk::raii::ImageView &Texture::getLayerView(const std::uint32_t layerIndex) const {
+const vk::raii::ImageView &Texture::getLayerView(const uint32_t layerIndex) const {
     const CubeImage *cubeImage = dynamic_cast<CubeImage *>(&*image);
 
     if (!cubeImage) {
@@ -143,7 +143,7 @@ void Texture::generateMipmaps(const RendererContext &ctx, const vk::raii::Comman
     const vk::raii::CommandBuffer commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, cmdPool);
 
     const bool isCubeMap = dynamic_cast<CubeImage *>(&*image) != nullptr;
-    const std::uint32_t layerCount = isCubeMap ? 6 : 1;
+    const uint32_t layerCount = isCubeMap ? 6 : 1;
 
     const vk::ImageMemoryBarrier barrier{
         .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
@@ -152,7 +152,7 @@ void Texture::generateMipmaps(const RendererContext &ctx, const vk::raii::Comman
         .newLayout = vk::ImageLayout::eTransferSrcOptimal,
         .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
         .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image = *image->get(),
+        .image = ***image,
         .subresourceRange = {
             .aspectMask = vk::ImageAspectFlagBits::eColor,
             .levelCount = 1,
@@ -208,8 +208,8 @@ void Texture::generateMipmaps(const RendererContext &ctx, const vk::raii::Comman
         };
 
         commandBuffer.blitImage(
-            *image->get(), vk::ImageLayout::eTransferSrcOptimal,
-            *image->get(), vk::ImageLayout::eTransferDstOptimal,
+            ***image, vk::ImageLayout::eTransferSrcOptimal,
+            ***image, vk::ImageLayout::eTransferDstOptimal,
             blit,
             vk::Filter::eLinear
         );
@@ -279,7 +279,7 @@ void Texture::createSampler(const RendererContext &ctx) {
         .unnormalizedCoordinates = vk::False,
     };
 
-    textureSampler = std::make_unique<vk::raii::Sampler>(*ctx.device, samplerInfo);
+    textureSampler = make_unique<vk::raii::Sampler>(*ctx.device, samplerInfo);
 }
 
 // ==================== TextureBuilder ====================
@@ -330,13 +330,13 @@ TextureBuilder &TextureBuilder::asUninitialized(vk::Extent3D extent) {
     return *this;
 }
 
-std::unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
+unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
                                                 const vk::raii::Queue &queue) const {
     checkParams();
 
-    std::unique_ptr<Texture> texture; {
+    unique_ptr<Texture> texture; {
         Texture t;
-        texture = std::make_unique<Texture>(std::move(t));
+        texture = make_unique<Texture>(std::move(t));
     }
 
     texture->format = format;
@@ -364,13 +364,13 @@ std::unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx, cons
     };
 
     if (isCubemap) {
-        texture->image = std::make_unique<CubeImage>(
+        texture->image = make_unique<CubeImage>(
             ctx,
             imageInfo,
             vk::MemoryPropertyFlagBits::eDeviceLocal
         );
     } else {
-        texture->image = std::make_unique<Image>(
+        texture->image = make_unique<Image>(
             ctx,
             imageInfo,
             vk::MemoryPropertyFlagBits::eDeviceLocal
@@ -379,7 +379,7 @@ std::unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx, cons
 
     utils::img::transitionImageLayout(
         ctx,
-        *texture->image->get(),
+        ***texture->image,
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eTransferDstOptimal,
         texture->mipLevels,
@@ -389,7 +389,7 @@ std::unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx, cons
     );
 
     if (!isUninitialized) {
-        texture->image->copyFromBuffer(ctx, stagingBuffer->get(), cmdPool, queue);
+        texture->image->copyFromBuffer(ctx, **stagingBuffer, cmdPool, queue);
     }
 
     texture->image->createView(
@@ -406,7 +406,7 @@ std::unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx, cons
     } else {
         utils::img::transitionImageLayout(
             ctx,
-            *texture->image->get(),
+            ***texture->image,
             vk::ImageLayout::eTransferDstOptimal,
             layout,
             texture->mipLevels,
@@ -452,8 +452,8 @@ void TextureBuilder::checkParams() const {
     }
 }
 
-std::uint32_t TextureBuilder::getLayerCount() const {
-    const std::uint32_t sourcesCount = isUninitialized ? (isCubemap ? 6 : 1) : paths.size();
+uint32_t TextureBuilder::getLayerCount() const {
+    const uint32_t sourcesCount = isUninitialized ? (isCubemap ? 6 : 1) : paths.size();
     return isSeparateChannels ? sourcesCount / 3 : sourcesCount;
 }
 
@@ -487,12 +487,12 @@ TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererCo
         // todo - merge channels
     }
 
-    const std::uint32_t layerCount = getLayerCount();
+    const uint32_t layerCount = getLayerCount();
     const vk::DeviceSize layerSize = texWidth * texHeight * utils::img::getFormatSizeInBytes(format);
     const vk::DeviceSize textureSize = layerSize * layerCount;
 
-    auto stagingBuffer = std::make_unique<Buffer>(
-        ctx.allocator->get(),
+    auto stagingBuffer = make_unique<Buffer>(
+        **ctx.allocator,
         textureSize,
         vk::BufferUsageFlagBits::eTransferSrc,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
@@ -511,8 +511,8 @@ TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererCo
     return {
         .stagingBuffer = std::move(stagingBuffer),
         .extent = {
-            .width = static_cast<std::uint32_t>(texWidth),
-            .height = static_cast<std::uint32_t>(texHeight),
+            .width = static_cast<uint32_t>(texWidth),
+            .height = static_cast<uint32_t>(texHeight),
             .depth = 1u
         },
         .layerCount = layerCount
@@ -521,10 +521,10 @@ TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererCo
 
 // ==================== utils ====================
 
-std::unique_ptr<vk::raii::ImageView>
+unique_ptr<vk::raii::ImageView>
 utils::img::createImageView(const RendererContext &ctx, const vk::Image image, const vk::Format format,
-                            const vk::ImageAspectFlags aspectFlags, const std::uint32_t mipLevels,
-                            const std::uint32_t layer) {
+                            const vk::ImageAspectFlags aspectFlags, const uint32_t mipLevels,
+                            const uint32_t layer) {
     const vk::ImageViewCreateInfo createInfo{
         .image = image,
         .viewType = vk::ImageViewType::e2D,
@@ -538,12 +538,12 @@ utils::img::createImageView(const RendererContext &ctx, const vk::Image image, c
         }
     };
 
-    return std::make_unique<vk::raii::ImageView>(*ctx.device, createInfo);
+    return make_unique<vk::raii::ImageView>(*ctx.device, createInfo);
 }
 
-std::unique_ptr<vk::raii::ImageView>
+unique_ptr<vk::raii::ImageView>
 utils::img::createCubeImageView(const RendererContext &ctx, const vk::Image image, const vk::Format format,
-                                const vk::ImageAspectFlags aspectFlags, const std::uint32_t mipLevels) {
+                                const vk::ImageAspectFlags aspectFlags, const uint32_t mipLevels) {
     const vk::ImageViewCreateInfo createInfo{
         .image = image,
         .viewType = vk::ImageViewType::eCube,
@@ -557,12 +557,12 @@ utils::img::createCubeImageView(const RendererContext &ctx, const vk::Image imag
         }
     };
 
-    return std::make_unique<vk::raii::ImageView>(*ctx.device, createInfo);
+    return make_unique<vk::raii::ImageView>(*ctx.device, createInfo);
 }
 
 void utils::img::transitionImageLayout(const RendererContext &ctx, const vk::Image image,
                                        const vk::ImageLayout oldLayout, const vk::ImageLayout newLayout,
-                                       const std::uint32_t mipLevels, const std::uint32_t layerCount,
+                                       const uint32_t mipLevels, const uint32_t layerCount,
                                        const vk::raii::CommandPool &cmdPool, const vk::raii::Queue &queue) {
     vk::AccessFlags srcAccessMask, dstAccessMask;
     vk::PipelineStageFlags sourceStage, destinationStage;

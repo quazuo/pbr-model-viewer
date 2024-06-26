@@ -1,6 +1,7 @@
 #pragma once
 
 #include "image.h"
+
 #include "src/render/libs.h"
 
 /**
@@ -22,18 +23,18 @@ struct GLFWwindow;
  * Abstraction over a Vulkan swap chain, making it easier to manage by hiding all the Vulkan API calls.
  */
 class SwapChain {
-    std::unique_ptr<vk::raii::SwapchainKHR> swapChain;
+    unique_ptr<vk::raii::SwapchainKHR> swapChain;
     std::vector<vk::Image> images;
-    std::vector<std::unique_ptr<vk::raii::ImageView> > imageViews;
-    std::vector<std::unique_ptr<vk::raii::Framebuffer> > framebuffers;
+    std::vector<unique_ptr<vk::raii::ImageView> > imageViews;
+    std::vector<unique_ptr<vk::raii::Framebuffer> > framebuffers;
     vk::Format imageFormat{};
     vk::Format depthFormat{};
     vk::Extent2D extent{};
 
-    std::unique_ptr<Image> colorImage;
-    std::unique_ptr<Image> depthImage;
+    unique_ptr<Image> colorImage;
+    unique_ptr<Image> depthImage;
 
-    std::uint32_t currentImageIndex = 0;
+    uint32_t currentImageIndex = 0;
 
     vk::SampleCountFlagBits msaaSampleCount;
 
@@ -51,7 +52,7 @@ public:
      * @return Handle to the swap chain.
      */
     [[nodiscard]]
-    const vk::raii::SwapchainKHR &get() const { return *swapChain; }
+    const vk::raii::SwapchainKHR &operator*() const { return *swapChain; }
 
     [[nodiscard]]
     vk::Format getImageFormat() const { return imageFormat; }
@@ -67,7 +68,7 @@ public:
      * @return Index of the current image.
      */
     [[nodiscard]]
-    std::uint32_t getCurrentImageIndex() const { return currentImageIndex; }
+    uint32_t getCurrentImageIndex() const { return currentImageIndex; }
 
     /**
      * Returns the framebuffer associated with the most recently acquired image.
@@ -82,10 +83,10 @@ public:
      * @return Result code and index of the new image.
      */
     [[nodiscard]]
-    std::pair<vk::Result, std::uint32_t> acquireNextImage(const vk::raii::Semaphore &semaphore);
+    std::pair<vk::Result, uint32_t> acquireNextImage(const vk::raii::Semaphore &semaphore);
 
     [[nodiscard]]
-    static std::uint32_t getImageCount(const RendererContext &ctx, const vk::raii::SurfaceKHR &surface);
+    static uint32_t getImageCount(const RendererContext &ctx, const vk::raii::SurfaceKHR &surface);
 
     void createFramebuffers(const RendererContext &ctx, const vk::raii::RenderPass &renderPass);
 

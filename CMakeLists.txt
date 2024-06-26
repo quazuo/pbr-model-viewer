@@ -3,8 +3,8 @@ project(pbr)
 
 set(CMAKE_CXX_STANDARD 20)
 
-add_compile_options(-fsanitize=address)
-add_link_options(-fsanitize=address)
+#add_compile_options(-fsanitize=address)
+#add_link_options(-fsanitize=address)
 
 find_package(Vulkan REQUIRED)
 

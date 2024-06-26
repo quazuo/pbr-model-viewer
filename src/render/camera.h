@@ -1,9 +1,8 @@
 #pragma once
 
-#include <memory>
-
 #include "libs.h"
 #include "src/utils/input-manager.h"
+#include "globals.h"
 
 class Rotator {
     glm::vec2 rot = {0, 0};
@@ -45,7 +44,7 @@ class Camera {
     float rotationSpeed = 2.5f;
     float movementSpeed = 1.0f;
 
-    std::unique_ptr<InputManager> inputManager;
+    unique_ptr<InputManager> inputManager;
 
 public:
     explicit Camera(GLFWwindow *w);

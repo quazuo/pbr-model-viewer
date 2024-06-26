@@ -1,6 +1,5 @@
 #pragma once
 
-#include <chrono>
 #include <optional>
 #include <vector>
 #include <filesystem>
@@ -9,6 +8,8 @@
 #include "deps/vma/vk_mem_alloc.h"
 
 #include "libs.h"
+#include "globals.h"
+#include "vk/pipeline.h"
 
 class Image;
 class InputManager;
@@ -18,8 +19,6 @@ class Buffer;
 class Texture;
 class SwapChain;
 class GuiRenderer;
-
-using std::unique_ptr, std::make_unique;
 
 static constexpr std::array validationLayers{
     "VK_LAYER_KHRONOS_validation"
@@ -39,8 +38,8 @@ constexpr bool enableValidationLayers = true;
 #endif
 
 struct QueueFamilyIndices {
-    std::optional<std::uint32_t> graphicsComputeFamily;
-    std::optional<std::uint32_t> presentFamily;
+    std::optional<uint32_t> graphicsComputeFamily;
+    std::optional<uint32_t> presentFamily;
 
     [[nodiscard]]
     bool isComplete() const {
@@ -54,8 +53,8 @@ struct QueueFamilyIndices {
  */
 struct GraphicsUBO {
     struct WindowRes {
-        std::uint32_t windowWidth;
-        std::uint32_t windowHeight;
+        uint32_t windowWidth;
+        uint32_t windowHeight;
     };
 
     struct Matrices {
@@ -67,7 +66,7 @@ struct GraphicsUBO {
     };
 
     struct MiscData {
-        std::uint32_t useIBL;
+        uint32_t useIBL;
         glm::vec3 cameraPos;
         glm::vec3 lightDir;
     };
@@ -102,7 +101,7 @@ public:
     VmaAllocatorWrapper &operator=(VmaAllocatorWrapper &&other) = delete;
 
     [[nodiscard]]
-    VmaAllocator get() const { return allocator; }
+    VmaAllocator operator*() const { return allocator; }
 };
 
 /**
@@ -149,16 +148,15 @@ class VulkanRenderer {
 
     unique_ptr<vk::raii::RenderPass> renderPass;
 
-    struct GraphicsPipeline {
-        unique_ptr<vk::raii::DescriptorSetLayout> descriptorSetLayout;
-        unique_ptr<vk::raii::PipelineLayout> pipelineLayout;
-        std::vector<unique_ptr<vk::raii::Pipeline> > pipelines; // i-th subpass uses `pipelines[i]`
-    };
+    unique_ptr<vk::raii::DescriptorSetLayout> sceneDescriptorLayout;
+    unique_ptr<vk::raii::DescriptorSetLayout> skyboxDescriptorLayout;
+    unique_ptr<vk::raii::DescriptorSetLayout> cubemapCaptureDescriptorLayout;
+    unique_ptr<vk::raii::DescriptorSetLayout> irradianceCaptureDescriptorLayout;
 
-    GraphicsPipeline scenePipeline;
-    GraphicsPipeline skyboxPipeline;
-    GraphicsPipeline cubemapCapturePipeline;
-    GraphicsPipeline irradianceCapturePipeline;
+    unique_ptr<Pipeline> scenePipeline;
+    unique_ptr<Pipeline> skyboxPipeline;
+    std::vector<unique_ptr<Pipeline>> cubemapCapturePipelines;
+    std::vector<unique_ptr<Pipeline>> irradianceCapturePipelines;
 
     unique_ptr<vk::raii::CommandPool> commandPool;
 
@@ -212,7 +210,7 @@ class VulkanRenderer {
 
     // miscellaneous state variables
 
-    std::uint32_t currentFrameIdx = 0;
+    uint32_t currentFrameIdx = 0;
 
     bool framebufferResized = false;
 

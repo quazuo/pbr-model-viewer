@@ -12,7 +12,7 @@ struct aiNode;
 
 struct Mesh {
     std::vector<Vertex> vertices;
-    std::vector<std::uint32_t> indices;
+    std::vector<uint32_t> indices;
     std::vector<glm::mat4> instances;
 
     explicit Mesh(const aiMesh* assimpMesh);
@@ -33,7 +33,7 @@ public:
     std::vector<Vertex> getVertices() const;
 
     [[nodiscard]]
-    std::vector<std::uint32_t> getIndices() const;
+    std::vector<uint32_t> getIndices() const;
 
     [[nodiscard]]
     std::vector<glm::mat4> getInstanceTransforms() const;

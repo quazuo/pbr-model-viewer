@@ -25,7 +25,7 @@ SwapChain::SwapChain(const RendererContext &ctx, const vk::raii::SurfaceKHR &sur
     const vk::PresentModeKHR presentMode = choosePresentMode(presentModes);
 
     const auto &[graphicsComputeFamily, presentFamily] = queueFamilies;
-    const std::uint32_t queueFamilyIndices[] = {graphicsComputeFamily.value(), presentFamily.value()};
+    const uint32_t queueFamilyIndices[] = {graphicsComputeFamily.value(), presentFamily.value()};
     const bool isUniformFamily = graphicsComputeFamily == presentFamily;
 
     const vk::SwapchainCreateInfoKHR createInfo{
@@ -45,7 +45,7 @@ SwapChain::SwapChain(const RendererContext &ctx, const vk::raii::SurfaceKHR &sur
         .clipped = vk::True,
     };
 
-    swapChain = std::make_unique<vk::raii::SwapchainKHR>(ctx.device->createSwapchainKHR(createInfo));
+    swapChain = make_unique<vk::raii::SwapchainKHR>(ctx.device->createSwapchainKHR(createInfo));
     images = swapChain->getImages();
 
     createImageViews(ctx);
@@ -55,10 +55,10 @@ SwapChain::SwapChain(const RendererContext &ctx, const vk::raii::SurfaceKHR &sur
     createDepthResources(ctx);
 }
 
-std::uint32_t SwapChain::getImageCount(const RendererContext &ctx, const vk::raii::SurfaceKHR &surface) {
+uint32_t SwapChain::getImageCount(const RendererContext &ctx, const vk::raii::SurfaceKHR &surface) {
     const auto [capabilities, formats, presentModes] = SwapChainSupportDetails{*ctx.physicalDevice, surface};
 
-    std::uint32_t imageCount = capabilities.minImageCount + 1;
+    uint32_t imageCount = capabilities.minImageCount + 1;
     if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount) {
         imageCount = capabilities.maxImageCount;
     }
@@ -66,7 +66,7 @@ std::uint32_t SwapChain::getImageCount(const RendererContext &ctx, const vk::rai
     return imageCount;
 }
 
-std::pair<vk::Result, std::uint32_t> SwapChain::acquireNextImage(const vk::raii::Semaphore &semaphore) {
+std::pair<vk::Result, uint32_t> SwapChain::acquireNextImage(const vk::raii::Semaphore &semaphore) {
     try {
         const auto &[result, imageIndex] = swapChain->acquireNextImage(UINT64_MAX, *semaphore);
         currentImageIndex = imageIndex;
@@ -78,20 +78,20 @@ std::pair<vk::Result, std::uint32_t> SwapChain::acquireNextImage(const vk::raii:
 }
 
 vk::Extent2D SwapChain::chooseExtent(const vk::SurfaceCapabilitiesKHR &capabilities, GLFWwindow *window) {
-    if (capabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max()) {
+    if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
         return capabilities.currentExtent;
     }
 
     int width, height;
     glfwGetFramebufferSize(window, &width, &height);
 
-    const std::uint32_t actualExtentWidth = std::clamp(
-        static_cast<std::uint32_t>(width),
+    const uint32_t actualExtentWidth = std::clamp(
+        static_cast<uint32_t>(width),
         capabilities.minImageExtent.width,
         capabilities.maxImageExtent.width
     );
-    const std::uint32_t actualExtentHeight = std::clamp(
-        static_cast<std::uint32_t>(height),
+    const uint32_t actualExtentHeight = std::clamp(
+        static_cast<uint32_t>(height),
         capabilities.minImageExtent.height,
         capabilities.maxImageExtent.height
     );
@@ -150,7 +150,7 @@ void SwapChain::createFramebuffers(const RendererContext &ctx, const vk::raii::R
 
         const vk::FramebufferCreateInfo createInfo{
             .renderPass = *renderPass,
-            .attachmentCount = static_cast<std::uint32_t>(attachments.size()),
+            .attachmentCount = static_cast<uint32_t>(attachments.size()),
             .pAttachments = attachments.data(),
             .width = extent.width,
             .height = extent.height,
@@ -182,7 +182,7 @@ void SwapChain::createColorResources(const RendererContext &ctx) {
         .initialLayout = vk::ImageLayout::eUndefined,
     };
 
-    colorImage = std::make_unique<Image>(
+    colorImage = make_unique<Image>(
         ctx,
         imageInfo,
         vk::MemoryPropertyFlagBits::eDeviceLocal
@@ -209,7 +209,7 @@ void SwapChain::createDepthResources(const RendererContext &ctx) {
         .initialLayout = vk::ImageLayout::eUndefined,
     };
 
-    depthImage = std::make_unique<Image>(
+    depthImage = make_unique<Image>(
         ctx,
         imageInfo,
         vk::MemoryPropertyFlagBits::eDeviceLocal

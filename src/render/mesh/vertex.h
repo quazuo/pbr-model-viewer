@@ -14,9 +14,9 @@ struct Vertex {
                && tangent == other.tangent;
     }
 
-    static std::array<vk::VertexInputBindingDescription, 2> getBindingDescription();
+    static std::vector<vk::VertexInputBindingDescription> getBindingDescriptions();
 
-    static std::array<vk::VertexInputAttributeDescription, 8> getAttributeDescriptions();
+    static std::vector<vk::VertexInputAttributeDescription> getAttributeDescriptions();
 };
 
 struct SkyboxVertex {
@@ -26,9 +26,9 @@ struct SkyboxVertex {
         return pos == other.pos;
     }
 
-    static vk::VertexInputBindingDescription getBindingDescription();
+    static std::vector<vk::VertexInputBindingDescription> getBindingDescriptions();
 
-    static std::array<vk::VertexInputAttributeDescription, 1> getAttributeDescriptions();
+    static std::vector<vk::VertexInputAttributeDescription> getAttributeDescriptions();
 };
 
 template<>

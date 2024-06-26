@@ -49,7 +49,7 @@ Rotator::ViewVectors Rotator::getViewVectors() const {
     };
 }
 
-Camera::Camera(GLFWwindow *w) : window(w), inputManager(std::make_unique<InputManager>(w)) {
+Camera::Camera(GLFWwindow *w) : window(w), inputManager(make_unique<InputManager>(w)) {
     bindMouseDragCallback();
 
     initGlfwUserPointer(window);
