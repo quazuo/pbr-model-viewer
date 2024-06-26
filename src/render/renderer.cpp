@@ -9,7 +9,6 @@
 #include <optional>
 #include <set>
 #include <vector>
-#include <fstream>
 #include <filesystem>
 #include <array>
 #include <random>
@@ -45,52 +44,6 @@ VmaAllocatorWrapper::VmaAllocatorWrapper(const vk::PhysicalDevice physicalDevice
 VmaAllocatorWrapper::~VmaAllocatorWrapper() {
     vmaDestroyAllocator(allocator);
 }
-
-// vertices of a the skybox cube.
-// might change this to be generated more intelligently... but it's good enough for now
-static std::vector<SkyboxVertex> skyboxVertices = {
-    {{-1.0f, 1.0f, -1.0f}},
-    {{-1.0f, -1.0f, -1.0f}},
-    {{1.0f, -1.0f, -1.0f}},
-    {{1.0f, -1.0f, -1.0f}},
-    {{1.0f, 1.0f, -1.0f}},
-    {{-1.0f, 1.0f, -1.0f}},
-
-    {{-1.0f, -1.0f, 1.0f}},
-    {{-1.0f, -1.0f, -1.0f}},
-    {{-1.0f, 1.0f, -1.0f}},
-    {{-1.0f, 1.0f, -1.0f}},
-    {{-1.0f, 1.0f, 1.0f}},
-    {{-1.0f, -1.0f, 1.0f}},
-
-    {{1.0f, -1.0f, -1.0f}},
-    {{1.0f, -1.0f, 1.0f}},
-    {{1.0f, 1.0f, 1.0f}},
-    {{1.0f, 1.0f, 1.0f}},
-    {{1.0f, 1.0f, -1.0f}},
-    {{1.0f, -1.0f, -1.0f}},
-
-    {{-1.0f, -1.0f, 1.0f}},
-    {{-1.0f, 1.0f, 1.0f}},
-    {{1.0f, 1.0f, 1.0f}},
-    {{1.0f, 1.0f, 1.0f}},
-    {{1.0f, -1.0f, 1.0f}},
-    {{-1.0f, -1.0f, 1.0f}},
-
-    {{-1.0f, 1.0f, -1.0f}},
-    {{1.0f, 1.0f, -1.0f}},
-    {{1.0f, 1.0f, 1.0f}},
-    {{1.0f, 1.0f, 1.0f}},
-    {{-1.0f, 1.0f, 1.0f}},
-    {{-1.0f, 1.0f, -1.0f}},
-
-    {{-1.0f, -1.0f, -1.0f}},
-    {{-1.0f, -1.0f, 1.0f}},
-    {{1.0f, -1.0f, -1.0f}},
-    {{1.0f, -1.0f, -1.0f}},
-    {{-1.0f, -1.0f, 1.0f}},
-    {{1.0f, -1.0f, 1.0f}}
-};
 
 VulkanRenderer::VulkanRenderer() {
     constexpr int INIT_WINDOW_WIDTH = 1200;
@@ -1198,7 +1151,7 @@ void VulkanRenderer::createPipelines() {
 }
 
 void VulkanRenderer::createScenePipeline() {
-    Pipeline pipeline = PipelineBuilder()
+    PipelinePack pipeline = PipelineBuilder()
             .withVertexShader("../shaders/obj/shader-vert.spv")
             .withFragmentShader("../shaders/obj/shader-frag.spv")
             .withVertices<Vertex>()
@@ -1211,11 +1164,11 @@ void VulkanRenderer::createScenePipeline() {
             })
             .create(ctx, *renderPass);
 
-    scenePipeline = make_unique<Pipeline>(std::move(pipeline));
+    scenePipeline = make_unique<PipelinePack>(std::move(pipeline));
 }
 
 void VulkanRenderer::createSkyboxPipeline() {
-    Pipeline pipeline = PipelineBuilder()
+    PipelinePack pipeline = PipelineBuilder()
             .withVertexShader("../shaders/obj/skybox-vert.spv")
             .withFragmentShader("../shaders/obj/skybox-frag.spv")
             .withVertices<SkyboxVertex>()
@@ -1238,94 +1191,69 @@ void VulkanRenderer::createSkyboxPipeline() {
             })
             .create(ctx, *renderPass);
 
-    skyboxPipeline = make_unique<Pipeline>(std::move(pipeline));
+    skyboxPipeline = make_unique<PipelinePack>(std::move(pipeline));
 }
 
 void VulkanRenderer::createCubemapCapturePipeline() {
-    for (uint32_t i = 0; i < 6; i++) {
-        Pipeline pipeline = PipelineBuilder()
-                .withVertexShader("../shaders/obj/sphere-cube-vert.spv")
-                .withFragmentShader("../shaders/obj/sphere-cube-frag.spv")
-                .withVertices<SkyboxVertex>()
-                .withRasterizer({
-                    .polygonMode = vk::PolygonMode::eFill,
-                    .cullMode = vk::CullModeFlagBits::eNone,
-                    .frontFace = vk::FrontFace::eCounterClockwise,
-                    .lineWidth = 1.0f,
-                })
-                .withDepthStencil({
-                    .depthTestEnable = vk::False,
-                    .depthWriteEnable = vk::False,
-                })
-                .withDescriptorLayouts({
-                    **cubemapCaptureDescriptorLayout,
-                })
-                .withPushConstants({
-                    vk::PushConstantRange{
-                        .stageFlags = vk::ShaderStageFlagBits::eVertex,
-                        .offset = 0,
-                        .size = sizeof(CubemapCapturePushConstants),
-                    }
-                })
-                .forSubpass(i)
-                .create(ctx, *cubemapCaptureResources.renderPass);
+    PipelinePack pipeline = PipelineBuilder()
+            .withVertexShader("../shaders/obj/sphere-cube-vert.spv")
+            .withFragmentShader("../shaders/obj/sphere-cube-frag.spv")
+            .withVertices<SkyboxVertex>()
+            .withRasterizer({
+                .polygonMode = vk::PolygonMode::eFill,
+                .cullMode = vk::CullModeFlagBits::eNone,
+                .frontFace = vk::FrontFace::eCounterClockwise,
+                .lineWidth = 1.0f,
+            })
+            .withDepthStencil({
+                .depthTestEnable = vk::False,
+                .depthWriteEnable = vk::False,
+            })
+            .withDescriptorLayouts({
+                **cubemapCaptureDescriptorLayout,
+            })
+            .withPushConstants({
+                vk::PushConstantRange{
+                    .stageFlags = vk::ShaderStageFlagBits::eVertex,
+                    .offset = 0,
+                    .size = sizeof(CubemapCapturePushConstants),
+                }
+            })
+            .forSubpasses(6)
+            .create(ctx, *cubemapCaptureResources.renderPass);
 
-        cubemapCapturePipelines.emplace_back(make_unique<Pipeline>(std::move(pipeline)));
-    }
+    cubemapCapturePipelines = make_unique<PipelinePack>(std::move(pipeline));
 }
 
 void VulkanRenderer::createIrradianceCapturePipeline() {
-    for (uint32_t i = 0; i < 6; i++) {
-        Pipeline pipeline = PipelineBuilder()
-                .withVertexShader("../shaders/obj/convolute-vert.spv")
-                .withFragmentShader("../shaders/obj/convolute-frag.spv")
-                .withVertices<SkyboxVertex>()
-                .withRasterizer({
-                    .polygonMode = vk::PolygonMode::eFill,
-                    .cullMode = vk::CullModeFlagBits::eNone,
-                    .frontFace = vk::FrontFace::eCounterClockwise,
-                    .lineWidth = 1.0f,
-                })
-                .withDepthStencil({
-                    .depthTestEnable = vk::False,
-                    .depthWriteEnable = vk::False,
-                })
-                .withDescriptorLayouts({
-                    **irradianceCaptureDescriptorLayout,
-                })
-                .withPushConstants({
-                    vk::PushConstantRange{
-                        .stageFlags = vk::ShaderStageFlagBits::eVertex,
-                        .offset = 0,
-                        .size = sizeof(CubemapCapturePushConstants),
-                    }
-                })
-                .forSubpass(i)
-                .create(ctx, *irradianceCaptureResources.renderPass);
+    PipelinePack pipeline = PipelineBuilder()
+            .withVertexShader("../shaders/obj/convolute-vert.spv")
+            .withFragmentShader("../shaders/obj/convolute-frag.spv")
+            .withVertices<SkyboxVertex>()
+            .withRasterizer({
+                .polygonMode = vk::PolygonMode::eFill,
+                .cullMode = vk::CullModeFlagBits::eNone,
+                .frontFace = vk::FrontFace::eCounterClockwise,
+                .lineWidth = 1.0f,
+            })
+            .withDepthStencil({
+                .depthTestEnable = vk::False,
+                .depthWriteEnable = vk::False,
+            })
+            .withDescriptorLayouts({
+                **irradianceCaptureDescriptorLayout,
+            })
+            .withPushConstants({
+                vk::PushConstantRange{
+                    .stageFlags = vk::ShaderStageFlagBits::eVertex,
+                    .offset = 0,
+                    .size = sizeof(CubemapCapturePushConstants),
+                }
+            })
+            .forSubpasses(6)
+            .create(ctx, *irradianceCaptureResources.renderPass);
 
-        irradianceCapturePipelines.emplace_back(make_unique<Pipeline>(std::move(pipeline)));
-    }
-}
-
-[[nodiscard]]
-vk::raii::ShaderModule VulkanRenderer::createShaderModule(const std::filesystem::path &path) const {
-    std::ifstream file(path, std::ios::ate | std::ios::binary);
-
-    if (!file.is_open()) {
-        throw std::runtime_error("failed to open file!");
-    }
-
-    const size_t fileSize = file.tellg();
-    std::vector<char> buffer(fileSize);
-    file.seekg(0);
-    file.read(buffer.data(), static_cast<std::streamsize>(fileSize));
-
-    const vk::ShaderModuleCreateInfo createInfo{
-        .codeSize = buffer.size(),
-        .pCode = reinterpret_cast<const uint32_t *>(buffer.data()),
-    };
-
-    return {*ctx.device, createInfo};
+    irradianceCapturePipelines = make_unique<PipelinePack>(std::move(pipeline));
 }
 
 // ==================== multisampling ====================
@@ -1618,7 +1546,14 @@ void VulkanRenderer::renderGuiSection() {
 void VulkanRenderer::tick(const float deltaTime) {
     glfwPollEvents();
     camera->tick(deltaTime);
-    inputManager->tick(deltaTime);
+
+    if (
+        !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow)
+        && !ImGui::IsAnyItemActive()
+        && !ImGui::IsAnyItemFocused()
+    ) {
+        inputManager->tick(deltaTime);
+    }
 }
 
 void VulkanRenderer::renderGui(const std::function<void()> &renderCommands) {
@@ -1872,7 +1807,6 @@ void VulkanRenderer::captureCubemap() {
     constexpr vk::ClearColorValue clearColor{0, 0, 0, 1};
     const std::vector<vk::ClearValue> clearValues{6, clearColor};
 
-    // todo - maybe just don't flip it?
     const vk::Viewport viewport{
         .x = 0.0f,
         .y = static_cast<float>(extent.height),
@@ -1909,7 +1843,7 @@ void VulkanRenderer::captureCubemap() {
 
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        *cubemapCapturePipelines[0]->getLayout(),
+        *cubemapCapturePipelines->getLayout(),
         0,
         {
             **cubemapCaptureResources.descriptorSet,
@@ -1927,8 +1861,8 @@ void VulkanRenderer::captureCubemap() {
         glm::lookAt(glm::vec3(0), glm::vec3(0, 0, -1), glm::vec3(0, 1, 0))
     };
 
-    for (size_t i = 0; i < 6; i++) {
-        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***cubemapCapturePipelines[i]);
+    for (uint32_t i = 0; i < 6; i++) {
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *(*cubemapCapturePipelines)[i]);
 
         const CubemapCapturePushConstants pushConstants{
             .view = captureViews[i],
@@ -1936,7 +1870,7 @@ void VulkanRenderer::captureCubemap() {
         };
 
         commandBuffer.pushConstants<CubemapCapturePushConstants>(
-            *cubemapCapturePipelines[i]->getLayout(),
+            *cubemapCapturePipelines->getLayout(),
             vk::ShaderStageFlagBits::eVertex,
             0u,
             pushConstants
@@ -1974,7 +1908,6 @@ void VulkanRenderer::captureIrradianceMap() {
     constexpr vk::ClearColorValue clearColor{0, 0, 0, 1};
     const std::vector<vk::ClearValue> clearValues{6, clearColor};
 
-    // todo - maybe just don't flip it?
     const vk::Viewport viewport{
         .x = 0.0f,
         .y = static_cast<float>(extent.height),
@@ -2011,7 +1944,7 @@ void VulkanRenderer::captureIrradianceMap() {
 
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        *irradianceCapturePipelines[0]->getLayout(),
+        *irradianceCapturePipelines->getLayout(),
         0,
         {
             **irradianceCaptureResources.descriptorSet,
@@ -2030,7 +1963,7 @@ void VulkanRenderer::captureIrradianceMap() {
     };
 
     for (size_t i = 0; i < 6; i++) {
-        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***irradianceCapturePipelines[i]);
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *(*irradianceCapturePipelines)[i]);
 
         const CubemapCapturePushConstants pushConstants{
             .view = captureViews[i],
@@ -2038,7 +1971,7 @@ void VulkanRenderer::captureIrradianceMap() {
         };
 
         commandBuffer.pushConstants<CubemapCapturePushConstants>(
-            *irradianceCapturePipelines[0]->getLayout(),
+            *irradianceCapturePipelines->getLayout(),
             vk::ShaderStageFlagBits::eVertex,
             0u,
             pushConstants

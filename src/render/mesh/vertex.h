@@ -31,6 +31,52 @@ struct SkyboxVertex {
     static std::vector<vk::VertexInputAttributeDescription> getAttributeDescriptions();
 };
 
+// vertices of a the skybox cube.
+// might change this to be generated more intelligently... but it's good enough for now
+static std::vector<SkyboxVertex> skyboxVertices = {
+    {{-1.0f, 1.0f, -1.0f}},
+    {{-1.0f, -1.0f, -1.0f}},
+    {{1.0f, -1.0f, -1.0f}},
+    {{1.0f, -1.0f, -1.0f}},
+    {{1.0f, 1.0f, -1.0f}},
+    {{-1.0f, 1.0f, -1.0f}},
+
+    {{-1.0f, -1.0f, 1.0f}},
+    {{-1.0f, -1.0f, -1.0f}},
+    {{-1.0f, 1.0f, -1.0f}},
+    {{-1.0f, 1.0f, -1.0f}},
+    {{-1.0f, 1.0f, 1.0f}},
+    {{-1.0f, -1.0f, 1.0f}},
+
+    {{1.0f, -1.0f, -1.0f}},
+    {{1.0f, -1.0f, 1.0f}},
+    {{1.0f, 1.0f, 1.0f}},
+    {{1.0f, 1.0f, 1.0f}},
+    {{1.0f, 1.0f, -1.0f}},
+    {{1.0f, -1.0f, -1.0f}},
+
+    {{-1.0f, -1.0f, 1.0f}},
+    {{-1.0f, 1.0f, 1.0f}},
+    {{1.0f, 1.0f, 1.0f}},
+    {{1.0f, 1.0f, 1.0f}},
+    {{1.0f, -1.0f, 1.0f}},
+    {{-1.0f, -1.0f, 1.0f}},
+
+    {{-1.0f, 1.0f, -1.0f}},
+    {{1.0f, 1.0f, -1.0f}},
+    {{1.0f, 1.0f, 1.0f}},
+    {{1.0f, 1.0f, 1.0f}},
+    {{-1.0f, 1.0f, 1.0f}},
+    {{-1.0f, 1.0f, -1.0f}},
+
+    {{-1.0f, -1.0f, -1.0f}},
+    {{-1.0f, -1.0f, 1.0f}},
+    {{1.0f, -1.0f, -1.0f}},
+    {{1.0f, -1.0f, -1.0f}},
+    {{-1.0f, -1.0f, 1.0f}},
+    {{1.0f, -1.0f, 1.0f}}
+};
+
 template<>
 struct std::hash<Vertex> {
     size_t operator()(Vertex const &vertex) const noexcept {

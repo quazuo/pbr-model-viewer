@@ -9,13 +9,13 @@
 
 #include "libs.h"
 #include "globals.h"
-#include "vk/pipeline.h"
 
 class Image;
 class InputManager;
 class Model;
 class Camera;
 class Buffer;
+class PipelinePack;
 class Texture;
 class SwapChain;
 class GuiRenderer;
@@ -105,7 +105,7 @@ public:
 };
 
 /**
- * Helper structure used to handles to essential Vulkan objects which are used while interacting with the API.
+ * Helper structure used to pass handles to essential Vulkan objects which are used while interacting with the API.
  * Introduced so that we can preserve top-down data flow and no object needs to refer to a renderer object
  * to get access to these.
  */
@@ -153,10 +153,10 @@ class VulkanRenderer {
     unique_ptr<vk::raii::DescriptorSetLayout> cubemapCaptureDescriptorLayout;
     unique_ptr<vk::raii::DescriptorSetLayout> irradianceCaptureDescriptorLayout;
 
-    unique_ptr<Pipeline> scenePipeline;
-    unique_ptr<Pipeline> skyboxPipeline;
-    std::vector<unique_ptr<Pipeline>> cubemapCapturePipelines;
-    std::vector<unique_ptr<Pipeline>> irradianceCapturePipelines;
+    unique_ptr<PipelinePack> scenePipeline;
+    unique_ptr<PipelinePack> skyboxPipeline;
+    unique_ptr<PipelinePack> cubemapCapturePipelines;
+    unique_ptr<PipelinePack> irradianceCapturePipelines;
 
     unique_ptr<vk::raii::CommandPool> commandPool;
 
@@ -353,9 +353,6 @@ private:
     void createCubemapCapturePipeline();
 
     void createIrradianceCapturePipeline();
-
-    [[nodiscard]]
-    vk::raii::ShaderModule createShaderModule(const std::filesystem::path &path) const;
 
     // ==================== multisampling ====================
 

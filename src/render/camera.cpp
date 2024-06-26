@@ -6,7 +6,7 @@
 #include "gui/gui.h"
 #include "src/utils/glfw-statics.h"
 
-Rotator & Rotator::operator=(const glm::vec2 other) {
+Rotator &Rotator::operator=(const glm::vec2 other) {
     rot = other;
     return *this;
 }
@@ -24,7 +24,7 @@ Rotator &Rotator::operator+=(const glm::vec2 other) {
     return *this;
 }
 
-Rotator & Rotator::operator-=(const glm::vec2 other) {
+Rotator &Rotator::operator-=(const glm::vec2 other) {
     *this += -other;
     return *this;
 }
@@ -53,7 +53,7 @@ Camera::Camera(GLFWwindow *w) : window(w), inputManager(make_unique<InputManager
     bindMouseDragCallback();
 
     initGlfwUserPointer(window);
-    auto* userData = static_cast<GlfwStaticUserData*>(glfwGetWindowUserPointer(window));
+    auto *userData = static_cast<GlfwStaticUserData *>(glfwGetWindowUserPointer(window));
     if (!userData) throw std::runtime_error("unexpected null window user pointer");
     userData->camera = this;
 
@@ -61,7 +61,13 @@ Camera::Camera(GLFWwindow *w) : window(w), inputManager(make_unique<InputManager
 }
 
 void Camera::tick(const float deltaTime) {
-    inputManager->tick(deltaTime);
+    if (
+        !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow)
+        && !ImGui::IsAnyItemActive()
+        && !ImGui::IsAnyItemFocused()
+    ) {
+        inputManager->tick(deltaTime);
+    }
 
     if (isLocked) {
         tickLockedMode();
@@ -127,16 +133,19 @@ void Camera::renderGuiSection() {
         }
         ImGui::EndChild();
 
-        ImGui::Separator();
-
-        ImGui::SliderFloat("Field of view", &fieldOfView, 20.0f, 160.0f, "%.0f");
-        ImGui::DragFloat("Rotation speed", &rotationSpeed, 0.1f, 0.0f, FLT_MAX, "%.1f");
-        ImGui::DragFloat("Movement speed", &movementSpeed, 0.1f, 0.0f, FLT_MAX, "%.1f");
-
         // todo - implement freecam
         // ImGui::Separator();
         //
         // ImGui::Checkbox("Lock camera?", &isLocked);
+
+        ImGui::Separator();
+
+        ImGui::SliderFloat("Field of view", &fieldOfView, 20.0f, 160.0f, "%.0f");
+
+        if (!isLocked) {
+            ImGui::DragFloat("Rotation speed", &rotationSpeed, 0.1f, 0.0f, FLT_MAX, "%.1f");
+            ImGui::DragFloat("Movement speed", &movementSpeed, 0.1f, 0.0f, FLT_MAX, "%.1f");
+        }
     }
 }
 

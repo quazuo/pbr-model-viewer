@@ -7,17 +7,20 @@
 
 struct RendererContext;
 
-class Pipeline {
-    unique_ptr<vk::raii::Pipeline> pipeline;
+class PipelinePack {
+    std::vector<unique_ptr<vk::raii::Pipeline>> pipelines;
     unique_ptr<vk::raii::PipelineLayout> layout;
 
     friend class PipelineBuilder;
 
-    Pipeline() = default;
+    PipelinePack() = default;
 
 public:
     [[nodiscard]]
-    const vk::raii::Pipeline& operator*() const { return *pipeline; }
+    const vk::raii::Pipeline& operator*() const { return *pipelines[0]; }
+
+    [[nodiscard]]
+    const vk::raii::Pipeline& operator[](const uint32_t idx) const { return *pipelines[idx]; }
 
     [[nodiscard]]
     const vk::raii::PipelineLayout& getLayout() const { return *layout; }
@@ -33,7 +36,7 @@ class PipelineBuilder {
     std::vector<vk::DescriptorSetLayout> descriptorSetLayouts;
     std::vector<vk::PushConstantRange> pushConstantRanges;
 
-    uint32_t subpassIndex = 0;
+    uint32_t subpassCount = 1;
 
     std::optional<vk::PipelineRasterizationStateCreateInfo> rasterizerOverride;
     std::optional<vk::PipelineMultisampleStateCreateInfo> multisamplingOverride;
@@ -57,10 +60,10 @@ public:
 
     PipelineBuilder &withDepthStencil(const vk::PipelineDepthStencilStateCreateInfo& depthStencil);
 
-    PipelineBuilder &forSubpass(uint32_t index);
+    PipelineBuilder &forSubpasses(uint32_t count);
 
     [[nodiscard]]
-    Pipeline create(const RendererContext &ctx, const vk::raii::RenderPass& renderPass) const;
+    PipelinePack create(const RendererContext &ctx, const vk::raii::RenderPass& renderPass) const;
 
 private:
     void checkParams() const;

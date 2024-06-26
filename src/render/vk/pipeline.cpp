@@ -47,13 +47,13 @@ PipelineBuilder &PipelineBuilder::withDepthStencil(const vk::PipelineDepthStenci
     return *this;
 }
 
-PipelineBuilder &PipelineBuilder::forSubpass(const uint32_t index) {
-    subpassIndex = index;
+PipelineBuilder &PipelineBuilder::forSubpasses(const uint32_t count) {
+    subpassCount = count;
     return *this;
 }
 
-Pipeline PipelineBuilder::create(const RendererContext &ctx, const vk::raii::RenderPass &renderPass) const {
-    Pipeline result;
+PipelinePack PipelineBuilder::create(const RendererContext &ctx, const vk::raii::RenderPass &renderPass) const {
+    PipelinePack result;
 
     vk::raii::ShaderModule vertShaderModule = createShaderModule(ctx, vertexShaderPath);
     vk::raii::ShaderModule fragShaderModule = createShaderModule(ctx, fragmentShaderPath);
@@ -148,23 +148,25 @@ Pipeline PipelineBuilder::create(const RendererContext &ctx, const vk::raii::Ren
 
     result.layout = make_unique<vk::raii::PipelineLayout>(*ctx.device, pipelineLayoutInfo);
 
-    const vk::GraphicsPipelineCreateInfo pipelineInfo{
-        .stageCount = static_cast<uint32_t>(shaderStages.size()),
-        .pStages = shaderStages.data(),
-        .pVertexInputState = &vertexInputInfo,
-        .pInputAssemblyState = &inputAssembly,
-        .pViewportState = &viewportState,
-        .pRasterizationState = &rasterizer,
-        .pMultisampleState = &multisampling,
-        .pDepthStencilState = &depthStencil,
-        .pColorBlendState = &colorBlending,
-        .pDynamicState = &dynamicState,
-        .layout = **result.layout,
-        .renderPass = *renderPass,
-        .subpass = subpassIndex,
-    };
+    for (uint32_t subpassIndex = 0; subpassIndex < subpassCount; subpassIndex++) {
+        const vk::GraphicsPipelineCreateInfo pipelineInfo{
+            .stageCount = static_cast<uint32_t>(shaderStages.size()),
+            .pStages = shaderStages.data(),
+            .pVertexInputState = &vertexInputInfo,
+            .pInputAssemblyState = &inputAssembly,
+            .pViewportState = &viewportState,
+            .pRasterizationState = &rasterizer,
+            .pMultisampleState = &multisampling,
+            .pDepthStencilState = &depthStencil,
+            .pColorBlendState = &colorBlending,
+            .pDynamicState = &dynamicState,
+            .layout = **result.layout,
+            .renderPass = *renderPass,
+            .subpass = subpassIndex,
+        };
 
-    result.pipeline = make_unique<vk::raii::Pipeline>(*ctx.device, nullptr, pipelineInfo);
+        result.pipelines.emplace_back(make_unique<vk::raii::Pipeline>(*ctx.device, nullptr, pipelineInfo));
+    }
 
     return result;
 }
