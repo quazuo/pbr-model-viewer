@@ -3,7 +3,6 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include <algorithm>
 #include <iostream>
 #include <stdexcept>
 #include <optional>
@@ -11,8 +10,6 @@
 #include <vector>
 #include <filesystem>
 #include <array>
-#include <random>
-#include <ranges>
 
 #include "gui/gui.h"
 #include "mesh/model.h"
@@ -84,19 +81,22 @@ VulkanRenderer::VulkanRenderer() {
     createCommandPool();
     createCommandBuffers();
 
-    swapChain->createFramebuffers(ctx, *renderPass);
+    swapChain->createFramebuffers(ctx, *sceneRenderPass);
 
     createDescriptorPool();
 
     createUniformBuffers();
+    updateGraphicsUniformBuffer();
 
     createSkyboxVertexBuffer();
 
     createCubemapCaptureRenderPass();
     createCubemapCapturePipeline();
 
-    createIrradianceCaptureRenderPass();
+    createCubemapConvoluteRenderPass();
     createIrradianceCapturePipeline();
+
+    createPrefilterPipeline();
 
     // loadModel("../assets/t-60-helmet/source/T-60 HelmetU.fbx");
     // loadAlbedoTexture("../assets/t-60-helmet/textures/albedo.png");
@@ -473,23 +473,24 @@ void VulkanRenderer::loadOrmMap(const std::filesystem::path &aoPath, const std::
 void VulkanRenderer::loadEnvironmentMap(const std::filesystem::path &path) {
     waitIdle();
 
-    for (auto& res: frameResources) {
+    for (auto &res: frameResources) {
         res.sceneDescriptorSet.reset();
         res.skyboxDescriptorSet.reset();
     }
 
-    cubemapCaptureResources.descriptorSet.reset();
-    irradianceCaptureResources.descriptorSet.reset();
+    cubemapCaptureDescriptorSet.reset();
+    envmapConvoluteDescriptorSet.reset();
 
-    createSkyboxTextures(path);
+    createEnvmapTextures(path);
 
     createSceneDescriptorSets();
     createSkyboxDescriptorSets();
     createCubemapCaptureDescriptorSets();
-    createIrradianceCaptureDescriptorSets();
+    createEnvmapConvoluteDescriptorSets();
 
     createCubemapCaptureFramebuffer();
     createIrradianceCaptureFramebuffer();
+    createPrefilterFramebuffers();
 
     captureCubemap();
     utils::img::transitionImageLayout(
@@ -516,6 +517,8 @@ void VulkanRenderer::loadEnvironmentMap(const std::filesystem::path &path) {
         *graphicsQueue
     );
     irradianceMapTexture->generateMipmaps(ctx, *commandPool, *graphicsQueue, vk::ImageLayout::eShaderReadOnlyOptimal);
+
+    prefilterEnvmap();
 }
 
 void VulkanRenderer::buildDescriptors() {
@@ -526,15 +529,7 @@ void VulkanRenderer::buildDescriptors() {
     createSceneDescriptorSets();
 }
 
-void VulkanRenderer::createSkyboxTextures(const std::filesystem::path &path) {
-    // std::vector<std::filesystem::path> cubemapPaths{6, "../assets/skyboxes"};
-    // cubemapPaths[0].append("right.jpg");
-    // cubemapPaths[1].append("left.jpg");
-    // cubemapPaths[2].append("top.jpg");
-    // cubemapPaths[3].append("bottom.jpg");
-    // cubemapPaths[4].append("front.jpg");
-    // cubemapPaths[5].append("back.jpg");
-
+void VulkanRenderer::createEnvmapTextures(const std::filesystem::path &path) {
     skyboxTexture = TextureBuilder()
             .asCubemap()
             .asUninitialized({cubemapExtent.width, cubemapExtent.height, 1})
@@ -557,6 +552,18 @@ void VulkanRenderer::createSkyboxTextures(const std::filesystem::path &path) {
     irradianceMapTexture = TextureBuilder()
             .asCubemap()
             .asUninitialized({32, 32, 1})
+            .asHdr()
+            .useFormat(hdrEnvmapFormat)
+            .useUsage(vk::ImageUsageFlagBits::eTransferSrc
+                      | vk::ImageUsageFlagBits::eTransferDst
+                      | vk::ImageUsageFlagBits::eSampled
+                      | vk::ImageUsageFlagBits::eColorAttachment)
+            .makeMipmaps()
+            .create(ctx, *commandPool, *graphicsQueue);
+
+    prefilteredEnvmapTexture = TextureBuilder()
+            .asCubemap()
+            .asUninitialized({128, 128, 1})
             .asHdr()
             .useFormat(hdrEnvmapFormat)
             .useUsage(vk::ImageUsageFlagBits::eTransferSrc
@@ -588,7 +595,7 @@ void VulkanRenderer::recreateSwapChain() {
         window,
         msaaSampleCount
     );
-    swapChain->createFramebuffers(ctx, *renderPass);
+    swapChain->createFramebuffers(ctx, *sceneRenderPass);
 }
 
 // ==================== descriptors ====================
@@ -597,7 +604,7 @@ void VulkanRenderer::createDescriptorSetLayouts() {
     createSceneDescriptorSetLayouts();
     createSkyboxDescriptorSetLayouts();
     createCubemapCaptureDescriptorSetLayouts();
-    createIrradianceCaptureDescriptorSetLayouts();
+    createEnvmapConvoluteDescriptorSetLayouts();
 }
 
 void VulkanRenderer::createSceneDescriptorSetLayouts() {
@@ -681,14 +688,22 @@ void VulkanRenderer::createSkyboxDescriptorSetLayouts() {
 }
 
 void VulkanRenderer::createCubemapCaptureDescriptorSetLayouts() {
-    static constexpr vk::DescriptorSetLayoutBinding envmapSamplerLayoutBinding{
+    static constexpr vk::DescriptorSetLayoutBinding uboLayoutBinding{
         .binding = 0U,
+        .descriptorType = vk::DescriptorType::eUniformBuffer,
+        .descriptorCount = 1U,
+        .stageFlags = vk::ShaderStageFlagBits::eVertex,
+    };
+
+    static constexpr vk::DescriptorSetLayoutBinding envmapSamplerLayoutBinding{
+        .binding = 1U,
         .descriptorType = vk::DescriptorType::eCombinedImageSampler,
         .descriptorCount = 1U,
         .stageFlags = vk::ShaderStageFlagBits::eFragment,
     };
 
     static constexpr std::array setBindings{
+        uboLayoutBinding,
         envmapSamplerLayoutBinding,
     };
 
@@ -700,15 +715,23 @@ void VulkanRenderer::createCubemapCaptureDescriptorSetLayouts() {
     cubemapCaptureDescriptorLayout = make_unique<vk::raii::DescriptorSetLayout>(*ctx.device, setLayoutInfo);
 }
 
-void VulkanRenderer::createIrradianceCaptureDescriptorSetLayouts() {
-    static constexpr vk::DescriptorSetLayoutBinding skyboxSamplerLayoutBinding{
+void VulkanRenderer::createEnvmapConvoluteDescriptorSetLayouts() {
+    static constexpr vk::DescriptorSetLayoutBinding uboLayoutBinding{
         .binding = 0U,
+        .descriptorType = vk::DescriptorType::eUniformBuffer,
+        .descriptorCount = 1U,
+        .stageFlags = vk::ShaderStageFlagBits::eVertex,
+    };
+
+    static constexpr vk::DescriptorSetLayoutBinding skyboxSamplerLayoutBinding{
+        .binding = 1U,
         .descriptorType = vk::DescriptorType::eCombinedImageSampler,
         .descriptorCount = 1U,
         .stageFlags = vk::ShaderStageFlagBits::eFragment,
     };
 
     static constexpr std::array setBindings{
+        uboLayoutBinding,
         skyboxSamplerLayoutBinding,
     };
 
@@ -717,13 +740,13 @@ void VulkanRenderer::createIrradianceCaptureDescriptorSetLayouts() {
         .pBindings = setBindings.data(),
     };
 
-    irradianceCaptureDescriptorLayout = make_unique<vk::raii::DescriptorSetLayout>(*ctx.device, setLayoutInfo);
+    envmapConvoluteDescriptorLayout = make_unique<vk::raii::DescriptorSetLayout>(*ctx.device, setLayoutInfo);
 }
 
 void VulkanRenderer::createDescriptorPool() {
     static constexpr vk::DescriptorPoolSize uboPoolSize{
         .type = vk::DescriptorType::eUniformBuffer,
-        .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 2,
+        .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 2 + 3,
     };
 
     static constexpr vk::DescriptorPoolSize samplerPoolSize{
@@ -918,6 +941,21 @@ void VulkanRenderer::createCubemapCaptureDescriptorSets() {
 
     std::vector<vk::raii::DescriptorSet> descriptorSets = ctx.device->allocateDescriptorSets(allocInfo);
 
+    const vk::DescriptorBufferInfo uboBufferInfo{
+        .buffer = **frameResources[0].graphicsUniformBuffer,
+        .offset = 0U,
+        .range = sizeof(GraphicsUBO),
+    };
+
+    const vk::WriteDescriptorSet uboDescriptorWrite{
+        .dstSet = *descriptorSets[0],
+        .dstBinding = 0U,
+        .dstArrayElement = 0U,
+        .descriptorCount = 1U,
+        .descriptorType = vk::DescriptorType::eUniformBuffer,
+        .pBufferInfo = &uboBufferInfo
+    };
+
     const vk::DescriptorImageInfo envmapImageInfo{
         .sampler = *envmapTexture->getSampler(),
         .imageView = *envmapTexture->getView(),
@@ -926,7 +964,7 @@ void VulkanRenderer::createCubemapCaptureDescriptorSets() {
 
     const vk::WriteDescriptorSet envmapSamplerDescriptorWrite{
         .dstSet = *descriptorSets[0],
-        .dstBinding = 0U,
+        .dstBinding = 1U,
         .dstArrayElement = 0U,
         .descriptorCount = 1U,
         .descriptorType = vk::DescriptorType::eCombinedImageSampler,
@@ -934,18 +972,18 @@ void VulkanRenderer::createCubemapCaptureDescriptorSets() {
     };
 
     const std::array descriptorWrites = {
+        uboDescriptorWrite,
         envmapSamplerDescriptorWrite
     };
 
     ctx.device->updateDescriptorSets(descriptorWrites, nullptr);
 
-    cubemapCaptureResources.descriptorSet =
-            make_unique<vk::raii::DescriptorSet>(std::move(descriptorSets[0]));
+    cubemapCaptureDescriptorSet = make_unique<vk::raii::DescriptorSet>(std::move(descriptorSets[0]));
 }
 
-void VulkanRenderer::createIrradianceCaptureDescriptorSets() {
+void VulkanRenderer::createEnvmapConvoluteDescriptorSets() {
     constexpr uint32_t setsCount = 1;
-    const std::vector setLayouts(setsCount, **irradianceCaptureDescriptorLayout);
+    const std::vector setLayouts(setsCount, **envmapConvoluteDescriptorLayout);
 
     const vk::DescriptorSetAllocateInfo allocInfo{
         .descriptorPool = **descriptorPool,
@@ -955,6 +993,21 @@ void VulkanRenderer::createIrradianceCaptureDescriptorSets() {
 
     std::vector<vk::raii::DescriptorSet> descriptorSets = ctx.device->allocateDescriptorSets(allocInfo);
 
+    const vk::DescriptorBufferInfo uboBufferInfo{
+        .buffer = **frameResources[0].graphicsUniformBuffer,
+        .offset = 0U,
+        .range = sizeof(GraphicsUBO),
+    };
+
+    const vk::WriteDescriptorSet uboDescriptorWrite{
+        .dstSet = *descriptorSets[0],
+        .dstBinding = 0U,
+        .dstArrayElement = 0U,
+        .descriptorCount = 1U,
+        .descriptorType = vk::DescriptorType::eUniformBuffer,
+        .pBufferInfo = &uboBufferInfo
+    };
+
     const vk::DescriptorImageInfo skyboxImageInfo{
         .sampler = *skyboxTexture->getSampler(),
         .imageView = *skyboxTexture->getView(),
@@ -963,7 +1016,7 @@ void VulkanRenderer::createIrradianceCaptureDescriptorSets() {
 
     const vk::WriteDescriptorSet skyboxSamplerDescriptorWrite{
         .dstSet = *descriptorSets[0],
-        .dstBinding = 0U,
+        .dstBinding = 1U,
         .dstArrayElement = 0U,
         .descriptorCount = 1U,
         .descriptorType = vk::DescriptorType::eCombinedImageSampler,
@@ -971,16 +1024,16 @@ void VulkanRenderer::createIrradianceCaptureDescriptorSets() {
     };
 
     const std::array descriptorWrites = {
+        uboDescriptorWrite,
         skyboxSamplerDescriptorWrite
     };
 
     ctx.device->updateDescriptorSets(descriptorWrites, nullptr);
 
-    irradianceCaptureResources.descriptorSet =
-            make_unique<vk::raii::DescriptorSet>(std::move(descriptorSets[0]));
+    envmapConvoluteDescriptorSet = make_unique<vk::raii::DescriptorSet>(std::move(descriptorSets[0]));
 }
 
-// ==================== graphics pipeline ====================
+// ==================== render passes ====================
 
 void VulkanRenderer::createRenderPass() {
     const vk::AttachmentDescription colorAttachment{
@@ -1062,7 +1115,7 @@ void VulkanRenderer::createRenderPass() {
         .pDependencies = &dependency
     };
 
-    renderPass = make_unique<vk::raii::RenderPass>(*ctx.device, renderPassInfo);
+    sceneRenderPass = make_unique<vk::raii::RenderPass>(*ctx.device, renderPassInfo);
 }
 
 void VulkanRenderer::createCubemapCaptureRenderPass() {
@@ -1126,10 +1179,10 @@ void VulkanRenderer::createCubemapCaptureRenderPass() {
         .pDependencies = dependencies.data()
     };
 
-    cubemapCaptureResources.renderPass = make_unique<vk::raii::RenderPass>(*ctx.device, renderPassInfo);
+    cubemapCaptureRenderPass = make_unique<vk::raii::RenderPass>(*ctx.device, renderPassInfo);
 }
 
-void VulkanRenderer::createIrradianceCaptureRenderPass() {
+void VulkanRenderer::createCubemapConvoluteRenderPass() {
     static constexpr vk::AttachmentDescription colorAttachment{
         .format = hdrEnvmapFormat,
         .samples = vk::SampleCountFlagBits::e1,
@@ -1190,13 +1243,10 @@ void VulkanRenderer::createIrradianceCaptureRenderPass() {
         .pDependencies = dependencies.data()
     };
 
-    irradianceCaptureResources.renderPass = make_unique<vk::raii::RenderPass>(*ctx.device, renderPassInfo);
+    envmapConvoluteRenderPass = make_unique<vk::raii::RenderPass>(*ctx.device, renderPassInfo);
 }
 
-void VulkanRenderer::createPipelines() {
-    createScenePipeline();
-    createSkyboxPipeline();
-}
+// ==================== pipelines ====================
 
 void VulkanRenderer::createScenePipeline() {
     PipelinePack pipeline = PipelineBuilder()
@@ -1210,7 +1260,7 @@ void VulkanRenderer::createScenePipeline() {
             .withDescriptorLayouts({
                 **sceneDescriptorLayout,
             })
-            .create(ctx, *renderPass);
+            .create(ctx, *sceneRenderPass);
 
     scenePipeline = make_unique<PipelinePack>(std::move(pipeline));
 }
@@ -1237,7 +1287,7 @@ void VulkanRenderer::createSkyboxPipeline() {
             .withDescriptorLayouts({
                 **skyboxDescriptorLayout,
             })
-            .create(ctx, *renderPass);
+            .create(ctx, *sceneRenderPass);
 
     skyboxPipeline = make_unique<PipelinePack>(std::move(pipeline));
 }
@@ -1264,11 +1314,11 @@ void VulkanRenderer::createCubemapCapturePipeline() {
                 vk::PushConstantRange{
                     .stageFlags = vk::ShaderStageFlagBits::eVertex,
                     .offset = 0,
-                    .size = sizeof(CubemapCapturePushConstants),
+                    .size = sizeof(SkyboxPushConstants),
                 }
             })
             .forSubpasses(6)
-            .create(ctx, *cubemapCaptureResources.renderPass);
+            .create(ctx, *cubemapCaptureRenderPass);
 
     cubemapCapturePipelines = make_unique<PipelinePack>(std::move(pipeline));
 }
@@ -1289,19 +1339,50 @@ void VulkanRenderer::createIrradianceCapturePipeline() {
                 .depthWriteEnable = vk::False,
             })
             .withDescriptorLayouts({
-                **irradianceCaptureDescriptorLayout,
+                **envmapConvoluteDescriptorLayout,
             })
             .withPushConstants({
                 vk::PushConstantRange{
                     .stageFlags = vk::ShaderStageFlagBits::eVertex,
                     .offset = 0,
-                    .size = sizeof(CubemapCapturePushConstants),
+                    .size = sizeof(SkyboxPushConstants),
                 }
             })
             .forSubpasses(6)
-            .create(ctx, *irradianceCaptureResources.renderPass);
+            .create(ctx, *envmapConvoluteRenderPass);
 
     irradianceCapturePipelines = make_unique<PipelinePack>(std::move(pipeline));
+}
+
+void VulkanRenderer::createPrefilterPipeline() {
+    PipelinePack pipeline = PipelineBuilder()
+            .withVertexShader("../shaders/obj/prefilter-vert.spv")
+            .withFragmentShader("../shaders/obj/prefilter-frag.spv")
+            .withVertices<SkyboxVertex>()
+            .withRasterizer({
+                .polygonMode = vk::PolygonMode::eFill,
+                .cullMode = vk::CullModeFlagBits::eNone,
+                .frontFace = vk::FrontFace::eCounterClockwise,
+                .lineWidth = 1.0f,
+            })
+            .withDepthStencil({
+                .depthTestEnable = vk::False,
+                .depthWriteEnable = vk::False,
+            })
+            .withDescriptorLayouts({
+                **envmapConvoluteDescriptorLayout,
+            })
+            .withPushConstants({
+                vk::PushConstantRange{
+                    .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+                    .offset = 0,
+                    .size = sizeof(PrefilterPushConstants),
+                }
+            })
+            .forSubpasses(6)
+            .create(ctx, *envmapConvoluteRenderPass);
+
+    prefilterPipelines = make_unique<PipelinePack>(std::move(pipeline));
 }
 
 // ==================== multisampling ====================
@@ -1380,19 +1461,30 @@ void VulkanRenderer::createUniformBuffers() {
 }
 
 void VulkanRenderer::createCubemapCaptureFramebuffer() {
-    cubemapCaptureResources.framebuffer = createPerLayerCubemapFramebuffer(
+    cubemapCaptureFramebuffer = createPerLayerCubemapFramebuffer(
         *skyboxTexture,
-        *cubemapCaptureResources.renderPass
+        *cubemapCaptureRenderPass
     );
 }
 
 void VulkanRenderer::createIrradianceCaptureFramebuffer() {
-    irradianceCaptureResources.framebuffer = createPerLayerCubemapFramebuffer(
+    irradianceCaptureFramebuffer = createPerLayerCubemapFramebuffer(
         *irradianceMapTexture,
-        *irradianceCaptureResources.renderPass
+        *envmapConvoluteRenderPass
     );
 }
 
+void VulkanRenderer::createPrefilterFramebuffers() {
+    for (uint32_t mip = 0; mip < maxPrefilterMipLevels; mip++) {
+        prefilterFramebuffers.emplace_back(
+            createMipPerLayerCubemapFramebuffer(
+                *prefilteredEnvmapTexture,
+                *envmapConvoluteRenderPass,
+                mip
+            )
+        );
+    }
+}
 
 unique_ptr<vk::raii::Framebuffer>
 VulkanRenderer::createPerLayerCubemapFramebuffer(const Texture &texture, const vk::raii::RenderPass &renderPass) const {
@@ -1408,6 +1500,29 @@ VulkanRenderer::createPerLayerCubemapFramebuffer(const Texture &texture, const v
         .pAttachments = attachments.data(),
         .width = texture.getImage().getExtent().width,
         .height = texture.getImage().getExtent().height,
+        .layers = 1,
+    };
+
+    return make_unique<vk::raii::Framebuffer>(*ctx.device, createInfo);
+}
+
+unique_ptr<vk::raii::Framebuffer>
+VulkanRenderer::createMipPerLayerCubemapFramebuffer(const Texture &texture, const vk::raii::RenderPass &renderPass,
+                                                    const uint32_t mipLevel) const {
+    std::vector<vk::ImageView> attachments;
+
+    for (uint32_t layer = 0; layer < 6; layer++) {
+        attachments.push_back(*texture.getLayerMipView(layer, mipLevel));
+    }
+
+    const uint32_t mipScalingFactor = 1 << mipLevel;
+
+    const vk::FramebufferCreateInfo createInfo{
+        .renderPass = *renderPass,
+        .attachmentCount = static_cast<uint32_t>(attachments.size()),
+        .pAttachments = attachments.data(),
+        .width = texture.getImage().getExtent().width / mipScalingFactor,
+        .height = texture.getImage().getExtent().height / mipScalingFactor,
         .layers = 1,
     };
 
@@ -1480,7 +1595,7 @@ void VulkanRenderer::recordGraphicsCommandBuffer() const {
     const vk::Extent2D swapChainExtent = swapChain->getExtent();
 
     const vk::RenderPassBeginInfo renderPassInfo{
-        .renderPass = **renderPass,
+        .renderPass = **sceneRenderPass,
         .framebuffer = *swapChain->getCurrentFramebuffer(),
         .renderArea = {
             .offset = {0, 0},
@@ -1570,7 +1685,7 @@ void VulkanRenderer::initImgui() {
         .MSAASamples = static_cast<VkSampleCountFlagBits>(msaaSampleCount),
     };
 
-    guiRenderer = make_unique<GuiRenderer>(window, imguiInitInfo, *renderPass);
+    guiRenderer = make_unique<GuiRenderer>(window, imguiInitInfo, *sceneRenderPass);
 }
 
 void VulkanRenderer::renderGuiSection() {
@@ -1606,7 +1721,7 @@ void VulkanRenderer::renderGui(const std::function<void()> &renderCommands) {
     const auto &commandBuffer = *frameResources[currentFrameIdx].guiCmdBuffer.buffer;
 
     const vk::CommandBufferInheritanceInfo inheritanceInfo{
-        .renderPass = **renderPass,
+        .renderPass = **sceneRenderPass,
         .framebuffer = *swapChain->getCurrentFramebuffer(),
     };
 
@@ -1771,7 +1886,7 @@ void VulkanRenderer::drawScene() {
     };
 
     const vk::CommandBufferInheritanceInfo inheritanceInfo{
-        .renderPass = **renderPass,
+        .renderPass = **sceneRenderPass,
         .framebuffer = *swapChain->getCurrentFramebuffer(),
     };
 
@@ -1847,6 +1962,17 @@ void VulkanRenderer::drawScene() {
     frameResources[currentFrameIdx].sceneCmdBuffer.wasRecordedThisFrame = true;
 }
 
+static const glm::mat4 cubemapFaceProjection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
+
+static const std::array cubemapFaceViews{
+    glm::lookAt(glm::vec3(0), glm::vec3(-1, 0, 0), glm::vec3(0, 1, 0)),
+    glm::lookAt(glm::vec3(0), glm::vec3(1, 0, 0), glm::vec3(0, 1, 0)),
+    glm::lookAt(glm::vec3(0), glm::vec3(0, 1, 0), glm::vec3(0, 0, -1)),
+    glm::lookAt(glm::vec3(0), glm::vec3(0, -1, 0), glm::vec3(0, 0, 1)),
+    glm::lookAt(glm::vec3(0), glm::vec3(0, 0, 1), glm::vec3(0, 1, 0)),
+    glm::lookAt(glm::vec3(0), glm::vec3(0, 0, -1), glm::vec3(0, 1, 0))
+};
+
 void VulkanRenderer::captureCubemap() {
     const vk::Extent2D extent = cubemapExtent;
 
@@ -1868,8 +1994,8 @@ void VulkanRenderer::captureCubemap() {
     };
 
     const vk::RenderPassBeginInfo renderPassInfo{
-        .renderPass = **cubemapCaptureResources.renderPass,
-        .framebuffer = **cubemapCaptureResources.framebuffer,
+        .renderPass = **cubemapCaptureRenderPass,
+        .framebuffer = **cubemapCaptureFramebuffer,
         .renderArea = {
             .offset = {0, 0},
             .extent = extent,
@@ -1892,30 +2018,19 @@ void VulkanRenderer::captureCubemap() {
         *cubemapCapturePipelines->getLayout(),
         0,
         {
-            **cubemapCaptureResources.descriptorSet,
+            **cubemapCaptureDescriptorSet,
         },
         nullptr
     );
 
-    const glm::mat4 captureProjection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
-    const std::array captureViews{
-        glm::lookAt(glm::vec3(0), glm::vec3(-1, 0, 0), glm::vec3(0, 1, 0)),
-        glm::lookAt(glm::vec3(0), glm::vec3(1, 0, 0), glm::vec3(0, 1, 0)),
-        glm::lookAt(glm::vec3(0), glm::vec3(0, 1, 0), glm::vec3(0, 0, -1)),
-        glm::lookAt(glm::vec3(0), glm::vec3(0, -1, 0), glm::vec3(0, 0, 1)),
-        glm::lookAt(glm::vec3(0), glm::vec3(0, 0, 1), glm::vec3(0, 1, 0)),
-        glm::lookAt(glm::vec3(0), glm::vec3(0, 0, -1), glm::vec3(0, 1, 0))
-    };
-
     for (uint32_t i = 0; i < 6; i++) {
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *(*cubemapCapturePipelines)[i]);
 
-        const CubemapCapturePushConstants pushConstants{
-            .view = captureViews[i],
-            .proj = captureProjection
+        const SkyboxPushConstants pushConstants{
+            .view = cubemapFaceViews[i],
         };
 
-        commandBuffer.pushConstants<CubemapCapturePushConstants>(
+        commandBuffer.pushConstants<SkyboxPushConstants>(
             *cubemapCapturePipelines->getLayout(),
             vk::ShaderStageFlagBits::eVertex,
             0u,
@@ -1969,8 +2084,8 @@ void VulkanRenderer::captureIrradianceMap() {
     };
 
     const vk::RenderPassBeginInfo renderPassInfo{
-        .renderPass = **irradianceCaptureResources.renderPass,
-        .framebuffer = **irradianceCaptureResources.framebuffer,
+        .renderPass = **envmapConvoluteRenderPass,
+        .framebuffer = **irradianceCaptureFramebuffer,
         .renderArea = {
             .offset = {0, 0},
             .extent = extent,
@@ -1993,30 +2108,19 @@ void VulkanRenderer::captureIrradianceMap() {
         *irradianceCapturePipelines->getLayout(),
         0,
         {
-            **irradianceCaptureResources.descriptorSet,
+            **envmapConvoluteDescriptorSet,
         },
         nullptr
     );
 
-    const glm::mat4 captureProjection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
-    const std::array captureViews{
-        glm::lookAt(glm::vec3(0), glm::vec3(-1, 0, 0), glm::vec3(0, 1, 0)),
-        glm::lookAt(glm::vec3(0), glm::vec3(1, 0, 0), glm::vec3(0, 1, 0)),
-        glm::lookAt(glm::vec3(0), glm::vec3(0, 1, 0), glm::vec3(0, 0, -1)),
-        glm::lookAt(glm::vec3(0), glm::vec3(0, -1, 0), glm::vec3(0, 0, 1)),
-        glm::lookAt(glm::vec3(0), glm::vec3(0, 0, 1), glm::vec3(0, 1, 0)),
-        glm::lookAt(glm::vec3(0), glm::vec3(0, 0, -1), glm::vec3(0, 1, 0))
-    };
-
     for (size_t i = 0; i < 6; i++) {
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *(*irradianceCapturePipelines)[i]);
 
-        const CubemapCapturePushConstants pushConstants{
-            .view = captureViews[i],
-            .proj = captureProjection
+        const SkyboxPushConstants pushConstants{
+            .view = cubemapFaceViews[i],
         };
 
-        commandBuffer.pushConstants<CubemapCapturePushConstants>(
+        commandBuffer.pushConstants<SkyboxPushConstants>(
             *irradianceCapturePipelines->getLayout(),
             vk::ShaderStageFlagBits::eVertex,
             0u,
@@ -2040,6 +2144,101 @@ void VulkanRenderer::captureIrradianceMap() {
         vk::ImageLayout::eColorAttachmentOptimal,
         vk::ImageLayout::eShaderReadOnlyOptimal,
         1,
+        6,
+        *commandPool,
+        *graphicsQueue
+    );
+}
+
+void VulkanRenderer::prefilterEnvmap() {
+    constexpr vk::ClearColorValue clearColor{0, 0, 0, 1};
+    const std::vector<vk::ClearValue> clearValues{6, clearColor};
+
+    const auto commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
+
+    for (uint32_t mipLevel = 0; mipLevel < maxPrefilterMipLevels; mipLevel++) {
+        const uint32_t mipScalingFactor = 1 << mipLevel;
+
+        const vk::Extent2D extent{
+            .width = prefilteredEnvmapTexture->getImage().getExtent().width / mipScalingFactor,
+            .height = prefilteredEnvmapTexture->getImage().getExtent().height / mipScalingFactor
+        };
+
+        const vk::Viewport viewport{
+            .x = 0.0f,
+            .y = static_cast<float>(extent.height),
+            .width = static_cast<float>(extent.width),
+            .height = -1 * static_cast<float>(extent.height), // flip the y-axis
+            .minDepth = 0.0f,
+            .maxDepth = 1.0f,
+        };
+
+        const vk::Rect2D scissor{
+            .offset = {0, 0},
+            .extent = extent
+        };
+
+        commandBuffer.setViewport(0, viewport);
+        commandBuffer.setScissor(0, scissor);
+
+        const vk::RenderPassBeginInfo renderPassInfo{
+            .renderPass = **envmapConvoluteRenderPass,
+            .framebuffer = **prefilterFramebuffers[mipLevel],
+            .renderArea = {
+                .offset = {0, 0},
+                .extent = extent,
+            },
+            .clearValueCount = static_cast<uint32_t>(clearValues.size()),
+            .pClearValues = clearValues.data()
+        };
+
+        commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+
+        commandBuffer.bindVertexBuffers(0, **skyboxVertexBuffer, {0});
+
+        commandBuffer.bindDescriptorSets(
+            vk::PipelineBindPoint::eGraphics,
+            *prefilterPipelines->getLayout(),
+            0,
+            {
+                **envmapConvoluteDescriptorSet,
+            },
+            nullptr
+        );
+
+        for (size_t i = 0; i < 6; i++) {
+            commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *(*prefilterPipelines)[i]);
+
+            const PrefilterPushConstants prefilterPushConstants{
+                .view = cubemapFaceViews[i],
+                .roughness = static_cast<float>(mipLevel) / (maxPrefilterMipLevels - 1)
+            };
+
+            commandBuffer.pushConstants<PrefilterPushConstants>(
+                *prefilterPipelines->getLayout(),
+                vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+                0u,
+                prefilterPushConstants
+            );
+
+            commandBuffer.draw(skyboxVertices.size(), 1, 0, 0);
+
+            if (i != 5) {
+                commandBuffer.nextSubpass(vk::SubpassContents::eInline);
+            }
+        }
+
+        commandBuffer.endRenderPass();
+    }
+
+    utils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
+
+    utils::img::transitionImageLayout(
+        ctx,
+        **prefilteredEnvmapTexture->getImage(),
+        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        maxPrefilterMipLevels,
         6,
         *commandPool,
         *graphicsQueue
@@ -2071,6 +2270,7 @@ void VulkanRenderer::updateGraphicsUniformBuffer() const {
             .proj = proj,
             .inverseVp = glm::inverse(proj * view),
             .staticView = camera->getStaticViewMatrix(),
+            .cubemapCaptureProj = cubemapFaceProjection
         },
         .misc = {
             .useIBL = useIBL ? 1u : 0u,

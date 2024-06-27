@@ -20,6 +20,7 @@ protected:
     unique_ptr<vk::raii::Image> image;
     unique_ptr<vk::raii::ImageView> view;
     unique_ptr<vk::raii::ImageView> attachmentView;
+    std::vector<unique_ptr<vk::raii::ImageView>> mipViews;
     vk::Extent3D extent;
 
 public:
@@ -48,16 +49,19 @@ public:
      * @return Handle to the image view.
      */
     [[nodiscard]]
-    const vk::raii::ImageView &getView() const;
+    const vk::raii::ImageView &getView() const { return *view; }
 
     [[nodiscard]]
-    const vk::raii::ImageView &getAttachmentView() const;
+    const vk::raii::ImageView &getAttachmentView() const { return *attachmentView; }
+
+    [[nodiscard]]
+    const vk::raii::ImageView &getMipView(const uint32_t mipLevel) const { return *mipViews[mipLevel]; }
 
     [[nodiscard]]
     vk::Extent3D getExtent() const { return extent; }
 
-    virtual void createView(const RendererContext &ctx, vk::Format format, vk::ImageAspectFlags aspectFlags,
-                            uint32_t mipLevels);
+    virtual void createViews(const RendererContext &ctx, vk::Format format, vk::ImageAspectFlags aspectFlags,
+                             uint32_t mipLevels);
 
     /**
      * Copies the contents of a given buffer to this image and waits until completion.
@@ -74,6 +78,7 @@ public:
 class CubeImage final : public Image {
     std::vector<unique_ptr<vk::raii::ImageView> > layerViews;
     std::vector<unique_ptr<vk::raii::ImageView> > attachmentLayerViews;
+    std::vector<std::vector<unique_ptr<vk::raii::ImageView>> > layerMipViews; // layerMipViews[layer][mip]
 
 public:
     explicit CubeImage(const RendererContext &ctx, const vk::ImageCreateInfo &imageInfo,
@@ -93,7 +98,12 @@ public:
         return *attachmentLayerViews[layerIndex];
     }
 
-    void createView(const RendererContext &ctx, vk::Format format, vk::ImageAspectFlags aspectFlags,
+    [[nodiscard]]
+    const vk::raii::ImageView &getLayerMipView(const uint32_t layerIndex, const uint32_t mipLevel) const {
+        return *layerMipViews[layerIndex][mipLevel];
+    }
+
+    void createViews(const RendererContext &ctx, vk::Format format, vk::ImageAspectFlags aspectFlags,
                     uint32_t mipLevels) override;
 
     void copyFromBuffer(const RendererContext &ctx, vk::Buffer buffer, const vk::raii::CommandPool &cmdPool,
@@ -137,6 +147,9 @@ public:
 
     [[nodiscard]]
     const vk::raii::ImageView &getAttachmentLayerView(uint32_t layerIndex) const;
+
+    [[nodiscard]]
+    const vk::raii::ImageView &getLayerMipView(uint32_t layerIndex, uint32_t mipLevel) const;
 
     void generateMipmaps(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
                          const vk::raii::Queue &queue, vk::ImageLayout finalLayout) const;
@@ -204,12 +217,12 @@ namespace utils::img {
     [[nodiscard]]
     unique_ptr<vk::raii::ImageView> createImageView(const RendererContext &ctx, vk::Image image,
                                                     vk::Format format, vk::ImageAspectFlags aspectFlags,
-                                                    uint32_t mipLevels, uint32_t layer);
+                                                    uint32_t baseMipLevel, uint32_t mipLevels, uint32_t layer);
 
     [[nodiscard]]
     unique_ptr<vk::raii::ImageView> createCubeImageView(const RendererContext &ctx, vk::Image image,
                                                         vk::Format format, vk::ImageAspectFlags aspectFlags,
-                                                        uint32_t mipLevels);
+                                                        uint32_t baseMipLevel, uint32_t mipLevels);
 
     void transitionImageLayout(const RendererContext &ctx, vk::Image image, vk::ImageLayout oldLayout,
                                vk::ImageLayout newLayout, uint32_t mipLevels, uint32_t layerCount,

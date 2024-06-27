@@ -39,26 +39,16 @@ Image::~Image() {
     vmaFreeMemory(allocator, *allocation);
 }
 
-const vk::raii::ImageView &Image::getView() const {
-    if (!view) {
-        throw std::runtime_error("tried to acquire image view without creating it!");
+void Image::createViews(const RendererContext &ctx, const vk::Format format, const vk::ImageAspectFlags aspectFlags,
+                        const uint32_t mipLevels) {
+    view = utils::img::createImageView(ctx, **image, format, aspectFlags, 0, mipLevels, 0);
+    attachmentView = utils::img::createImageView(ctx, **image, format, aspectFlags, 0, 1, 0);
+
+    for (uint32_t mip = 0; mip < mipLevels; mip++) {
+        mipViews.emplace_back(
+            utils::img::createImageView(ctx, **image, format, aspectFlags, mip, 1, 0)
+        );
     }
-
-    return *view;
-}
-
-const vk::raii::ImageView &Image::getAttachmentView() const {
-    if (!attachmentView) {
-        throw std::runtime_error("tried to acquire image view without creating it!");
-    }
-
-    return *attachmentView;
-}
-
-void Image::createView(const RendererContext &ctx, const vk::Format format, const vk::ImageAspectFlags aspectFlags,
-                       const uint32_t mipLevels) {
-    view = utils::img::createImageView(ctx, **image, format, aspectFlags, mipLevels, 0);
-    attachmentView = utils::img::createImageView(ctx, **image, format, aspectFlags, 1, 0);
 }
 
 void Image::copyFromBuffer(const RendererContext &ctx, const vk::Buffer buffer, const vk::raii::CommandPool &cmdPool,
@@ -93,14 +83,34 @@ CubeImage::CubeImage(const RendererContext &ctx, const vk::ImageCreateInfo &imag
                      const vk::MemoryPropertyFlags properties) : Image(ctx, imageInfo, properties) {
 }
 
-void CubeImage::createView(const RendererContext &ctx, const vk::Format format, const vk::ImageAspectFlags aspectFlags,
-                           const uint32_t mipLevels) {
-    view = utils::img::createCubeImageView(ctx, **image, format, aspectFlags, mipLevels);
-    attachmentView = utils::img::createCubeImageView(ctx, **image, format, aspectFlags, 1);
+void CubeImage::createViews(const RendererContext &ctx, const vk::Format format, const vk::ImageAspectFlags aspectFlags,
+                            const uint32_t mipLevels) {
+    view = utils::img::createCubeImageView(ctx, **image, format, aspectFlags, 0, mipLevels);
+    attachmentView = utils::img::createCubeImageView(ctx, **image, format, aspectFlags, 0, 1);
 
-    for (uint32_t i = 0; i < 6; i++) {
-        layerViews.emplace_back(utils::img::createImageView(ctx, **image, format, aspectFlags, mipLevels, i));
-        attachmentLayerViews.emplace_back(utils::img::createImageView(ctx, **image, format, aspectFlags, 1, i));
+    for (uint32_t mip = 0; mip < mipLevels; mip++) {
+        mipViews.emplace_back(
+            utils::img::createCubeImageView(ctx, **image, format, aspectFlags, mip, 1)
+        );
+    }
+
+    for (uint32_t layer = 0; layer < 6; layer++) {
+        layerViews.emplace_back(
+            utils::img::createImageView(ctx, **image, format, aspectFlags, 0, mipLevels, layer)
+        );
+        attachmentLayerViews.emplace_back(
+            utils::img::createImageView(ctx, **image, format, aspectFlags, 0, 1, layer)
+        );
+
+        std::vector<unique_ptr<vk::raii::ImageView> > currLayerMipViews;
+
+        for (uint32_t mip = 0; mip < mipLevels; mip++) {
+            currLayerMipViews.emplace_back(
+                utils::img::createImageView(ctx, **image, format, aspectFlags, mip, 1, layer)
+            );
+        }
+
+        layerMipViews.emplace_back(std::move(currLayerMipViews));
     }
 }
 
@@ -150,6 +160,16 @@ const vk::raii::ImageView &Texture::getAttachmentLayerView(const uint32_t layerI
     }
 
     return cubeImage->getAttachmentLayerView(layerIndex);
+}
+
+const vk::raii::ImageView & Texture::getLayerMipView(const uint32_t layerIndex, const uint32_t mipLevel) const {
+    const CubeImage *cubeImage = dynamic_cast<CubeImage *>(&*image);
+
+    if (!cubeImage) {
+        throw std::runtime_error("layer-specific views are only supported in cubemap images");
+    }
+
+    return cubeImage->getLayerMipView(layerIndex, mipLevel);
 }
 
 void Texture::generateMipmaps(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
@@ -412,7 +432,7 @@ unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx, const vk:
         texture->image->copyFromBuffer(ctx, **stagingBuffer, cmdPool, queue);
     }
 
-    texture->image->createView(
+    texture->image->createViews(
         ctx,
         format,
         vk::ImageAspectFlagBits::eColor,
@@ -543,15 +563,15 @@ TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererCo
 
 unique_ptr<vk::raii::ImageView>
 utils::img::createImageView(const RendererContext &ctx, const vk::Image image, const vk::Format format,
-                            const vk::ImageAspectFlags aspectFlags, const uint32_t mipLevels,
-                            const uint32_t layer) {
+                            const vk::ImageAspectFlags aspectFlags, const uint32_t baseMipLevel,
+                            const uint32_t mipLevels, const uint32_t layer) {
     const vk::ImageViewCreateInfo createInfo{
         .image = image,
         .viewType = vk::ImageViewType::e2D,
         .format = format,
         .subresourceRange = {
             .aspectMask = aspectFlags,
-            .baseMipLevel = 0,
+            .baseMipLevel = baseMipLevel,
             .levelCount = mipLevels,
             .baseArrayLayer = layer,
             .layerCount = 1,
@@ -563,14 +583,15 @@ utils::img::createImageView(const RendererContext &ctx, const vk::Image image, c
 
 unique_ptr<vk::raii::ImageView>
 utils::img::createCubeImageView(const RendererContext &ctx, const vk::Image image, const vk::Format format,
-                                const vk::ImageAspectFlags aspectFlags, const uint32_t mipLevels) {
+                                const vk::ImageAspectFlags aspectFlags, const uint32_t baseMipLevel,
+                                const uint32_t mipLevels) {
     const vk::ImageViewCreateInfo createInfo{
         .image = image,
         .viewType = vk::ImageViewType::eCube,
         .format = format,
         .subresourceRange = {
             .aspectMask = aspectFlags,
-            .baseMipLevel = 0,
+            .baseMipLevel = baseMipLevel,
             .levelCount = mipLevels,
             .baseArrayLayer = 0,
             .layerCount = 6,

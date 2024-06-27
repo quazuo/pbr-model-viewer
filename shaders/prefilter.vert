@@ -14,6 +14,7 @@ layout(binding = 0) uniform UniformBufferObject {
 
 layout(push_constant) uniform PushConstants {
     mat4 view;
+    float roughness;
 } constants;
 
 void main() {

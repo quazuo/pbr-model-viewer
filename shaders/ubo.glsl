@@ -9,6 +9,7 @@ struct Matrices {
     mat4 proj;
     mat4 inverse_vp;
     mat4 static_view;
+    mat4 cubemap_capture_proj;
 };
 
 struct MiscData {

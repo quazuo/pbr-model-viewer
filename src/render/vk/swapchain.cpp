@@ -136,6 +136,7 @@ void SwapChain::createImageViews(const RendererContext &ctx) {
             image,
             imageFormat,
             vk::ImageAspectFlagBits::eColor,
+            0,
             1,
             0
         );
@@ -188,7 +189,7 @@ void SwapChain::createColorResources(const RendererContext &ctx) {
         vk::MemoryPropertyFlagBits::eDeviceLocal
     );
 
-    colorImage->createView(ctx, colorFormat, vk::ImageAspectFlagBits::eColor, 1);
+    colorImage->createViews(ctx, colorFormat, vk::ImageAspectFlagBits::eColor, 1);
 }
 
 void SwapChain::createDepthResources(const RendererContext &ctx) {
@@ -215,7 +216,7 @@ void SwapChain::createDepthResources(const RendererContext &ctx) {
         vk::MemoryPropertyFlagBits::eDeviceLocal
     );
 
-    depthImage->createView(ctx, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
+    depthImage->createViews(ctx, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
 }
 
 vk::Format SwapChain::findDepthFormat(const RendererContext &ctx) {

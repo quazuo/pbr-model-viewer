@@ -63,6 +63,7 @@ struct GraphicsUBO {
         glm::mat4 proj;
         glm::mat4 inverseVp;
         glm::mat4 staticView;
+        glm::mat4 cubemapCaptureProj;
     };
 
     struct MiscData {
@@ -76,9 +77,13 @@ struct GraphicsUBO {
     alignas(16) MiscData misc{};
 };
 
-struct CubemapCapturePushConstants {
+struct SkyboxPushConstants {
     glm::mat4 view;
-    glm::mat4 proj;
+};
+
+struct PrefilterPushConstants {
+    glm::mat4 view;
+    float roughness;
 };
 
 /**
@@ -143,20 +148,31 @@ class VulkanRenderer {
     unique_ptr<Texture> skyboxTexture;
     unique_ptr<Texture> envmapTexture;
     unique_ptr<Texture> irradianceMapTexture;
+    unique_ptr<Texture> prefilteredEnvmapTexture;
 
     unique_ptr<vk::raii::DescriptorPool> descriptorPool;
 
-    unique_ptr<vk::raii::RenderPass> renderPass;
+    unique_ptr<vk::raii::RenderPass> sceneRenderPass;
+    unique_ptr<vk::raii::RenderPass> cubemapCaptureRenderPass;
+    unique_ptr<vk::raii::RenderPass> envmapConvoluteRenderPass;
 
     unique_ptr<vk::raii::DescriptorSetLayout> sceneDescriptorLayout;
     unique_ptr<vk::raii::DescriptorSetLayout> skyboxDescriptorLayout;
     unique_ptr<vk::raii::DescriptorSetLayout> cubemapCaptureDescriptorLayout;
-    unique_ptr<vk::raii::DescriptorSetLayout> irradianceCaptureDescriptorLayout;
+    unique_ptr<vk::raii::DescriptorSetLayout> envmapConvoluteDescriptorLayout;
+
+    unique_ptr<vk::raii::Framebuffer> cubemapCaptureFramebuffer;
+    unique_ptr<vk::raii::Framebuffer> irradianceCaptureFramebuffer;
+    std::vector<unique_ptr<vk::raii::Framebuffer>> prefilterFramebuffers;
+
+    unique_ptr<vk::raii::DescriptorSet> cubemapCaptureDescriptorSet;
+    unique_ptr<vk::raii::DescriptorSet> envmapConvoluteDescriptorSet;
 
     unique_ptr<PipelinePack> scenePipeline;
     unique_ptr<PipelinePack> skyboxPipeline;
     unique_ptr<PipelinePack> cubemapCapturePipelines;
     unique_ptr<PipelinePack> irradianceCapturePipelines;
+    unique_ptr<PipelinePack> prefilterPipelines;
 
     unique_ptr<vk::raii::CommandPool> commandPool;
 
@@ -195,17 +211,11 @@ class VulkanRenderer {
     static constexpr size_t MAX_FRAMES_IN_FLIGHT = 3;
     std::array<FrameResources, MAX_FRAMES_IN_FLIGHT> frameResources;
 
-    vk::Extent2D cubemapExtent = {2048u, 2048u};
-
-    static constexpr auto hdrEnvmapFormat = vk::Format::eR32G32B32A32Sfloat;
-
-    struct CaptureResources {
-        unique_ptr<vk::raii::RenderPass> renderPass;
-        unique_ptr<vk::raii::Framebuffer> framebuffer;
-        unique_ptr<vk::raii::DescriptorSet> descriptorSet;
-    } cubemapCaptureResources, irradianceCaptureResources;
-
     vk::SampleCountFlagBits msaaSampleCount = vk::SampleCountFlagBits::e1;
+
+    static constexpr vk::Extent2D cubemapExtent = {2048u, 2048u};
+    static constexpr auto hdrEnvmapFormat = vk::Format::eR32G32B32A32Sfloat;
+    static constexpr uint32_t maxPrefilterMipLevels = 5;
 
     unique_ptr<vk::raii::DescriptorPool> imguiDescriptorPool;
     unique_ptr<GuiRenderer> guiRenderer;
@@ -312,7 +322,7 @@ private:
 
     // ==================== assets ====================
 
-    void createSkyboxTextures(const std::filesystem::path &path);
+    void createEnvmapTextures(const std::filesystem::path &path);
 
     // ==================== swap chain ====================
 
@@ -328,7 +338,9 @@ private:
 
     void createCubemapCaptureDescriptorSetLayouts();
 
-    void createIrradianceCaptureDescriptorSetLayouts();
+    void createEnvmapConvoluteDescriptorSetLayouts();
+
+    void createPrefilterDescriptorSetLayouts();
 
     void createDescriptorPool();
 
@@ -338,17 +350,19 @@ private:
 
     void createCubemapCaptureDescriptorSets();
 
-    void createIrradianceCaptureDescriptorSets();
+    void createEnvmapConvoluteDescriptorSets();
 
-    // ==================== graphics pipeline ====================
+    void createPrefilterDescriptorSets();
+
+    // ==================== render passes ====================
 
     void createRenderPass();
 
     void createCubemapCaptureRenderPass();
 
-    void createIrradianceCaptureRenderPass();
+    void createCubemapConvoluteRenderPass();
 
-    void createPipelines();
+    // ==================== pipelines ====================
 
     void createScenePipeline();
 
@@ -357,6 +371,8 @@ private:
     void createCubemapCapturePipeline();
 
     void createIrradianceCapturePipeline();
+
+    void createPrefilterPipeline();
 
     // ==================== multisampling ====================
 
@@ -384,9 +400,14 @@ private:
 
     void createIrradianceCaptureFramebuffer();
 
-    [[nodiscard]]
-    unique_ptr<vk::raii::Framebuffer> createPerLayerCubemapFramebuffer(const Texture &texture,
-                                                                       const vk::raii::RenderPass &renderPass) const;
+    void createPrefilterFramebuffers();
+
+    [[nodiscard]] unique_ptr<vk::raii::Framebuffer>
+    createPerLayerCubemapFramebuffer(const Texture &texture, const vk::raii::RenderPass &renderPass) const;
+
+    [[nodiscard]] unique_ptr<vk::raii::Framebuffer>
+    createMipPerLayerCubemapFramebuffer(const Texture &texture, const vk::raii::RenderPass &renderPass,
+                                           uint32_t mipLevel) const;
 
     // ==================== commands ====================
 
@@ -420,6 +441,8 @@ public:
     void captureCubemap();
 
     void captureIrradianceMap();
+
+    void prefilterEnvmap();
 
 private:
     void updateGraphicsUniformBuffer() const;

@@ -4,7 +4,7 @@ layout(location = 0) in vec3 localPosition;
 
 layout(location = 0) out vec4 outColor;
 
-layout(binding = 0) uniform sampler2D equirectangularMap;
+layout(binding = 1) uniform sampler2D equirectangularMap;
 
 vec2 SampleSphericalMap(vec3 v) {
     const vec2 invAtan = vec2(0.1591, 0.3183);
