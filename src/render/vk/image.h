@@ -7,6 +7,7 @@
 #include "src/render/globals.h"
 
 class Buffer;
+
 struct RendererContext;
 
 /**
@@ -41,24 +42,19 @@ public:
      * Returns a raw handle to the actual Vulkan image.
      * @return Handle to the image.
      */
-    [[nodiscard]]
-    const vk::raii::Image &operator*() const { return *image; }
+    [[nodiscard]] const vk::raii::Image &operator*() const { return *image; }
 
     /**
      * Returns a raw handle to the actual Vulkan image view associated with this image.
      * @return Handle to the image view.
      */
-    [[nodiscard]]
-    const vk::raii::ImageView &getView() const { return *view; }
+    [[nodiscard]] const vk::raii::ImageView &getView() const { return *view; }
 
-    [[nodiscard]]
-    const vk::raii::ImageView &getAttachmentView() const { return *attachmentView; }
+    [[nodiscard]] const vk::raii::ImageView &getAttachmentView() const { return *attachmentView; }
 
-    [[nodiscard]]
-    const vk::raii::ImageView &getMipView(const uint32_t mipLevel) const { return *mipViews[mipLevel]; }
+    [[nodiscard]] const vk::raii::ImageView &getMipView(const uint32_t mipLevel) const { return *mipViews[mipLevel]; }
 
-    [[nodiscard]]
-    vk::Extent3D getExtent() const { return extent; }
+    [[nodiscard]] vk::Extent3D getExtent() const { return extent; }
 
     virtual void createViews(const RendererContext &ctx, vk::Format format, vk::ImageAspectFlags aspectFlags,
                              uint32_t mipLevels);
@@ -78,7 +74,7 @@ public:
 class CubeImage final : public Image {
     std::vector<unique_ptr<vk::raii::ImageView> > layerViews;
     std::vector<unique_ptr<vk::raii::ImageView> > attachmentLayerViews;
-    std::vector<std::vector<unique_ptr<vk::raii::ImageView>> > layerMipViews; // layerMipViews[layer][mip]
+    std::vector<std::vector<unique_ptr<vk::raii::ImageView>>> layerMipViews; // layerMipViews[layer][mip]
 
 public:
     explicit CubeImage(const RendererContext &ctx, const vk::ImageCreateInfo &imageInfo,
@@ -90,21 +86,19 @@ public:
      *
      * @param layerIndex Layer index to which the view should refer.
      */
-    [[nodiscard]]
-    const vk::raii::ImageView &getLayerView(const uint32_t layerIndex) const { return *layerViews[layerIndex]; }
+    [[nodiscard]] const vk::raii::ImageView &
+    getLayerView(const uint32_t layerIndex) const { return *layerViews[layerIndex]; }
 
-    [[nodiscard]]
-    const vk::raii::ImageView &getAttachmentLayerView(const uint32_t layerIndex) const {
-        return *attachmentLayerViews[layerIndex];
-    }
+    [[nodiscard]] const vk::raii::ImageView &
+    getAttachmentLayerView(const uint32_t layerIndex) const { return *attachmentLayerViews[layerIndex]; }
 
-    [[nodiscard]]
-    const vk::raii::ImageView &getLayerMipView(const uint32_t layerIndex, const uint32_t mipLevel) const {
+    [[nodiscard]] const vk::raii::ImageView &
+    getLayerMipView(const uint32_t layerIndex, const uint32_t mipLevel) const {
         return *layerMipViews[layerIndex][mipLevel];
     }
 
     void createViews(const RendererContext &ctx, vk::Format format, vk::ImageAspectFlags aspectFlags,
-                    uint32_t mipLevels) override;
+                     uint32_t mipLevels) override;
 
     void copyFromBuffer(const RendererContext &ctx, vk::Buffer buffer, const vk::raii::CommandPool &cmdPool,
                         const vk::raii::Queue &queue) override;
@@ -121,20 +115,15 @@ class Texture {
     Texture() = default;
 
 public:
-    [[nodiscard]]
-    const Image &getImage() const { return *image; }
+    [[nodiscard]] const Image &getImage() const { return *image; }
 
-    [[nodiscard]]
-    const vk::raii::Sampler &getSampler() const { return *textureSampler; }
+    [[nodiscard]] const vk::raii::Sampler &getSampler() const { return *textureSampler; }
 
-    [[nodiscard]]
-    uint32_t getMipLevels() const { return mipLevels; }
+    [[nodiscard]] uint32_t getMipLevels() const { return mipLevels; }
 
-    [[nodiscard]]
-    vk::Format getFormat() const { return format; }
+    [[nodiscard]] vk::Format getFormat() const { return format; }
 
-    [[nodiscard]]
-    const vk::raii::ImageView &getView() const { return image->getView(); }
+    [[nodiscard]] const vk::raii::ImageView &getView() const { return image->getView(); }
 
     /**
      * Returns a raw handle to the actual Vulkan image view associated with a specific layer of this image.
@@ -142,14 +131,11 @@ public:
      *
      * @param layerIndex Layer index to which the view should refer.
      */
-    [[nodiscard]]
-    const vk::raii::ImageView &getLayerView(uint32_t layerIndex) const;
+    [[nodiscard]] const vk::raii::ImageView &getLayerView(uint32_t layerIndex) const;
 
-    [[nodiscard]]
-    const vk::raii::ImageView &getAttachmentLayerView(uint32_t layerIndex) const;
+    [[nodiscard]] const vk::raii::ImageView &getAttachmentLayerView(uint32_t layerIndex) const;
 
-    [[nodiscard]]
-    const vk::raii::ImageView &getLayerMipView(uint32_t layerIndex, uint32_t mipLevel) const;
+    [[nodiscard]] const vk::raii::ImageView &getLayerMipView(uint32_t layerIndex, uint32_t mipLevel) const;
 
     void generateMipmaps(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
                          const vk::raii::Queue &queue, vk::ImageLayout finalLayout) const;
@@ -199,35 +185,29 @@ public:
 
     TextureBuilder &asUninitialized(vk::Extent3D extent);
 
-    [[nodiscard]]
-    unique_ptr<Texture> create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
-                               const vk::raii::Queue &queue) const;
+    [[nodiscard]] unique_ptr<Texture>
+    create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool, const vk::raii::Queue &queue) const;
 
 private:
     void checkParams() const;
 
-    [[nodiscard]]
-    uint32_t getLayerCount() const;
+    [[nodiscard]] uint32_t getLayerCount() const;
 
-    [[nodiscard]]
-    LoadedTextureData loadFromPaths(const RendererContext &ctx) const;
+    [[nodiscard]] LoadedTextureData loadFromPaths(const RendererContext &ctx) const;
 };
 
 namespace utils::img {
-    [[nodiscard]]
-    unique_ptr<vk::raii::ImageView> createImageView(const RendererContext &ctx, vk::Image image,
-                                                    vk::Format format, vk::ImageAspectFlags aspectFlags,
-                                                    uint32_t baseMipLevel, uint32_t mipLevels, uint32_t layer);
+    [[nodiscard]] unique_ptr<vk::raii::ImageView>
+    createImageView(const RendererContext &ctx, vk::Image image, vk::Format format, vk::ImageAspectFlags aspectFlags,
+                    uint32_t baseMipLevel, uint32_t mipLevels, uint32_t layer);
 
-    [[nodiscard]]
-    unique_ptr<vk::raii::ImageView> createCubeImageView(const RendererContext &ctx, vk::Image image,
-                                                        vk::Format format, vk::ImageAspectFlags aspectFlags,
-                                                        uint32_t baseMipLevel, uint32_t mipLevels);
+    [[nodiscard]] unique_ptr<vk::raii::ImageView>
+    createCubeImageView(const RendererContext &ctx, vk::Image image, vk::Format format,
+                        vk::ImageAspectFlags aspectFlags, uint32_t baseMipLevel, uint32_t mipLevels);
 
     void transitionImageLayout(const RendererContext &ctx, vk::Image image, vk::ImageLayout oldLayout,
                                vk::ImageLayout newLayout, uint32_t mipLevels, uint32_t layerCount,
                                const vk::raii::CommandPool &cmdPool, const vk::raii::Queue &queue);
 
-    [[nodiscard]]
-    size_t getFormatSizeInBytes(vk::Format format);
+    [[nodiscard]] size_t getFormatSizeInBytes(vk::Format format);
 }

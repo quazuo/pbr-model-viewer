@@ -51,42 +51,35 @@ public:
      * Returns a raw handle to the actual Vulkan swap chain.
      * @return Handle to the swap chain.
      */
-    [[nodiscard]]
-    const vk::raii::SwapchainKHR &operator*() const { return *swapChain; }
+    [[nodiscard]] const vk::raii::SwapchainKHR &operator*() const { return *swapChain; }
 
-    [[nodiscard]]
-    vk::Format getImageFormat() const { return imageFormat; }
+    [[nodiscard]] vk::Format getImageFormat() const { return imageFormat; }
 
-    [[nodiscard]]
-    vk::Format getDepthFormat() const { return depthFormat; }
+    [[nodiscard]] vk::Format getDepthFormat() const { return depthFormat; }
 
-    [[nodiscard]]
-    vk::Extent2D getExtent() const { return extent; }
+    [[nodiscard]] vk::Extent2D getExtent() const { return extent; }
 
     /**
      * Returns the index of the image that was most recently acquired and will be presented next.
      * @return Index of the current image.
      */
-    [[nodiscard]]
-    uint32_t getCurrentImageIndex() const { return currentImageIndex; }
+    [[nodiscard]] uint32_t getCurrentImageIndex() const { return currentImageIndex; }
 
     /**
      * Returns the framebuffer associated with the most recently acquired image.
      * @return The most recent framebuffer.
      */
-    [[nodiscard]]
-    const vk::raii::Framebuffer &getCurrentFramebuffer() const { return *framebuffers[currentImageIndex]; }
+    [[nodiscard]] const vk::raii::Framebuffer &
+    getCurrentFramebuffer() const { return *framebuffers[currentImageIndex]; }
 
     /**
      * Requests a new image from the swap chain and signals a given semaphore when the image is available.
      * @param semaphore Semaphore which should be signalled after completion.
      * @return Result code and index of the new image.
      */
-    [[nodiscard]]
-    std::pair<vk::Result, uint32_t> acquireNextImage(const vk::raii::Semaphore &semaphore);
+    [[nodiscard]] std::pair<vk::Result, uint32_t> acquireNextImage(const vk::raii::Semaphore &semaphore);
 
-    [[nodiscard]]
-    static uint32_t getImageCount(const RendererContext &ctx, const vk::raii::SurfaceKHR &surface);
+    [[nodiscard]] static uint32_t getImageCount(const RendererContext &ctx, const vk::raii::SurfaceKHR &surface);
 
     void createFramebuffers(const RendererContext &ctx, const vk::raii::RenderPass &renderPass);
 
@@ -97,15 +90,13 @@ private:
 
     void createDepthResources(const RendererContext &ctx);
 
-    [[nodiscard]]
-    static vk::Format findDepthFormat(const RendererContext &ctx);
+    [[nodiscard]] static vk::Format findDepthFormat(const RendererContext &ctx);
 
-    [[nodiscard]]
-    static vk::Format findSupportedFormat(const RendererContext &ctx, const std::vector<vk::Format> &candidates,
-                                          vk::ImageTiling tiling, vk::FormatFeatureFlags features);
+    [[nodiscard]] static vk::Format
+    findSupportedFormat(const RendererContext &ctx, const std::vector<vk::Format> &candidates,
+                        vk::ImageTiling tiling, vk::FormatFeatureFlags features);
 
-    [[nodiscard]]
-    static vk::Extent2D chooseExtent(const vk::SurfaceCapabilitiesKHR &capabilities, GLFWwindow *window);
+    [[nodiscard]] static vk::Extent2D chooseExtent(const vk::SurfaceCapabilitiesKHR &capabilities, GLFWwindow *window);
 
     static vk::SurfaceFormatKHR chooseSurfaceFormat(const std::vector<vk::SurfaceFormatKHR> &availableFormats);
 

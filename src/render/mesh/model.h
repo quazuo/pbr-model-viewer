@@ -26,15 +26,11 @@ public:
 
     void addInstances(const aiNode* node, const glm::mat4& baseTransform);
 
-    [[nodiscard]]
-    const std::vector<Mesh>& getMeshes() const { return meshes; }
+    [[nodiscard]] const std::vector<Mesh>& getMeshes() const { return meshes; }
 
-    [[nodiscard]]
-    std::vector<Vertex> getVertices() const;
+    [[nodiscard]] std::vector<Vertex> getVertices() const;
 
-    [[nodiscard]]
-    std::vector<uint32_t> getIndices() const;
+    [[nodiscard]] std::vector<uint32_t> getIndices() const;
 
-    [[nodiscard]]
-    std::vector<glm::mat4> getInstanceTransforms() const;
+    [[nodiscard]] std::vector<glm::mat4> getInstanceTransforms() const;
 };

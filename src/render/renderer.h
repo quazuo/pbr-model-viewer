@@ -41,8 +41,7 @@ struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsComputeFamily;
     std::optional<uint32_t> presentFamily;
 
-    [[nodiscard]]
-    bool isComplete() const {
+    [[nodiscard]] bool isComplete() const {
         return graphicsComputeFamily.has_value() && presentFamily.has_value();
     }
 };
@@ -105,8 +104,7 @@ public:
 
     VmaAllocatorWrapper &operator=(VmaAllocatorWrapper &&other) = delete;
 
-    [[nodiscard]]
-    VmaAllocator operator*() const { return allocator; }
+    [[nodiscard]] VmaAllocator operator*() const { return allocator; }
 };
 
 /**
@@ -149,12 +147,14 @@ class VulkanRenderer {
     unique_ptr<Texture> envmapTexture;
     unique_ptr<Texture> irradianceMapTexture;
     unique_ptr<Texture> prefilteredEnvmapTexture;
+    unique_ptr<Texture> brdfIntegrationMapTexture;
 
     unique_ptr<vk::raii::DescriptorPool> descriptorPool;
 
     unique_ptr<vk::raii::RenderPass> sceneRenderPass;
     unique_ptr<vk::raii::RenderPass> cubemapCaptureRenderPass;
     unique_ptr<vk::raii::RenderPass> envmapConvoluteRenderPass;
+    unique_ptr<vk::raii::RenderPass> brdfIntegrationRenderPass;
 
     unique_ptr<vk::raii::DescriptorSetLayout> sceneDescriptorLayout;
     unique_ptr<vk::raii::DescriptorSetLayout> skyboxDescriptorLayout;
@@ -164,6 +164,7 @@ class VulkanRenderer {
     unique_ptr<vk::raii::Framebuffer> cubemapCaptureFramebuffer;
     unique_ptr<vk::raii::Framebuffer> irradianceCaptureFramebuffer;
     std::vector<unique_ptr<vk::raii::Framebuffer>> prefilterFramebuffers;
+    unique_ptr<vk::raii::Framebuffer> brdfIntegrationFramebuffer;
 
     unique_ptr<vk::raii::DescriptorSet> cubemapCaptureDescriptorSet;
     unique_ptr<vk::raii::DescriptorSet> envmapConvoluteDescriptorSet;
@@ -173,6 +174,7 @@ class VulkanRenderer {
     unique_ptr<PipelinePack> cubemapCapturePipelines;
     unique_ptr<PipelinePack> irradianceCapturePipelines;
     unique_ptr<PipelinePack> prefilterPipelines;
+    unique_ptr<PipelinePack> brdfIntegrationPipeline;
 
     unique_ptr<vk::raii::CommandPool> commandPool;
 
@@ -180,6 +182,7 @@ class VulkanRenderer {
     unique_ptr<Buffer> indexBuffer;
     unique_ptr<Buffer> instanceDataBuffer;
     unique_ptr<Buffer> skyboxVertexBuffer;
+    unique_ptr<Buffer> screenSpaceQuadVertexBuffer;
 
     struct FrameResources {
         struct {
@@ -213,8 +216,12 @@ class VulkanRenderer {
 
     vk::SampleCountFlagBits msaaSampleCount = vk::SampleCountFlagBits::e1;
 
-    static constexpr vk::Extent2D cubemapExtent = {2048u, 2048u};
+    static constexpr vk::Extent2D cubemapExtent = {2048, 2048};
+    static constexpr vk::Extent2D brdfIntegrationMapExtent = { 512, 512 };
+
     static constexpr auto hdrEnvmapFormat = vk::Format::eR32G32B32A32Sfloat;
+    static constexpr auto brdfIntegrationMapFormat = vk::Format::eR8G8B8A8Srgb;
+
     static constexpr uint32_t maxPrefilterMipLevels = 5;
 
     unique_ptr<vk::raii::DescriptorPool> imguiDescriptorPool;
@@ -246,11 +253,9 @@ public:
 
     VulkanRenderer &operator=(VulkanRenderer &&other) = delete;
 
-    [[nodiscard]]
-    GLFWwindow *getWindow() const { return window; }
+    [[nodiscard]] GLFWwindow *getWindow() const { return window; }
 
-    [[nodiscard]]
-    GuiRenderer &getGuiRenderer() const { return *guiRenderer; }
+    [[nodiscard]] GuiRenderer &getGuiRenderer() const { return *guiRenderer; }
 
     void tick(float deltaTime);
 
@@ -308,11 +313,9 @@ private:
 
     void pickPhysicalDevice();
 
-    [[nodiscard]]
-    bool isDeviceSuitable(const vk::raii::PhysicalDevice &physicalDevice) const;
+    [[nodiscard]] bool isDeviceSuitable(const vk::raii::PhysicalDevice &physicalDevice) const;
 
-    [[nodiscard]]
-    QueueFamilyIndices findQueueFamilies(const vk::raii::PhysicalDevice &physicalDevice) const;
+    [[nodiscard]] QueueFamilyIndices findQueueFamilies(const vk::raii::PhysicalDevice &physicalDevice) const;
 
     static bool checkDeviceExtensionSupport(const vk::raii::PhysicalDevice &physicalDevice);
 
@@ -323,6 +326,8 @@ private:
     // ==================== assets ====================
 
     void createEnvmapTextures(const std::filesystem::path &path);
+
+    void createBrdfIntegrationMapTexture();
 
     // ==================== swap chain ====================
 
@@ -340,8 +345,6 @@ private:
 
     void createEnvmapConvoluteDescriptorSetLayouts();
 
-    void createPrefilterDescriptorSetLayouts();
-
     void createDescriptorPool();
 
     void createSceneDescriptorSets();
@@ -352,8 +355,6 @@ private:
 
     void createEnvmapConvoluteDescriptorSets();
 
-    void createPrefilterDescriptorSets();
-
     // ==================== render passes ====================
 
     void createRenderPass();
@@ -361,6 +362,8 @@ private:
     void createCubemapCaptureRenderPass();
 
     void createCubemapConvoluteRenderPass();
+
+    void createBrdfIntegrationRenderPass();
 
     // ==================== pipelines ====================
 
@@ -374,18 +377,19 @@ private:
 
     void createPrefilterPipeline();
 
+    void createBrdfIntegrationPipeline();
+
     // ==================== multisampling ====================
 
-    [[nodiscard]]
-    vk::SampleCountFlagBits getMaxUsableSampleCount() const;
-
-    // ==================== skybox ====================
-
-    void createSkyboxVertexBuffer();
+    [[nodiscard]] vk::SampleCountFlagBits getMaxUsableSampleCount() const;
 
     // ==================== buffers ====================
 
     void createVertexBuffer();
+
+    void createSkyboxVertexBuffer();
+
+    void createScreenSpaceQuadVertexBuffer();
 
     void createIndexBuffer();
 
@@ -443,6 +447,8 @@ public:
     void captureIrradianceMap();
 
     void prefilterEnvmap();
+
+    void computeBrdfIntegrationMap();
 
 private:
     void updateGraphicsUniformBuffer() const;

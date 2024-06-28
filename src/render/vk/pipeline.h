@@ -16,14 +16,11 @@ class PipelinePack {
     PipelinePack() = default;
 
 public:
-    [[nodiscard]]
-    const vk::raii::Pipeline& operator*() const { return *pipelines[0]; }
+    [[nodiscard]] const vk::raii::Pipeline& operator*() const { return *pipelines[0]; }
 
-    [[nodiscard]]
-    const vk::raii::Pipeline& operator[](const uint32_t idx) const { return *pipelines[idx]; }
+    [[nodiscard]] const vk::raii::Pipeline& operator[](const uint32_t idx) const { return *pipelines[idx]; }
 
-    [[nodiscard]]
-    const vk::raii::PipelineLayout& getLayout() const { return *layout; }
+    [[nodiscard]] const vk::raii::PipelineLayout& getLayout() const { return *layout; }
 };
 
 class PipelineBuilder {
@@ -62,12 +59,11 @@ public:
 
     PipelineBuilder &forSubpasses(uint32_t count);
 
-    [[nodiscard]]
-    PipelinePack create(const RendererContext &ctx, const vk::raii::RenderPass& renderPass) const;
+    [[nodiscard]] PipelinePack create(const RendererContext &ctx, const vk::raii::RenderPass& renderPass) const;
 
 private:
     void checkParams() const;
 
-    [[nodiscard]]
-    static vk::raii::ShaderModule createShaderModule(const RendererContext &ctx, const std::filesystem::path &path);
+    [[nodiscard]] static vk::raii::ShaderModule
+    createShaderModule(const RendererContext &ctx, const std::filesystem::path &path);
 };

@@ -37,8 +37,7 @@ public:
      *
      * @return Handle to the buffer.
      */
-    [[nodiscard]]
-    const vk::Buffer &operator*() const { return buffer; }
+    [[nodiscard]]const vk::Buffer &operator*() const { return buffer; }
 
     /**
      * Maps the buffer's memory to host memory. This requires the buffer to *not* be created
@@ -47,8 +46,7 @@ public:
      *
      * @return Pointer to the mapped memory.
      */
-    [[nodiscard]]
-    void *map();
+    [[nodiscard]] void *map();
 
     /**
      * Unmaps the memory, after which the pointer returned by `map()` becomes invalidated.

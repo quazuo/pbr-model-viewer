@@ -8,8 +8,7 @@ class Rotator {
     glm::vec2 rot = {0, 0};
 
 public:
-    [[nodiscard]]
-    glm::vec2 operator*() const { return rot; }
+    [[nodiscard]] glm::vec2 operator*() const { return rot; }
 
     Rotator& operator=(glm::vec2 other);
 
@@ -21,8 +20,7 @@ public:
         glm::vec3 front, right, up;
     };
 
-    [[nodiscard]]
-    ViewVectors getViewVectors() const;
+    [[nodiscard]] ViewVectors getViewVectors() const;
 };
 
 class Camera {
@@ -51,20 +49,15 @@ public:
 
     void tick(float deltaTime);
 
-    [[nodiscard]]
-    glm::vec3 getPos() const { return pos; }
+    [[nodiscard]] glm::vec3 getPos() const { return pos; }
 
-    [[nodiscard]]
-    glm::mat4 getViewMatrix() const;
+    [[nodiscard]] glm::mat4 getViewMatrix() const;
 
-    [[nodiscard]]
-    glm::mat4 getStaticViewMatrix() const;
+    [[nodiscard]] glm::mat4 getStaticViewMatrix() const;
 
-    [[nodiscard]]
-    glm::mat4 getProjectionMatrix() const;
+    [[nodiscard]] glm::mat4 getProjectionMatrix() const;
 
-    [[nodiscard]]
-    Rotator::ViewVectors getViewVectors() const { return rotator.getViewVectors(); }
+    [[nodiscard]] Rotator::ViewVectors getViewVectors() const { return rotator.getViewVectors(); }
 
     void renderGuiSection();
 

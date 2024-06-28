@@ -89,6 +89,7 @@ VulkanRenderer::VulkanRenderer() {
     updateGraphicsUniformBuffer();
 
     createSkyboxVertexBuffer();
+    createScreenSpaceQuadVertexBuffer();
 
     createCubemapCaptureRenderPass();
     createCubemapCapturePipeline();
@@ -97,6 +98,9 @@ VulkanRenderer::VulkanRenderer() {
     createIrradianceCapturePipeline();
 
     createPrefilterPipeline();
+
+    createBrdfIntegrationRenderPass();
+    createBrdfIntegrationPipeline();
 
     // loadModel("../assets/t-60-helmet/source/T-60 HelmetU.fbx");
     // loadAlbedoTexture("../assets/t-60-helmet/textures/albedo.png");
@@ -109,6 +113,9 @@ VulkanRenderer::VulkanRenderer() {
     loadOrmMap("../assets/default-model/czajnik-orm.png");
 
     loadEnvironmentMap("../assets/envmaps/gallery.hdr");
+
+    createBrdfIntegrationMapTexture();
+    computeBrdfIntegrationMap();
 
     createSyncObjects();
 
@@ -294,7 +301,6 @@ void VulkanRenderer::pickPhysicalDevice() {
     throw std::runtime_error("failed to find a suitable GPU!");
 }
 
-[[nodiscard]]
 bool VulkanRenderer::isDeviceSuitable(const vk::raii::PhysicalDevice &physicalDevice) const {
     if (!findQueueFamilies(physicalDevice).isComplete()) {
         return false;
@@ -317,7 +323,6 @@ bool VulkanRenderer::isDeviceSuitable(const vk::raii::PhysicalDevice &physicalDe
     return true;
 }
 
-[[nodiscard]]
 QueueFamilyIndices VulkanRenderer::findQueueFamilies(const vk::raii::PhysicalDevice &physicalDevice) const {
     const std::vector<vk::QueueFamilyProperties> queueFamilies = physicalDevice.getQueueFamilyProperties();
 
@@ -566,6 +571,18 @@ void VulkanRenderer::createEnvmapTextures(const std::filesystem::path &path) {
             .asUninitialized({128, 128, 1})
             .asHdr()
             .useFormat(hdrEnvmapFormat)
+            .useUsage(vk::ImageUsageFlagBits::eTransferSrc
+                      | vk::ImageUsageFlagBits::eTransferDst
+                      | vk::ImageUsageFlagBits::eSampled
+                      | vk::ImageUsageFlagBits::eColorAttachment)
+            .makeMipmaps()
+            .create(ctx, *commandPool, *graphicsQueue);
+}
+
+void VulkanRenderer::createBrdfIntegrationMapTexture() {
+    brdfIntegrationMapTexture = TextureBuilder()
+            .asUninitialized({brdfIntegrationMapExtent.width, brdfIntegrationMapExtent.height, 1})
+            .useFormat(brdfIntegrationMapFormat)
             .useUsage(vk::ImageUsageFlagBits::eTransferSrc
                       | vk::ImageUsageFlagBits::eTransferDst
                       | vk::ImageUsageFlagBits::eSampled
@@ -1246,12 +1263,59 @@ void VulkanRenderer::createCubemapConvoluteRenderPass() {
     envmapConvoluteRenderPass = make_unique<vk::raii::RenderPass>(*ctx.device, renderPassInfo);
 }
 
+void VulkanRenderer::createBrdfIntegrationRenderPass() {
+    static constexpr vk::AttachmentDescription colorAttachment{
+        .format = brdfIntegrationMapFormat,
+        .samples = vk::SampleCountFlagBits::e1,
+        .loadOp = vk::AttachmentLoadOp::eClear,
+        .storeOp = vk::AttachmentStoreOp::eStore,
+        .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
+        .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
+        .initialLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+        .finalLayout = vk::ImageLayout::eColorAttachmentOptimal,
+    };
+
+    static constexpr vk::AttachmentReference attachmentRef{
+        .attachment = 0,
+        .layout = vk::ImageLayout::eColorAttachmentOptimal,
+    };
+
+    static constexpr vk::SubpassDescription subpass{
+        .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &attachmentRef,
+    };
+
+    static constexpr vk::SubpassDependency dependency{
+        .srcSubpass = vk::SubpassExternal,
+        .dstSubpass = 0,
+        .srcStageMask = vk::PipelineStageFlagBits::eEarlyFragmentTests
+                        | vk::PipelineStageFlagBits::eLateFragmentTests,
+        .dstStageMask = vk::PipelineStageFlagBits::eEarlyFragmentTests
+                        | vk::PipelineStageFlagBits::eLateFragmentTests,
+        .srcAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite,
+        .dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentRead
+                         | vk::AccessFlagBits::eDepthStencilAttachmentWrite
+    };
+
+    static constexpr vk::RenderPassCreateInfo renderPassInfo{
+        .attachmentCount = 1,
+        .pAttachments = &colorAttachment,
+        .subpassCount = 1,
+        .pSubpasses = &subpass,
+        .dependencyCount = 1,
+        .pDependencies = &dependency
+    };
+
+    brdfIntegrationRenderPass = make_unique<vk::raii::RenderPass>(*ctx.device, renderPassInfo);
+}
+
 // ==================== pipelines ====================
 
 void VulkanRenderer::createScenePipeline() {
     PipelinePack pipeline = PipelineBuilder()
-            .withVertexShader("../shaders/obj/shader-vert.spv")
-            .withFragmentShader("../shaders/obj/shader-frag.spv")
+            .withVertexShader("../shaders/obj/main-vert.spv")
+            .withFragmentShader("../shaders/obj/main-frag.spv")
             .withVertices<Vertex>()
             .withMultisampling({
                 .rasterizationSamples = msaaSampleCount,
@@ -1385,9 +1449,28 @@ void VulkanRenderer::createPrefilterPipeline() {
     prefilterPipelines = make_unique<PipelinePack>(std::move(pipeline));
 }
 
+void VulkanRenderer::createBrdfIntegrationPipeline() {
+    PipelinePack pipeline = PipelineBuilder()
+            .withVertexShader("../shaders/obj/brdf-integrate-vert.spv")
+            .withFragmentShader("../shaders/obj/brdf-integrate-frag.spv")
+            .withVertices<ScreenSpaceQuadVertex>()
+            .withRasterizer({
+                .polygonMode = vk::PolygonMode::eFill,
+                .cullMode = vk::CullModeFlagBits::eNone,
+                .frontFace = vk::FrontFace::eCounterClockwise,
+                .lineWidth = 1.0f,
+            })
+            .withDepthStencil({
+                .depthTestEnable = vk::False,
+                .depthWriteEnable = vk::False,
+            })
+            .create(ctx, *brdfIntegrationRenderPass);
+
+    brdfIntegrationPipeline = make_unique<PipelinePack>(std::move(pipeline));
+}
+
 // ==================== multisampling ====================
 
-[[nodiscard]]
 vk::SampleCountFlagBits VulkanRenderer::getMaxUsableSampleCount() const {
     const vk::PhysicalDeviceProperties physicalDeviceProperties = ctx.physicalDevice->getProperties();
 
@@ -1404,15 +1487,22 @@ vk::SampleCountFlagBits VulkanRenderer::getMaxUsableSampleCount() const {
     return vk::SampleCountFlagBits::e1;
 }
 
-void VulkanRenderer::createSkyboxVertexBuffer() {
-    skyboxVertexBuffer = createLocalBuffer<SkyboxVertex>(skyboxVertices, vk::BufferUsageFlagBits::eVertexBuffer);
-}
-
 // ==================== buffers ====================
 
 void VulkanRenderer::createVertexBuffer() {
     vertexBuffer = createLocalBuffer(model->getVertices(), vk::BufferUsageFlagBits::eVertexBuffer);
     instanceDataBuffer = createLocalBuffer(model->getInstanceTransforms(), vk::BufferUsageFlagBits::eVertexBuffer);
+}
+
+void VulkanRenderer::createSkyboxVertexBuffer() {
+    skyboxVertexBuffer = createLocalBuffer<SkyboxVertex>(skyboxVertices, vk::BufferUsageFlagBits::eVertexBuffer);
+}
+
+void VulkanRenderer::createScreenSpaceQuadVertexBuffer() {
+    screenSpaceQuadVertexBuffer = createLocalBuffer<ScreenSpaceQuadVertex>(
+        screenSpaceQuadVertices,
+        vk::BufferUsageFlagBits::eVertexBuffer
+    );
 }
 
 void VulkanRenderer::createIndexBuffer() {

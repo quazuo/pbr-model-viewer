@@ -88,3 +88,30 @@ std::vector<vk::VertexInputAttributeDescription> SkyboxVertex::getAttributeDescr
         },
     };
 }
+
+std::vector<vk::VertexInputBindingDescription> ScreenSpaceQuadVertex::getBindingDescriptions() {
+    return {
+        {
+            .binding = static_cast<uint32_t>(0U),
+            .stride = static_cast<uint32_t>(sizeof(SkyboxVertex)),
+            .inputRate = vk::VertexInputRate::eVertex
+        }
+    };
+}
+
+std::vector<vk::VertexInputAttributeDescription> ScreenSpaceQuadVertex::getAttributeDescriptions() {
+    return {
+        {
+            .location = 0U,
+            .binding = 0U,
+            .format = vk::Format::eR32G32Sfloat,
+            .offset = static_cast<uint32_t>(offsetof(ScreenSpaceQuadVertex, pos)),
+        },
+        {
+            .location = 1U,
+            .binding = 0U,
+            .format = vk::Format::eR32G32Sfloat,
+            .offset = static_cast<uint32_t>(offsetof(ScreenSpaceQuadVertex, texCoord)),
+        },
+    };
+}
