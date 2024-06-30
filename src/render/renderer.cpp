@@ -105,23 +105,21 @@ VulkanRenderer::VulkanRenderer() {
     createBrdfIntegrationFramebuffer();
     computeBrdfIntegrationMap();
 
-    // loadModel("../assets/t-60-helmet/source/T-60 HelmetU.fbx");
-    // loadAlbedoTexture("../assets/t-60-helmet/textures/albedo.png");
-    // loadNormalMap("../assets/t-60-helmet/textures/normal.png");
-    // loadOrmMap("../assets/t-60-helmet/textures/orm.png");
+    loadModel("../assets/t-60-helmet/source/T-60 HelmetU.fbx");
+    loadAlbedoTexture("../assets/t-60-helmet/textures/albedo.png");
+    loadNormalMap("../assets/t-60-helmet/textures/normal.png");
+    loadOrmMap("../assets/t-60-helmet/textures/orm.png");
 
-    loadModel("../assets/default-model/czajnik.obj");
-    loadAlbedoTexture("../assets/default-model/czajnik-albedo.png");
-    loadNormalMap("../assets/default-model/czajnik-normal.png");
-    loadOrmMap("../assets/default-model/czajnik-orm.png");
+    // loadModel("../assets/default-model/czajnik.obj");
+    // loadAlbedoTexture("../assets/default-model/czajnik-albedo.png");
+    // loadNormalMap("../assets/default-model/czajnik-normal.png");
+    // loadOrmMap("../assets/default-model/czajnik-orm.png");
 
     loadEnvironmentMap("../assets/envmaps/gallery.hdr");
 
     createSyncObjects();
 
     initImgui();
-
-    brdfIntegrationMapTexture->getImage().saveToFile(ctx, "gownowdupie.png", *commandPool, *graphicsQueue);
 }
 
 VulkanRenderer::~VulkanRenderer() {

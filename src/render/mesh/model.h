@@ -33,4 +33,9 @@ public:
     [[nodiscard]] std::vector<uint32_t> getIndices() const;
 
     [[nodiscard]] std::vector<glm::mat4> getInstanceTransforms() const;
+
+private:
+    void normalizeScale();
+
+    [[nodiscard]] float getMaxVertexDistance() const;
 };

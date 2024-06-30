@@ -31,7 +31,7 @@ vec2 integrate_brdf(float n_dot_v, float roughness) {
 
         if (n_dot_l > 0.0) {
             float geom = geometry_smith_ibl(normal, view, light, roughness);
-            float g_vis = (geom * v_dot_h) / (n_dot_h * n_dot_v);
+            float g_vis = (geom * v_dot_h) / (n_dot_h * n_dot_v + 0.001);
             float fresnel = pow(1.0 - v_dot_h, 5.0);
 
             A += (1.0 - fresnel) * g_vis;

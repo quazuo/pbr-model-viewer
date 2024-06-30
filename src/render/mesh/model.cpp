@@ -66,6 +66,8 @@ Model::Model(const std::filesystem::path &path) {
     }
 
     addInstances(scene->mRootNode, glm::identity<glm::mat4>());
+
+    normalizeScale();
 }
 
 void Model::addInstances(const aiNode *node, const glm::mat4& baseTransform) {
@@ -129,4 +131,32 @@ std::vector<glm::mat4> Model::getInstanceTransforms() const {
     }
 
     return result;
+}
+
+void Model::normalizeScale() {
+    const float largestDistance = getMaxVertexDistance();
+    const glm::mat4 scaleMatrix = glm::scale(glm::identity<glm::mat4>(), glm::vec3(1.0f / largestDistance));
+
+    for (auto& mesh: meshes) {
+        for (auto& transform: mesh.instances) {
+            transform = scaleMatrix * transform;
+        }
+    }
+}
+
+float Model::getMaxVertexDistance() const {
+    float largestDistance = 0.0;
+
+    for (const auto& mesh: meshes) {
+        for (const auto& vertex: mesh.vertices) {
+            for (const auto& transform: mesh.instances) {
+                largestDistance = std::max(
+                    largestDistance,
+                    glm::length(glm::vec3(transform * glm::vec4(vertex.pos, 1.0)))
+                );
+            }
+        }
+    }
+
+    return largestDistance;
 }

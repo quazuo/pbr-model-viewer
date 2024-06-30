@@ -15,7 +15,7 @@ layout(binding = 0) uniform UniformBufferObject {
 layout(binding = 1) uniform samplerCube skyboxTexSampler;
 
 void main() {
-    vec3 color = textureLod(skyboxTexSampler, texCoord, ubo.misc.debug_number).rgb;
+    vec3 color = texture(skyboxTexSampler, texCoord).rgb;
 
     color = pow(color, vec3(1 / 2.2));
 

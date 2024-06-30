@@ -59,9 +59,7 @@ void main() {
     vec3 specular = num / denom;
 
     // k-terms specifying reflection vs refraction contributions
-    vec3 k_specular = ubo.misc.use_ibl == 1u
-        ? fresnel_schlick_roughness(n_dot_v, f0, roughness)
-        : fresnel;
+    vec3 k_specular = fresnel_schlick_roughness(n_dot_v, f0, roughness);
     vec3 k_diffuse = (vec3(1.0) - k_specular) * (1.0 - metallic);
 
     vec3 out_radiance = (k_diffuse * albedo / PI + specular) * radiance * n_dot_l;
@@ -73,8 +71,8 @@ void main() {
     vec3 reflection = reflect(-view, normal);
     vec3 prefiltered_color = textureLod(prefilterMapSampler, reflection, roughness * MAX_REFLECTION_LOD).rgb;
 
-    vec2 env_brdf = texture(brdfLutSampler, vec2(n_dot_v, roughness)).rg;
-    vec3 specular = prefiltered_color * (k_specular * env_brdf.x + env_brdf.y);
+    vec2 env_brdf = texture(brdfLutSampler, vec2(n_dot_v - 0.001, roughness)).rg;
+    specular = prefiltered_color * (k_specular * env_brdf.x + env_brdf.y);
 
     // no need to multiply `specular` by `k_specular` as it's done implicitly by including fresnel
     vec3 ambient = (k_diffuse * diffuse + specular) * ao;
