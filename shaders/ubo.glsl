@@ -13,7 +13,7 @@ struct Matrices {
 };
 
 struct MiscData {
-    uint use_ibl;
+    float debug_number;
     vec3 camera_pos;
     vec3 light_direction;
 };

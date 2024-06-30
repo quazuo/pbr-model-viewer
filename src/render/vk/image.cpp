@@ -1,16 +1,27 @@
 #include "image.h"
 
 #include <filesystem>
+#include <fstream>
+#include <map>
 
 #include "deps/stb/stb_image.h"
+#include "deps/stb/stb_image_write.h"
 
 #include "buffer.h"
 #include "cmd.h"
 #include "src/render/renderer.h"
 
 Image::Image(const RendererContext &ctx, const vk::ImageCreateInfo &imageInfo, const vk::MemoryPropertyFlags properties)
-    : allocator(**ctx.allocator), extent(imageInfo.extent) {
+    : allocator(**ctx.allocator), extent(imageInfo.extent), format(imageInfo.format) {
+    VmaAllocationCreateFlags flags;
+    if (properties & vk::MemoryPropertyFlagBits::eDeviceLocal) {
+        flags = 0;
+    } else {
+        flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+    }
+
     const VmaAllocationCreateInfo allocInfo{
+        .flags = flags,
         .usage = VMA_MEMORY_USAGE_AUTO,
         .requiredFlags = static_cast<VkMemoryPropertyFlags>(properties)
     };
@@ -75,6 +86,163 @@ void Image::copyFromBuffer(const RendererContext &ctx, const vk::Buffer buffer, 
             region
         );
     });
+}
+
+void Image::saveToFile(const RendererContext &ctx, const std::filesystem::path &path,
+                       const vk::raii::CommandPool &cmdPool, const vk::raii::Queue &queue) const {
+    const vk::ImageCreateInfo tempImageInfo{
+        .imageType = vk::ImageType::e2D,
+        .format = vk::Format::eR8G8B8A8Unorm,
+        .extent = extent,
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = vk::SampleCountFlagBits::e1,
+        .tiling = vk::ImageTiling::eLinear,
+        .usage = vk::ImageUsageFlagBits::eTransferDst,
+        .sharingMode = vk::SharingMode::eExclusive,
+        .initialLayout = vk::ImageLayout::eUndefined,
+    };
+
+    const Image tempImage{
+        ctx,
+        tempImageInfo,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+    };
+
+    utils::img::transitionImageLayout(
+        ctx,
+        **image,
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::ImageLayout::eTransferSrcOptimal,
+        1,
+        1,
+        cmdPool,
+        queue
+    );
+
+    utils::img::transitionImageLayout(
+        ctx,
+        **tempImage,
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eTransferDstOptimal,
+        1,
+        1,
+        cmdPool,
+        queue
+    );
+
+    const vk::ImageCopy imageCopyRegion{
+        .srcSubresource = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .layerCount = 1
+        },
+        .dstSubresource = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .layerCount = 1
+        },
+        .extent = extent
+    };
+
+    const vk::Offset3D blitOffset {
+        .x = static_cast<int32_t>(extent.width),
+        .y = static_cast<int32_t>(extent.height),
+        .z = static_cast<int32_t>(extent.depth)
+    };
+
+    const vk::ImageMemoryBarrier2 imageMemoryBarrier{
+        .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+        .srcAccessMask = vk::AccessFlagBits2::eTransferRead,
+        .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+        .dstAccessMask = vk::AccessFlagBits2::eMemoryRead,
+        .oldLayout = vk::ImageLayout::eTransferDstOptimal,
+        .newLayout = vk::ImageLayout::eGeneral,
+        .image = **tempImage,
+        .subresourceRange = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .levelCount = 1,
+            .layerCount = 1,
+        }
+    };
+
+    const vk::DependencyInfo dependencyInfo{
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers = &imageMemoryBarrier
+    };
+
+    const vk::ImageBlit blitInfo {
+        .srcSubresource = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .layerCount = 1
+        },
+        .srcOffsets = { { vk::Offset3D(), blitOffset } },
+        .dstSubresource = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .layerCount = 1
+        },
+        .dstOffsets = { { vk::Offset3D(), blitOffset } }
+    };
+
+    bool supportsBlit = true;
+
+    // check if the device supports blitting from this image's format
+    const vk::FormatProperties srcFormatProperties = ctx.physicalDevice->getFormatProperties(format);
+    if (!(srcFormatProperties.linearTilingFeatures & vk::FormatFeatureFlagBits::eBlitSrc)) {
+        supportsBlit = false;
+    }
+
+    // check if the device supports blitting to linear images
+    const vk::FormatProperties dstFormatProperties = ctx.physicalDevice->getFormatProperties(tempImage.format);
+    if (!(dstFormatProperties.linearTilingFeatures & vk::FormatFeatureFlagBits::eBlitDst)) {
+        supportsBlit = false;
+    }
+
+    utils::cmd::doSingleTimeCommands(*ctx.device, cmdPool, queue, [&](const auto &commandBuffer) {
+        if (supportsBlit) {
+            commandBuffer.blitImage(
+                **image,
+                vk::ImageLayout::eTransferSrcOptimal,
+                **tempImage,
+                vk::ImageLayout::eTransferDstOptimal,
+                blitInfo,
+                vk::Filter::eLinear
+            );
+        } else {
+            commandBuffer.copyImage(
+                **image,
+                vk::ImageLayout::eTransferSrcOptimal,
+                **tempImage,
+                vk::ImageLayout::eTransferDstOptimal,
+                imageCopyRegion
+            );
+        }
+
+        commandBuffer.pipelineBarrier2(dependencyInfo);
+    });
+
+    void *data;
+    vmaMapMemory(tempImage.allocator, *tempImage.allocation, &data);
+
+    stbi_write_png(
+        path.string().c_str(),
+        static_cast<int>(tempImage.extent.width),
+        static_cast<int>(tempImage.extent.height),
+        STBI_rgb_alpha,
+        data,
+        utils::img::getFormatSizeInBytes(tempImage.format) * tempImage.extent.width
+    );
+
+    vmaUnmapMemory(tempImage.allocator, *tempImage.allocation);
+
+    utils::img::transitionImageLayout(
+        ctx,
+        **image,
+        vk::ImageLayout::eTransferSrcOptimal,
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        1,
+        1,
+        cmdPool,
+        queue
+    );
 }
 
 // ==================== CubeImage ====================
@@ -162,7 +330,7 @@ const vk::raii::ImageView &Texture::getAttachmentLayerView(const uint32_t layerI
     return cubeImage->getAttachmentLayerView(layerIndex);
 }
 
-const vk::raii::ImageView & Texture::getLayerMipView(const uint32_t layerIndex, const uint32_t mipLevel) const {
+const vk::raii::ImageView &Texture::getLayerMipView(const uint32_t layerIndex, const uint32_t mipLevel) const {
     const CubeImage *cubeImage = dynamic_cast<CubeImage *>(&*image);
 
     if (!cubeImage) {
@@ -174,7 +342,7 @@ const vk::raii::ImageView & Texture::getLayerMipView(const uint32_t layerIndex, 
 
 void Texture::generateMipmaps(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
                               const vk::raii::Queue &queue, const vk::ImageLayout finalLayout) const {
-    const vk::FormatProperties formatProperties = ctx.physicalDevice->getFormatProperties(format);
+    const vk::FormatProperties formatProperties = ctx.physicalDevice->getFormatProperties(getFormat());
 
     if (!(formatProperties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear)) {
         throw std::runtime_error("texture image format does not support linear blitting!");
@@ -374,12 +542,11 @@ unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx, const vk:
                                            const vk::raii::Queue &queue) const {
     checkParams();
 
+    // stupid workaround because std::unique_ptr doesn't have access to the Texture ctor
     unique_ptr<Texture> texture; {
         Texture t;
         texture = make_unique<Texture>(std::move(t));
     }
-
-    texture->format = format;
 
     const auto [stagingBuffer, extent, layerCount] = isUninitialized
                                                          ? LoadedTextureData{nullptr, *desiredExtent, getLayerCount()}
@@ -601,47 +768,99 @@ utils::img::createCubeImageView(const RendererContext &ctx, const vk::Image imag
     return make_unique<vk::raii::ImageView>(*ctx.device, createInfo);
 }
 
+struct ImageBarrierInfo {
+    vk::AccessFlagBits srcAccessMask;
+    vk::AccessFlagBits dstAccessMask;
+    vk::PipelineStageFlagBits srcStage;
+    vk::PipelineStageFlagBits dstStage;
+};
+
+static std::map<
+    std::pair<vk::ImageLayout, vk::ImageLayout>,
+    ImageBarrierInfo
+> transitionBarrierSchemes{
+    {
+        {vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferSrcOptimal},
+        {
+            .srcAccessMask = {},
+            .dstAccessMask = vk::AccessFlagBits::eTransferRead,
+            .srcStage = vk::PipelineStageFlagBits::eTopOfPipe,
+            .dstStage = vk::PipelineStageFlagBits::eTransfer,
+        }
+    },
+    {
+        {vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal},
+        {
+            .srcAccessMask = {},
+            .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
+            .srcStage = vk::PipelineStageFlagBits::eTopOfPipe,
+            .dstStage = vk::PipelineStageFlagBits::eTransfer,
+        }
+    },
+    {
+        {vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal},
+        {
+            .srcAccessMask = vk::AccessFlagBits::eTransferRead,
+            .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+            .srcStage = vk::PipelineStageFlagBits::eTransfer,
+            .dstStage = vk::PipelineStageFlagBits::eFragmentShader,
+        }
+    },
+    {
+        {vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal},
+        {
+            .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+            .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+            .srcStage = vk::PipelineStageFlagBits::eTransfer,
+            .dstStage = vk::PipelineStageFlagBits::eFragmentShader,
+        }
+    },
+    {
+        {vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal},
+        {
+            .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+            .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+            .srcStage = vk::PipelineStageFlagBits::eTransfer,
+            .dstStage = vk::PipelineStageFlagBits::eFragmentShader,
+        }
+    },
+    {
+        {vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eTransferSrcOptimal},
+        {
+            .srcAccessMask = vk::AccessFlagBits::eShaderRead,
+            .dstAccessMask = vk::AccessFlagBits::eTransferRead,
+            .srcStage = vk::PipelineStageFlagBits::eFragmentShader,
+            .dstStage = vk::PipelineStageFlagBits::eTransfer,
+        }
+    },
+    {
+        {vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eTransferDstOptimal},
+        {
+            .srcAccessMask = vk::AccessFlagBits::eShaderRead,
+            .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
+            .srcStage = vk::PipelineStageFlagBits::eFragmentShader,
+            .dstStage = vk::PipelineStageFlagBits::eTransfer,
+        }
+    }
+};
+
 void utils::img::transitionImageLayout(const RendererContext &ctx, const vk::Image image,
                                        const vk::ImageLayout oldLayout, const vk::ImageLayout newLayout,
                                        const uint32_t mipLevels, const uint32_t layerCount,
                                        const vk::raii::CommandPool &cmdPool, const vk::raii::Queue &queue) {
-    vk::AccessFlags srcAccessMask, dstAccessMask;
-    vk::PipelineStageFlags sourceStage, destinationStage;
-
-    if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eTransferDstOptimal) {
-        srcAccessMask = {};
-        dstAccessMask = vk::AccessFlagBits::eTransferWrite;
-        sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
-        destinationStage = vk::PipelineStageFlagBits::eTransfer;
-    } else if (oldLayout == vk::ImageLayout::eTransferDstOptimal
-               && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
-        srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-        dstAccessMask = vk::AccessFlagBits::eShaderRead;
-        sourceStage = vk::PipelineStageFlagBits::eTransfer;
-        destinationStage = vk::PipelineStageFlagBits::eFragmentShader;
-    } else if (oldLayout == vk::ImageLayout::eColorAttachmentOptimal
-               && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
-        srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-        dstAccessMask = vk::AccessFlagBits::eShaderRead;
-        sourceStage = vk::PipelineStageFlagBits::eTransfer;
-        destinationStage = vk::PipelineStageFlagBits::eFragmentShader;
-    } else if (oldLayout == vk::ImageLayout::eShaderReadOnlyOptimal
-               && newLayout == vk::ImageLayout::eTransferDstOptimal) {
-        srcAccessMask = vk::AccessFlagBits::eShaderRead;
-        dstAccessMask = vk::AccessFlagBits::eTransferWrite;
-        sourceStage = vk::PipelineStageFlagBits::eFragmentShader;
-        destinationStage = vk::PipelineStageFlagBits::eTransfer;
-    } else {
+    if (!transitionBarrierSchemes.contains({oldLayout, newLayout})) {
         throw std::invalid_argument("unsupported layout transition!");
     }
+
+    const auto &[srcAccessMask, dstAccessMask, srcStage, dstStage] = transitionBarrierSchemes[{oldLayout, newLayout}];
 
     const vk::ImageMemoryBarrier barrier{
         .srcAccessMask = srcAccessMask,
         .dstAccessMask = dstAccessMask,
         .oldLayout = oldLayout,
         .newLayout = newLayout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
         .image = image,
         .subresourceRange = {
             .aspectMask = vk::ImageAspectFlagBits::eColor,
@@ -654,7 +873,8 @@ void utils::img::transitionImageLayout(const RendererContext &ctx, const vk::Ima
 
     cmd::doSingleTimeCommands(*ctx.device, cmdPool, queue, [&](const auto &cmdBuffer) {
         cmdBuffer.pipelineBarrier(
-            sourceStage, destinationStage,
+            srcStage,
+            dstStage,
             {},
             nullptr,
             nullptr,

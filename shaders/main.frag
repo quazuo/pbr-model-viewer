@@ -19,6 +19,8 @@ layout (binding = 1) uniform sampler2D albedoSampler;
 layout (binding = 2) uniform sampler2D normalSampler;
 layout (binding = 3) uniform sampler2D ormSampler;
 layout (binding = 4) uniform samplerCube irradianceMapSampler;
+layout (binding = 5) uniform samplerCube prefilterMapSampler;
+layout (binding = 6) uniform sampler2D brdfLutSampler;
 
 void main() {
     vec3 albedo = vec3(texture(albedoSampler, fragTexCoord));
@@ -40,6 +42,11 @@ void main() {
     vec3 view = normalize(ubo.misc.camera_pos - worldPosition);
     vec3 halfway = normalize(view + light_dir);
 
+    // utility dot products
+    float n_dot_v = max(dot(normal, view), 0.0);
+    float h_dot_v = max(dot(halfway, view), 0.0);
+    float n_dot_l = max(dot(normal, light_dir), 0.0);
+
     // BRDF intermediate values
     vec3 f0 = mix(vec3(0.04), albedo, metallic);
     vec3 fresnel = fresnel_schlick(max(dot(halfway, view), 0.0), f0);
@@ -53,21 +60,24 @@ void main() {
 
     // k-terms specifying reflection vs refraction contributions
     vec3 k_specular = ubo.misc.use_ibl == 1u
-        ? fresnel_schlick_roughness(max(dot(halfway, view), 0.0), f0, roughness)
+        ? fresnel_schlick_roughness(n_dot_v, f0, roughness)
         : fresnel;
     vec3 k_diffuse = (vec3(1.0) - k_specular) * (1.0 - metallic);
 
-    float n_dot_l = max(dot(normal, light_dir), 0.0);
     vec3 out_radiance = (k_diffuse * albedo / PI + specular) * radiance * n_dot_l;
 
-    vec3 ambient;
-    if (ubo.misc.use_ibl == 1u) {
-        vec3 irradiance = texture(irradianceMapSampler, normal).rgb;
-        vec3 diffuse = irradiance * albedo;
-        ambient = k_diffuse * diffuse * ao;
-    } else {
-        ambient = vec3(0.03) * albedo * ao;
-    }
+    vec3 irradiance = texture(irradianceMapSampler, normal).rgb;
+    vec3 diffuse = irradiance * albedo;
+
+    const float MAX_REFLECTION_LOD = 4.0;
+    vec3 reflection = reflect(-view, normal);
+    vec3 prefiltered_color = textureLod(prefilterMapSampler, reflection, roughness * MAX_REFLECTION_LOD).rgb;
+
+    vec2 env_brdf = texture(brdfLutSampler, vec2(n_dot_v, roughness)).rg;
+    vec3 specular = prefiltered_color * (k_specular * env_brdf.x + env_brdf.y);
+
+    // no need to multiply `specular` by `k_specular` as it's done implicitly by including fresnel
+    vec3 ambient = (k_diffuse * diffuse + specular) * ao;
 
     vec3 color = ambient + out_radiance;
 

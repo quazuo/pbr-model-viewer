@@ -21,8 +21,9 @@ protected:
     unique_ptr<vk::raii::Image> image;
     unique_ptr<vk::raii::ImageView> view;
     unique_ptr<vk::raii::ImageView> attachmentView;
-    std::vector<unique_ptr<vk::raii::ImageView>> mipViews;
+    std::vector<unique_ptr<vk::raii::ImageView> > mipViews;
     vk::Extent3D extent;
+    vk::Format format{};
 
 public:
     explicit Image(const RendererContext &ctx, const vk::ImageCreateInfo &imageInfo,
@@ -56,6 +57,8 @@ public:
 
     [[nodiscard]] vk::Extent3D getExtent() const { return extent; }
 
+    [[nodiscard]] vk::Format getFormat() const { return format; }
+
     virtual void createViews(const RendererContext &ctx, vk::Format format, vk::ImageAspectFlags aspectFlags,
                              uint32_t mipLevels);
 
@@ -69,12 +72,15 @@ public:
      */
     virtual void copyFromBuffer(const RendererContext &ctx, vk::Buffer buffer, const vk::raii::CommandPool &cmdPool,
                                 const vk::raii::Queue &queue);
+
+    void saveToFile(const RendererContext &ctx, const std::filesystem::path &path,
+                    const vk::raii::CommandPool &cmdPool, const vk::raii::Queue &queue) const;
 };
 
 class CubeImage final : public Image {
     std::vector<unique_ptr<vk::raii::ImageView> > layerViews;
     std::vector<unique_ptr<vk::raii::ImageView> > attachmentLayerViews;
-    std::vector<std::vector<unique_ptr<vk::raii::ImageView>>> layerMipViews; // layerMipViews[layer][mip]
+    std::vector<std::vector<unique_ptr<vk::raii::ImageView> > > layerMipViews; // layerMipViews[layer][mip]
 
 public:
     explicit CubeImage(const RendererContext &ctx, const vk::ImageCreateInfo &imageInfo,
@@ -108,7 +114,6 @@ class Texture {
     unique_ptr<Image> image;
     unique_ptr<vk::raii::Sampler> textureSampler;
     uint32_t mipLevels{};
-    vk::Format format{};
 
     friend class TextureBuilder;
 
@@ -121,16 +126,16 @@ public:
 
     [[nodiscard]] uint32_t getMipLevels() const { return mipLevels; }
 
-    [[nodiscard]] vk::Format getFormat() const { return format; }
+    [[nodiscard]] vk::Format getFormat() const { return image->getFormat(); }
 
     [[nodiscard]] const vk::raii::ImageView &getView() const { return image->getView(); }
 
-    /**
-     * Returns a raw handle to the actual Vulkan image view associated with a specific layer of this image.
-     * @return Handle to the layer's image view.
-     *
-     * @param layerIndex Layer index to which the view should refer.
-     */
+    [[nodiscard]] const vk::raii::ImageView &getAttachmentView() const { return image->getAttachmentView(); }
+
+    [[nodiscard]] const vk::raii::ImageView &getMipView(const uint32_t mipLevel) const {
+        return image->getMipView(mipLevel);
+    }
+
     [[nodiscard]] const vk::raii::ImageView &getLayerView(uint32_t layerIndex) const;
 
     [[nodiscard]] const vk::raii::ImageView &getAttachmentLayerView(uint32_t layerIndex) const;
@@ -208,6 +213,8 @@ namespace utils::img {
     void transitionImageLayout(const RendererContext &ctx, vk::Image image, vk::ImageLayout oldLayout,
                                vk::ImageLayout newLayout, uint32_t mipLevels, uint32_t layerCount,
                                const vk::raii::CommandPool &cmdPool, const vk::raii::Queue &queue);
+
+    void saveToFile(...);
 
     [[nodiscard]] size_t getFormatSizeInBytes(vk::Format format);
 }

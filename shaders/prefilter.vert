@@ -19,6 +19,7 @@ layout(push_constant) uniform PushConstants {
 
 void main() {
     localPosition = inPosition;
+    localPosition.x *= -1;
 
     gl_Position = ubo.matrices.cubemap_capture_proj * constants.view * vec4(inPosition, 1.0);
 }

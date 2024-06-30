@@ -208,3 +208,4 @@ PipelineBuilder::createShaderModule(const RendererContext &ctx, const std::files
 
 template PipelineBuilder &PipelineBuilder::withVertices<Vertex>();
 template PipelineBuilder &PipelineBuilder::withVertices<SkyboxVertex>();
+template PipelineBuilder &PipelineBuilder::withVertices<ScreenSpaceQuadVertex>();

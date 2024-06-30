@@ -66,7 +66,7 @@ struct GraphicsUBO {
     };
 
     struct MiscData {
-        uint32_t useIBL;
+        float debugNumber;
         glm::vec3 cameraPos;
         glm::vec3 lightDir;
     };
@@ -220,7 +220,7 @@ class VulkanRenderer {
     static constexpr vk::Extent2D brdfIntegrationMapExtent = { 512, 512 };
 
     static constexpr auto hdrEnvmapFormat = vk::Format::eR32G32B32A32Sfloat;
-    static constexpr auto brdfIntegrationMapFormat = vk::Format::eR8G8B8A8Srgb;
+    static constexpr auto brdfIntegrationMapFormat = vk::Format::eR8G8B8A8Unorm;
 
     static constexpr uint32_t maxPrefilterMipLevels = 5;
 
@@ -238,7 +238,7 @@ class VulkanRenderer {
     float modelScale = 1.0f;
     glm::vec3 modelTranslate{};
 
-    bool useIBL = true;
+    float debugNumber = 0;
 
 public:
     explicit VulkanRenderer();
@@ -405,6 +405,8 @@ private:
     void createIrradianceCaptureFramebuffer();
 
     void createPrefilterFramebuffers();
+
+    void createBrdfIntegrationFramebuffer();
 
     [[nodiscard]] unique_ptr<vk::raii::Framebuffer>
     createPerLayerCubemapFramebuffer(const Texture &texture, const vk::raii::RenderPass &renderPass) const;

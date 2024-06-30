@@ -92,8 +92,11 @@ struct ScreenSpaceQuadVertex {
 };
 
 static const std::vector<ScreenSpaceQuadVertex> screenSpaceQuadVertices = {
-    { {0, 0}, {0, 1} },
-    { {0, 1}, {0, 0} },
-    { {1, 0}, {1, 1} },
-    { {1, 1}, {1, 0} }
+    {{-1, -1}, {0, 0}},
+    {{1, -1}, {1, 0}},
+    {{1, 1}, {1, 1}},
+
+    {{-1, -1}, {0, 0}},
+    {{1, 1}, {1, 1}},
+    {{-1, 1}, {0, 1}},
 };

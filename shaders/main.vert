@@ -30,6 +30,6 @@ void main() {
     vec3 T = normalize(vec3(model * vec4(inTangent, 0.0)));
     vec3 N = normalize(vec3(model * vec4(inNormal, 0.0)));
     T = normalize(T - dot(T, N) * N); // gramm-schmidt
-    vec3 B = -cross(N, T);
+    vec3 B = cross(N, T);
     TBN = mat3(T, B, N);
 }

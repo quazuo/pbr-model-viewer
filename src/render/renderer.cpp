@@ -101,6 +101,9 @@ VulkanRenderer::VulkanRenderer() {
 
     createBrdfIntegrationRenderPass();
     createBrdfIntegrationPipeline();
+    createBrdfIntegrationMapTexture();
+    createBrdfIntegrationFramebuffer();
+    computeBrdfIntegrationMap();
 
     // loadModel("../assets/t-60-helmet/source/T-60 HelmetU.fbx");
     // loadAlbedoTexture("../assets/t-60-helmet/textures/albedo.png");
@@ -114,12 +117,11 @@ VulkanRenderer::VulkanRenderer() {
 
     loadEnvironmentMap("../assets/envmaps/gallery.hdr");
 
-    createBrdfIntegrationMapTexture();
-    computeBrdfIntegrationMap();
-
     createSyncObjects();
 
     initImgui();
+
+    brdfIntegrationMapTexture->getImage().saveToFile(ctx, "gownowdupie.png", *commandPool, *graphicsQueue);
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -508,7 +510,12 @@ void VulkanRenderer::loadEnvironmentMap(const std::filesystem::path &path) {
         *commandPool,
         *graphicsQueue
     );
-    skyboxTexture->generateMipmaps(ctx, *commandPool, *graphicsQueue, vk::ImageLayout::eShaderReadOnlyOptimal);
+    skyboxTexture->generateMipmaps(
+        ctx,
+        *commandPool,
+        *graphicsQueue,
+        vk::ImageLayout::eShaderReadOnlyOptimal
+    );
 
     captureIrradianceMap();
     utils::img::transitionImageLayout(
@@ -521,7 +528,12 @@ void VulkanRenderer::loadEnvironmentMap(const std::filesystem::path &path) {
         *commandPool,
         *graphicsQueue
     );
-    irradianceMapTexture->generateMipmaps(ctx, *commandPool, *graphicsQueue, vk::ImageLayout::eShaderReadOnlyOptimal);
+    irradianceMapTexture->generateMipmaps(
+        ctx,
+        *commandPool,
+        *graphicsQueue,
+        vk::ImageLayout::eShaderReadOnlyOptimal
+    );
 
     prefilterEnvmap();
 }
@@ -556,7 +568,7 @@ void VulkanRenderer::createEnvmapTextures(const std::filesystem::path &path) {
 
     irradianceMapTexture = TextureBuilder()
             .asCubemap()
-            .asUninitialized({32, 32, 1})
+            .asUninitialized({64, 64, 1})
             .asHdr()
             .useFormat(hdrEnvmapFormat)
             .useUsage(vk::ImageUsageFlagBits::eTransferSrc
@@ -587,7 +599,6 @@ void VulkanRenderer::createBrdfIntegrationMapTexture() {
                       | vk::ImageUsageFlagBits::eTransferDst
                       | vk::ImageUsageFlagBits::eSampled
                       | vk::ImageUsageFlagBits::eColorAttachment)
-            .makeMipmaps()
             .create(ctx, *commandPool, *graphicsQueue);
 }
 
@@ -660,12 +671,28 @@ void VulkanRenderer::createSceneDescriptorSetLayouts() {
         .stageFlags = vk::ShaderStageFlagBits::eFragment,
     };
 
+    static constexpr vk::DescriptorSetLayoutBinding prefilterMapSamplerLayoutBinding{
+        .binding = 5U,
+        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+        .descriptorCount = 1U,
+        .stageFlags = vk::ShaderStageFlagBits::eFragment,
+    };
+
+    static constexpr vk::DescriptorSetLayoutBinding brdfLutSamplerLayoutBinding{
+        .binding = 6U,
+        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+        .descriptorCount = 1U,
+        .stageFlags = vk::ShaderStageFlagBits::eFragment,
+    };
+
     static constexpr std::array setBindings{
         uboLayoutBinding,
         albedoSamplerLayoutBinding,
         normalSamplerLayoutBinding,
         ormSamplerLayoutBinding,
         irradianceMapSamplerLayoutBinding,
+        prefilterMapSamplerLayoutBinding,
+        brdfLutSamplerLayoutBinding,
     };
 
     static constexpr vk::DescriptorSetLayoutCreateInfo setLayoutInfo{
@@ -768,7 +795,7 @@ void VulkanRenderer::createDescriptorPool() {
 
     static constexpr vk::DescriptorPoolSize samplerPoolSize{
         .type = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 5 + 2,
+        .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 7 + 2,
     };
 
     static constexpr std::array poolSizes = {
@@ -875,12 +902,44 @@ void VulkanRenderer::createSceneDescriptorSets() {
             .pImageInfo = &irradianceMapImageInfo
         };
 
+        const vk::DescriptorImageInfo prefilterMapImageInfo{
+            .sampler = *prefilteredEnvmapTexture->getSampler(),
+            .imageView = *prefilteredEnvmapTexture->getView(),
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+        };
+
+        const vk::WriteDescriptorSet prefilterMapSamplerDescriptorWrite{
+            .dstSet = *descriptorSets[i],
+            .dstBinding = 5U,
+            .dstArrayElement = 0U,
+            .descriptorCount = 1U,
+            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+            .pImageInfo = &prefilterMapImageInfo
+        };
+
+        const vk::DescriptorImageInfo brdfLutImageInfo{
+            .sampler = *brdfIntegrationMapTexture->getSampler(),
+            .imageView = *brdfIntegrationMapTexture->getView(),
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+        };
+
+        const vk::WriteDescriptorSet brdfLutSamplerDescriptorWrite{
+            .dstSet = *descriptorSets[i],
+            .dstBinding = 6U,
+            .dstArrayElement = 0U,
+            .descriptorCount = 1U,
+            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+            .pImageInfo = &brdfLutImageInfo
+        };
+
         const std::array descriptorWrites = {
             uboDescriptorWrite,
             albedoSamplerDescriptorWrite,
             normalSamplerDescriptorWrite,
             ormSamplerDescriptorWrite,
-            irradianceMapSamplerDescriptorWrite
+            irradianceMapSamplerDescriptorWrite,
+            prefilterMapSamplerDescriptorWrite,
+            brdfLutSamplerDescriptorWrite,
         };
 
         ctx.device->updateDescriptorSets(descriptorWrites, nullptr);
@@ -922,6 +981,8 @@ void VulkanRenderer::createSkyboxDescriptorSets() {
         const vk::DescriptorImageInfo skyboxImageInfo{
             .sampler = *skyboxTexture->getSampler(),
             .imageView = *skyboxTexture->getView(),
+            // .sampler = *prefilteredEnvmapTexture->getSampler(),
+            // .imageView = *prefilteredEnvmapTexture->getView(),
             .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
         };
 
@@ -1565,6 +1626,8 @@ void VulkanRenderer::createIrradianceCaptureFramebuffer() {
 }
 
 void VulkanRenderer::createPrefilterFramebuffers() {
+    prefilterFramebuffers.clear();
+
     for (uint32_t mip = 0; mip < maxPrefilterMipLevels; mip++) {
         prefilterFramebuffers.emplace_back(
             createMipPerLayerCubemapFramebuffer(
@@ -1574,6 +1637,23 @@ void VulkanRenderer::createPrefilterFramebuffers() {
             )
         );
     }
+}
+
+void VulkanRenderer::createBrdfIntegrationFramebuffer() {
+    std::vector attachments{*brdfIntegrationMapTexture->getAttachmentView()};
+
+    const vk::Extent3D extent = brdfIntegrationMapTexture->getImage().getExtent();
+
+    const vk::FramebufferCreateInfo createInfo{
+        .renderPass = **brdfIntegrationRenderPass,
+        .attachmentCount = static_cast<uint32_t>(attachments.size()),
+        .pAttachments = attachments.data(),
+        .width = extent.width,
+        .height = extent.height,
+        .layers = 1,
+    };
+
+    brdfIntegrationFramebuffer = make_unique<vk::raii::Framebuffer>(*ctx.device, createInfo);
 }
 
 unique_ptr<vk::raii::Framebuffer>
@@ -1786,7 +1866,7 @@ void VulkanRenderer::renderGuiSection() {
 
         ImGui::Separator();
 
-        ImGui::Checkbox("Use IBL?", &useIBL);
+        ImGui::DragFloat("debug number", &debugNumber, 0.01, 0, std::numeric_limits<float>::max());
     }
 
     camera->renderGuiSection();
@@ -1963,7 +2043,7 @@ void VulkanRenderer::drawScene() {
 
     const vk::Viewport viewport{
         .x = 0.0f,
-        .y = static_cast<float>(swapChainExtent.height),
+        .y = static_cast<float>(swapChainExtent.height), // flip the y-axis
         .width = static_cast<float>(swapChainExtent.width),
         .height = -1 * static_cast<float>(swapChainExtent.height), // flip the y-axis
         .minDepth = 0.0f,
@@ -2071,7 +2151,7 @@ void VulkanRenderer::captureCubemap() {
 
     const vk::Viewport viewport{
         .x = 0.0f,
-        .y = static_cast<float>(extent.height),
+        .y = static_cast<float>(extent.height), // flip the y-axis
         .width = static_cast<float>(extent.width),
         .height = -1 * static_cast<float>(extent.height), // flip the y-axis
         .minDepth = 0.0f,
@@ -2161,7 +2241,7 @@ void VulkanRenderer::captureIrradianceMap() {
 
     const vk::Viewport viewport{
         .x = 0.0f,
-        .y = static_cast<float>(extent.height),
+        .y = static_cast<float>(extent.height), // flip the y-axis
         .width = static_cast<float>(extent.width),
         .height = -1 * static_cast<float>(extent.height), // flip the y-axis
         .minDepth = 0.0f,
@@ -2256,7 +2336,7 @@ void VulkanRenderer::prefilterEnvmap() {
 
         const vk::Viewport viewport{
             .x = 0.0f,
-            .y = static_cast<float>(extent.height),
+            .y = static_cast<float>(extent.height), // flip the y-axis
             .width = static_cast<float>(extent.width),
             .height = -1 * static_cast<float>(extent.height), // flip the y-axis
             .minDepth = 0.0f,
@@ -2335,6 +2415,69 @@ void VulkanRenderer::prefilterEnvmap() {
     );
 }
 
+void VulkanRenderer::computeBrdfIntegrationMap() {
+    const vk::Extent2D extent{
+        .width = brdfIntegrationMapTexture->getImage().getExtent().width,
+        .height = brdfIntegrationMapTexture->getImage().getExtent().height
+    };
+
+    constexpr vk::ClearColorValue clearColor{0, 0, 0, 1};
+    const std::vector<vk::ClearValue> clearValues{clearColor};
+
+    const vk::Viewport viewport{
+        .x = 0.0f,
+        .y = static_cast<float>(extent.height), // flip the y-axis
+        .width = static_cast<float>(extent.width),
+        .height = -1 * static_cast<float>(extent.height), // flip the y-axis
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
+    };
+
+    const vk::Rect2D scissor{
+        .offset = {0, 0},
+        .extent = extent
+    };
+
+    const vk::RenderPassBeginInfo renderPassInfo{
+        .renderPass = **brdfIntegrationRenderPass,
+        .framebuffer = **brdfIntegrationFramebuffer,
+        .renderArea = {
+            .offset = {0, 0},
+            .extent = extent,
+        },
+        .clearValueCount = static_cast<uint32_t>(clearValues.size()),
+        .pClearValues = clearValues.data()
+    };
+
+    const auto commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
+
+    commandBuffer.setViewport(0, viewport);
+    commandBuffer.setScissor(0, scissor);
+
+    commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+
+    commandBuffer.bindVertexBuffers(0, **screenSpaceQuadVertexBuffer, {0});
+
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***brdfIntegrationPipeline);
+
+    commandBuffer.draw(screenSpaceQuadVertices.size(), 1, 0, 0);
+
+    commandBuffer.endRenderPass();
+
+    utils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
+
+    utils::img::transitionImageLayout(
+        ctx,
+        **brdfIntegrationMapTexture->getImage(),
+        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        1,
+        1,
+        *commandPool,
+        *graphicsQueue
+    );
+}
+
 void VulkanRenderer::updateGraphicsUniformBuffer() const {
     const glm::mat4 model = glm::translate(
         glm::scale(
@@ -2363,7 +2506,7 @@ void VulkanRenderer::updateGraphicsUniformBuffer() const {
             .cubemapCaptureProj = cubemapFaceProjection
         },
         .misc = {
-            .useIBL = useIBL ? 1u : 0u,
+            .debugNumber = debugNumber,
             .cameraPos = camera->getPos(),
             .lightDir = glm::normalize(glm::vec3(1, 1.5, -2)),
         }
