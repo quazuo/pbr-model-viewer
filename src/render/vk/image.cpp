@@ -1,7 +1,6 @@
 #include "image.h"
 
 #include <filesystem>
-#include <fstream>
 #include <map>
 
 #include "deps/stb/stb_image.h"

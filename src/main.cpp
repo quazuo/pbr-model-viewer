@@ -3,6 +3,10 @@
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
 
+#define GLFW_EXPOSE_NATIVE_WIN32
+#define NOMINMAX 1
+#include <GLFW/glfw3native.h>
+
 #include "render/renderer.h"
 #include "utils/input-manager.h"
 #include "render/gui/gui.h"
@@ -36,6 +40,8 @@ public:
         inputManager = std::make_unique<InputManager>(window);
         bindKeyActions();
     }
+
+    [[nodiscard]] GLFWwindow *getWindow() const { return window; }
 
     void run() {
         while (!glfwWindowShouldClose(window)) {
@@ -184,11 +190,21 @@ private:
     }
 };
 
-int main() {
+int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE hInstPrev, PSTR cmdline, int cmdshow) {
     glfwInit();
 
-    Engine engine;
-    engine.run();
+    try {
+        Engine engine;
+        engine.run();
+    } catch (std::exception& e) {
+        MessageBox(
+            nullptr,
+            static_cast<LPCSTR>(e.what()),
+            static_cast<LPCSTR>("Error"),
+            MB_OK
+        );
+        return EXIT_FAILURE;
+    }
 
     glfwTerminate();
 
