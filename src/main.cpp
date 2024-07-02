@@ -1,5 +1,3 @@
-#include <iostream>
-
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
 
@@ -190,19 +188,30 @@ private:
     }
 };
 
-int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE hInstPrev, PSTR cmdline, int cmdshow) {
-    glfwInit();
+static void showErrorBox(const std::string &message) {
+    const std::string prefix = "Fatal error: ";
+
+    MessageBox(
+        nullptr,
+        static_cast<LPCSTR>((prefix + message).c_str()),
+        static_cast<LPCSTR>("Error"),
+        MB_OK
+    );
+}
+
+
+int main() {
+    if (!glfwInit()) {
+        showErrorBox("GLFW initialization failed.");
+        return EXIT_FAILURE;
+    }
 
     try {
         Engine engine;
         engine.run();
-    } catch (std::exception& e) {
-        MessageBox(
-            nullptr,
-            static_cast<LPCSTR>(e.what()),
-            static_cast<LPCSTR>("Error"),
-            MB_OK
-        );
+    } catch (std::exception &e) {
+        showErrorBox(e.what());
+        glfwTerminate();
         return EXIT_FAILURE;
     }
 

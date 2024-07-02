@@ -75,5 +75,5 @@ file(GLOB PBR_SRCS
         "src/utils/*"
 )
 
-add_executable(pbr WIN32 ${PBR_SRCS} ${HEADER_ONLY_DEPS_SRCS} ${IMGUI_SRCS} ${IMGUI_IMPL_SRCS})
+add_executable(pbr ${PBR_SRCS} ${HEADER_ONLY_DEPS_SRCS} ${IMGUI_SRCS} ${IMGUI_IMPL_SRCS})
 target_link_libraries(pbr ${ALL_LIBS})
