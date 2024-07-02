@@ -20,6 +20,7 @@
 #include "vk/cmd.h"
 #include "src/utils/glfw-statics.h"
 #include "vk/pipeline.h"
+#include "vk/render-pass.h"
 
 VmaAllocatorWrapper::VmaAllocatorWrapper(const vk::PhysicalDevice physicalDevice, const vk::Device device,
                                          const vk::Instance instance) {
@@ -81,7 +82,7 @@ VulkanRenderer::VulkanRenderer() {
     createCommandPool();
     createCommandBuffers();
 
-    swapChain->createFramebuffers(ctx, *sceneRenderPass);
+    swapChain->createFramebuffers(ctx, **sceneRenderPass);
 
     createDescriptorPool();
 
@@ -621,7 +622,7 @@ void VulkanRenderer::recreateSwapChain() {
         window,
         msaaSampleCount
     );
-    swapChain->createFramebuffers(ctx, *sceneRenderPass);
+    swapChain->createFramebuffers(ctx, **sceneRenderPass);
 }
 
 // ==================== descriptors ====================
@@ -1112,261 +1113,103 @@ void VulkanRenderer::createEnvmapConvoluteDescriptorSets() {
 // ==================== render passes ====================
 
 void VulkanRenderer::createRenderPass() {
-    const vk::AttachmentDescription colorAttachment{
-        .format = swapChain->getImageFormat(),
-        .samples = msaaSampleCount,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eStore,
-        .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-        .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-        .initialLayout = vk::ImageLayout::eUndefined,
-        .finalLayout = vk::ImageLayout::eColorAttachmentOptimal,
-    };
+    auto renderPass = RenderPassBuilder()
+            .addColorAttachment({
+                .format = swapChain->getImageFormat(),
+                .samples = msaaSampleCount,
+                .loadOp = vk::AttachmentLoadOp::eClear,
+                .storeOp = vk::AttachmentStoreOp::eStore,
+                .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
+                .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
+                .initialLayout = vk::ImageLayout::eUndefined,
+                .finalLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            })
+            .useDepthStencilAttachment({
+                .format = swapChain->getDepthFormat(),
+                .samples = msaaSampleCount,
+                .loadOp = vk::AttachmentLoadOp::eClear,
+                .storeOp = vk::AttachmentStoreOp::eDontCare,
+                .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
+                .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
+                .initialLayout = vk::ImageLayout::eUndefined,
+                .finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
+            })
+            .addResolveAttachment({
+                .format = swapChain->getImageFormat(),
+                .samples = vk::SampleCountFlagBits::e1,
+                .loadOp = vk::AttachmentLoadOp::eDontCare,
+                .storeOp = vk::AttachmentStoreOp::eStore,
+                .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
+                .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
+                .initialLayout = vk::ImageLayout::eUndefined,
+                .finalLayout = vk::ImageLayout::ePresentSrcKHR,
+            })
+            .create(ctx);
 
-    const vk::AttachmentDescription depthAttachment{
-        .format = swapChain->getDepthFormat(),
-        .samples = msaaSampleCount,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eDontCare,
-        .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-        .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-        .initialLayout = vk::ImageLayout::eUndefined,
-        .finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
-    };
-
-    const vk::AttachmentDescription colorAttachmentResolve{
-        .format = swapChain->getImageFormat(),
-        .samples = vk::SampleCountFlagBits::e1,
-        .loadOp = vk::AttachmentLoadOp::eDontCare,
-        .storeOp = vk::AttachmentStoreOp::eStore,
-        .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-        .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-        .initialLayout = vk::ImageLayout::eUndefined,
-        .finalLayout = vk::ImageLayout::ePresentSrcKHR,
-    };
-
-    static constexpr vk::AttachmentReference colorAttachmentRef{
-        .attachment = 0U,
-        .layout = vk::ImageLayout::eColorAttachmentOptimal,
-    };
-
-    static constexpr vk::AttachmentReference depthAttachmentRef{
-        .attachment = 1U,
-        .layout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
-    };
-
-    static constexpr vk::AttachmentReference colorAttachmentResolveRef{
-        .attachment = 2U,
-        .layout = vk::ImageLayout::eColorAttachmentOptimal,
-    };
-
-    static constexpr vk::SubpassDescription subpass{
-        .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &colorAttachmentRef,
-        .pResolveAttachments = &colorAttachmentResolveRef,
-        .pDepthStencilAttachment = &depthAttachmentRef,
-    };
-
-    const std::array attachments = {colorAttachment, depthAttachment, colorAttachmentResolve};
-
-    static constexpr vk::SubpassDependency dependency{
-        .srcSubpass = vk::SubpassExternal,
-        .dstSubpass = 0U,
-        .srcStageMask = vk::PipelineStageFlagBits::eEarlyFragmentTests
-                        | vk::PipelineStageFlagBits::eLateFragmentTests,
-        .dstStageMask = vk::PipelineStageFlagBits::eEarlyFragmentTests
-                        | vk::PipelineStageFlagBits::eLateFragmentTests,
-        .srcAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-        .dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentRead
-                         | vk::AccessFlagBits::eDepthStencilAttachmentWrite
-    };
-
-    const vk::RenderPassCreateInfo renderPassInfo{
-        .attachmentCount = static_cast<uint32_t>(attachments.size()),
-        .pAttachments = attachments.data(),
-        .subpassCount = 1,
-        .pSubpasses = &subpass,
-        .dependencyCount = 1,
-        .pDependencies = &dependency
-    };
-
-    sceneRenderPass = make_unique<vk::raii::RenderPass>(*ctx.device, renderPassInfo);
+    sceneRenderPass = make_unique<RenderPass>(std::move(renderPass));
 }
 
 void VulkanRenderer::createCubemapCaptureRenderPass() {
-    static constexpr vk::AttachmentDescription colorAttachment{
-        .format = hdrEnvmapFormat,
-        .samples = vk::SampleCountFlagBits::e1,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eStore,
-        .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-        .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-        .initialLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        .finalLayout = vk::ImageLayout::eColorAttachmentOptimal,
-    };
-
-    const std::vector attachments{6, colorAttachment};
-
-    std::vector<vk::AttachmentReference> attachmentRefs;
+    auto builder = RenderPassBuilder();
 
     for (uint32_t i = 0; i < 6; i++) {
-        const vk::AttachmentReference colorAttachmentRef{
-            .attachment = i,
-            .layout = vk::ImageLayout::eColorAttachmentOptimal,
-        };
+        if (i > 0) {
+            builder.beginNewSubpass();
+        }
 
-        attachmentRefs.push_back(colorAttachmentRef);
+        builder.addColorAttachment({
+            .format = hdrEnvmapFormat,
+            .samples = vk::SampleCountFlagBits::e1,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
+            .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
+            .initialLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+            .finalLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        });
     }
 
-    std::vector<vk::SubpassDescription> subpasses;
-    std::vector<vk::SubpassDependency> dependencies;
-
-    for (uint32_t i = 0; i < 6; i++) {
-        const vk::SubpassDescription subpass{
-            .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
-            .colorAttachmentCount = 1,
-            .pColorAttachments = &attachmentRefs[i],
-        };
-
-        subpasses.push_back(subpass);
-
-        const vk::SubpassDependency dependency{
-            .srcSubpass = i == 0 ? vk::SubpassExternal : i - 1,
-            .dstSubpass = i,
-            .srcStageMask = vk::PipelineStageFlagBits::eEarlyFragmentTests
-                            | vk::PipelineStageFlagBits::eLateFragmentTests,
-            .dstStageMask = vk::PipelineStageFlagBits::eEarlyFragmentTests
-                            | vk::PipelineStageFlagBits::eLateFragmentTests,
-            .srcAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-            .dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentRead
-                             | vk::AccessFlagBits::eDepthStencilAttachmentWrite
-        };
-
-        dependencies.push_back(dependency);
-    }
-
-    const vk::RenderPassCreateInfo renderPassInfo{
-        .attachmentCount = static_cast<uint32_t>(attachments.size()),
-        .pAttachments = attachments.data(),
-        .subpassCount = static_cast<uint32_t>(subpasses.size()),
-        .pSubpasses = subpasses.data(),
-        .dependencyCount = static_cast<uint32_t>(dependencies.size()),
-        .pDependencies = dependencies.data()
-    };
-
-    cubemapCaptureRenderPass = make_unique<vk::raii::RenderPass>(*ctx.device, renderPassInfo);
+    cubemapCaptureRenderPass = make_unique<RenderPass>(builder.create(ctx));
 }
 
 void VulkanRenderer::createCubemapConvoluteRenderPass() {
-    static constexpr vk::AttachmentDescription colorAttachment{
-        .format = hdrEnvmapFormat,
-        .samples = vk::SampleCountFlagBits::e1,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eStore,
-        .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-        .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-        .initialLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        .finalLayout = vk::ImageLayout::eColorAttachmentOptimal,
-    };
-
-    const std::vector attachments{6, colorAttachment};
-
-    std::vector<vk::AttachmentReference> attachmentRefs;
+    auto builder = RenderPassBuilder();
 
     for (uint32_t i = 0; i < 6; i++) {
-        const vk::AttachmentReference colorAttachmentRef{
-            .attachment = i,
-            .layout = vk::ImageLayout::eColorAttachmentOptimal,
-        };
+        if (i > 0) {
+            builder.beginNewSubpass();
+        }
 
-        attachmentRefs.push_back(colorAttachmentRef);
+        builder.addColorAttachment({
+            .format = hdrEnvmapFormat,
+            .samples = vk::SampleCountFlagBits::e1,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
+            .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
+            .initialLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+            .finalLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        });
     }
 
-    std::vector<vk::SubpassDescription> subpasses;
-    std::vector<vk::SubpassDependency> dependencies;
-
-    for (uint32_t i = 0; i < 6; i++) {
-        const vk::SubpassDescription subpass{
-            .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
-            .colorAttachmentCount = 1,
-            .pColorAttachments = &attachmentRefs[i],
-        };
-
-        subpasses.push_back(subpass);
-
-        const vk::SubpassDependency dependency{
-            .srcSubpass = i == 0 ? vk::SubpassExternal : i - 1,
-            .dstSubpass = i,
-            .srcStageMask = vk::PipelineStageFlagBits::eEarlyFragmentTests
-                            | vk::PipelineStageFlagBits::eLateFragmentTests,
-            .dstStageMask = vk::PipelineStageFlagBits::eEarlyFragmentTests
-                            | vk::PipelineStageFlagBits::eLateFragmentTests,
-            .srcAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-            .dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentRead
-                             | vk::AccessFlagBits::eDepthStencilAttachmentWrite
-        };
-
-        dependencies.push_back(dependency);
-    }
-
-    const vk::RenderPassCreateInfo renderPassInfo{
-        .attachmentCount = static_cast<uint32_t>(attachments.size()),
-        .pAttachments = attachments.data(),
-        .subpassCount = static_cast<uint32_t>(subpasses.size()),
-        .pSubpasses = subpasses.data(),
-        .dependencyCount = static_cast<uint32_t>(dependencies.size()),
-        .pDependencies = dependencies.data()
-    };
-
-    envmapConvoluteRenderPass = make_unique<vk::raii::RenderPass>(*ctx.device, renderPassInfo);
+    envmapConvoluteRenderPass = make_unique<RenderPass>(builder.create(ctx));
 }
 
 void VulkanRenderer::createBrdfIntegrationRenderPass() {
-    static constexpr vk::AttachmentDescription colorAttachment{
-        .format = brdfIntegrationMapFormat,
-        .samples = vk::SampleCountFlagBits::e1,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eStore,
-        .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-        .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-        .initialLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        .finalLayout = vk::ImageLayout::eColorAttachmentOptimal,
-    };
+    auto renderPass = RenderPassBuilder()
+                .addColorAttachment({
+                    .format = brdfIntegrationMapFormat,
+                    .samples = vk::SampleCountFlagBits::e1,
+                    .loadOp = vk::AttachmentLoadOp::eClear,
+                    .storeOp = vk::AttachmentStoreOp::eStore,
+                    .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
+                    .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
+                    .initialLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+                    .finalLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                })
+                .create(ctx);
 
-    static constexpr vk::AttachmentReference attachmentRef{
-        .attachment = 0,
-        .layout = vk::ImageLayout::eColorAttachmentOptimal,
-    };
-
-    static constexpr vk::SubpassDescription subpass{
-        .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &attachmentRef,
-    };
-
-    static constexpr vk::SubpassDependency dependency{
-        .srcSubpass = vk::SubpassExternal,
-        .dstSubpass = 0,
-        .srcStageMask = vk::PipelineStageFlagBits::eEarlyFragmentTests
-                        | vk::PipelineStageFlagBits::eLateFragmentTests,
-        .dstStageMask = vk::PipelineStageFlagBits::eEarlyFragmentTests
-                        | vk::PipelineStageFlagBits::eLateFragmentTests,
-        .srcAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-        .dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentRead
-                         | vk::AccessFlagBits::eDepthStencilAttachmentWrite
-    };
-
-    static constexpr vk::RenderPassCreateInfo renderPassInfo{
-        .attachmentCount = 1,
-        .pAttachments = &colorAttachment,
-        .subpassCount = 1,
-        .pSubpasses = &subpass,
-        .dependencyCount = 1,
-        .pDependencies = &dependency
-    };
-
-    brdfIntegrationRenderPass = make_unique<vk::raii::RenderPass>(*ctx.device, renderPassInfo);
+    brdfIntegrationRenderPass = make_unique<RenderPass>(std::move(renderPass));
 }
 
 // ==================== pipelines ====================
@@ -1383,7 +1226,7 @@ void VulkanRenderer::createScenePipeline() {
             .withDescriptorLayouts({
                 **sceneDescriptorLayout,
             })
-            .create(ctx, *sceneRenderPass);
+            .create(ctx, **sceneRenderPass);
 
     scenePipeline = make_unique<PipelinePack>(std::move(pipeline));
 }
@@ -1410,7 +1253,7 @@ void VulkanRenderer::createSkyboxPipeline() {
             .withDescriptorLayouts({
                 **skyboxDescriptorLayout,
             })
-            .create(ctx, *sceneRenderPass);
+            .create(ctx, **sceneRenderPass);
 
     skyboxPipeline = make_unique<PipelinePack>(std::move(pipeline));
 }
@@ -1441,7 +1284,7 @@ void VulkanRenderer::createCubemapCapturePipeline() {
                 }
             })
             .forSubpasses(6)
-            .create(ctx, *cubemapCaptureRenderPass);
+            .create(ctx, **cubemapCaptureRenderPass);
 
     cubemapCapturePipelines = make_unique<PipelinePack>(std::move(pipeline));
 }
@@ -1472,7 +1315,7 @@ void VulkanRenderer::createIrradianceCapturePipeline() {
                 }
             })
             .forSubpasses(6)
-            .create(ctx, *envmapConvoluteRenderPass);
+            .create(ctx, **envmapConvoluteRenderPass);
 
     irradianceCapturePipelines = make_unique<PipelinePack>(std::move(pipeline));
 }
@@ -1503,7 +1346,7 @@ void VulkanRenderer::createPrefilterPipeline() {
                 }
             })
             .forSubpasses(6)
-            .create(ctx, *envmapConvoluteRenderPass);
+            .create(ctx, **envmapConvoluteRenderPass);
 
     prefilterPipelines = make_unique<PipelinePack>(std::move(pipeline));
 }
@@ -1523,7 +1366,7 @@ void VulkanRenderer::createBrdfIntegrationPipeline() {
                 .depthTestEnable = vk::False,
                 .depthWriteEnable = vk::False,
             })
-            .create(ctx, *brdfIntegrationRenderPass);
+            .create(ctx, **brdfIntegrationRenderPass);
 
     brdfIntegrationPipeline = make_unique<PipelinePack>(std::move(pipeline));
 }
@@ -1612,14 +1455,14 @@ void VulkanRenderer::createUniformBuffers() {
 void VulkanRenderer::createCubemapCaptureFramebuffer() {
     cubemapCaptureFramebuffer = createPerLayerCubemapFramebuffer(
         *skyboxTexture,
-        *cubemapCaptureRenderPass
+        **cubemapCaptureRenderPass
     );
 }
 
 void VulkanRenderer::createIrradianceCaptureFramebuffer() {
     irradianceCaptureFramebuffer = createPerLayerCubemapFramebuffer(
         *irradianceMapTexture,
-        *envmapConvoluteRenderPass
+        **envmapConvoluteRenderPass
     );
 }
 
@@ -1630,7 +1473,7 @@ void VulkanRenderer::createPrefilterFramebuffers() {
         prefilterFramebuffers.emplace_back(
             createMipPerLayerCubemapFramebuffer(
                 *prefilteredEnvmapTexture,
-                *envmapConvoluteRenderPass,
+                **envmapConvoluteRenderPass,
                 mip
             )
         );
@@ -1853,7 +1696,7 @@ void VulkanRenderer::initImgui() {
         .MSAASamples = static_cast<VkSampleCountFlagBits>(msaaSampleCount),
     };
 
-    guiRenderer = make_unique<GuiRenderer>(window, imguiInitInfo, *sceneRenderPass);
+    guiRenderer = make_unique<GuiRenderer>(window, imguiInitInfo, **sceneRenderPass);
 }
 
 void VulkanRenderer::renderGuiSection() {
@@ -2142,12 +1985,12 @@ static const std::array cubemapFaceViews{
 };
 
 void VulkanRenderer::captureCubemap() {
-    const vk::Extent2D extent = cubemapExtent;
+    constexpr vk::Extent2D extent = cubemapExtent;
 
     constexpr vk::ClearColorValue clearColor{0, 0, 0, 1};
     const std::vector<vk::ClearValue> clearValues{6, clearColor};
 
-    const vk::Viewport viewport{
+    constexpr vk::Viewport viewport{
         .x = 0.0f,
         .y = static_cast<float>(extent.height), // flip the y-axis
         .width = static_cast<float>(extent.width),
@@ -2156,7 +1999,7 @@ void VulkanRenderer::captureCubemap() {
         .maxDepth = 1.0f,
     };
 
-    const vk::Rect2D scissor{
+    constexpr vk::Rect2D scissor{
         .offset = {0, 0},
         .extent = extent
     };

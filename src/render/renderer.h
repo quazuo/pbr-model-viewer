@@ -16,6 +16,7 @@ class Model;
 class Camera;
 class Buffer;
 class PipelinePack;
+class RenderPass;
 class Texture;
 class SwapChain;
 class GuiRenderer;
@@ -151,10 +152,10 @@ class VulkanRenderer {
 
     unique_ptr<vk::raii::DescriptorPool> descriptorPool;
 
-    unique_ptr<vk::raii::RenderPass> sceneRenderPass;
-    unique_ptr<vk::raii::RenderPass> cubemapCaptureRenderPass;
-    unique_ptr<vk::raii::RenderPass> envmapConvoluteRenderPass;
-    unique_ptr<vk::raii::RenderPass> brdfIntegrationRenderPass;
+    unique_ptr<RenderPass> sceneRenderPass;
+    unique_ptr<RenderPass> cubemapCaptureRenderPass;
+    unique_ptr<RenderPass> envmapConvoluteRenderPass;
+    unique_ptr<RenderPass> brdfIntegrationRenderPass;
 
     unique_ptr<vk::raii::DescriptorSetLayout> sceneDescriptorLayout;
     unique_ptr<vk::raii::DescriptorSetLayout> skyboxDescriptorLayout;
