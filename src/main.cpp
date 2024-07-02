@@ -312,6 +312,22 @@ private:
                 renderer.loadOrmMap(chosenPaths.at(FileType::ORM_PNG));
             }
 
+            if (reqs.contains(FileType::RMA_PNG)) {
+                renderer.loadRmaMap(chosenPaths.at(FileType::RMA_PNG));
+            }
+
+            if (reqs.contains(FileType::ROUGHNESS_PNG)) {
+                const auto roughnessPath = chosenPaths.at(FileType::ROUGHNESS_PNG);
+                const auto aoPath = chosenPaths.contains(FileType::AO_PNG)
+                    ? chosenPaths.at(FileType::AO_PNG)
+                    : "";
+                const auto metallicPath = chosenPaths.contains(FileType::METALLIC_PNG)
+                    ? chosenPaths.at(FileType::METALLIC_PNG)
+                    : "";
+
+                renderer.loadOrmMap(aoPath, roughnessPath, metallicPath);
+            }
+
             renderer.buildDescriptors();
 
         } catch (std::exception &e) {

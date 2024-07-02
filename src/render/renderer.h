@@ -276,6 +276,8 @@ public:
     void loadOrmMap(const std::filesystem::path &aoPath, const std::filesystem::path &roughnessPath,
                     const std::filesystem::path &metallicPath);
 
+    void loadRmaMap(const std::filesystem::path &path);
+
     void loadEnvironmentMap(const std::filesystem::path &path);
 
     void buildDescriptors();

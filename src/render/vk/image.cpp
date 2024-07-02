@@ -142,7 +142,7 @@ void Image::saveToFile(const RendererContext &ctx, const std::filesystem::path &
         .extent = extent
     };
 
-    const vk::Offset3D blitOffset {
+    const vk::Offset3D blitOffset{
         .x = static_cast<int32_t>(extent.width),
         .y = static_cast<int32_t>(extent.height),
         .z = static_cast<int32_t>(extent.depth)
@@ -168,17 +168,17 @@ void Image::saveToFile(const RendererContext &ctx, const std::filesystem::path &
         .pImageMemoryBarriers = &imageMemoryBarrier
     };
 
-    const vk::ImageBlit blitInfo {
+    const vk::ImageBlit blitInfo{
         .srcSubresource = {
             .aspectMask = vk::ImageAspectFlagBits::eColor,
             .layerCount = 1
         },
-        .srcOffsets = { { vk::Offset3D(), blitOffset } },
+        .srcOffsets = {{vk::Offset3D(), blitOffset}},
         .dstSubresource = {
             .aspectMask = vk::ImageAspectFlagBits::eColor,
             .layerCount = 1
         },
-        .dstOffsets = { { vk::Offset3D(), blitOffset } }
+        .dstOffsets = {{vk::Offset3D(), blitOffset}}
     };
 
     bool supportsBlit = true;
@@ -526,14 +526,19 @@ TextureBuilder &TextureBuilder::makeMipmaps() {
     return *this;
 }
 
-TextureBuilder &TextureBuilder::fromPaths(const std::vector<std::filesystem::path> &sources) {
-    paths = sources;
-    return *this;
-}
-
 TextureBuilder &TextureBuilder::asUninitialized(vk::Extent3D extent) {
     isUninitialized = true;
     desiredExtent = extent;
+    return *this;
+}
+
+TextureBuilder &TextureBuilder::withSwizzle(const std::array<SwizzleComp, 4> sw) {
+    swizzle = sw;
+    return *this;
+}
+
+TextureBuilder &TextureBuilder::fromPaths(const std::vector<std::filesystem::path> &sources) {
+    paths = sources;
     return *this;
 }
 
@@ -634,10 +639,6 @@ void TextureBuilder::checkParams() const {
         throw std::runtime_error("cannot simultaneously specify texture as uninitialized and specify path sources!");
     }
 
-    if (isUninitialized && isSeparateChannels) {
-        throw std::runtime_error("cannot specify texture as uninitialized and derived from separate channels!");
-    }
-
     if (isCubemap) {
         if (isSeparateChannels) {
             throw std::runtime_error("cubemaps from separated channels are currently not supported!");
@@ -656,6 +657,31 @@ void TextureBuilder::checkParams() const {
             throw std::runtime_error("invalid layer count for non-cubemap texture!");
         }
     }
+
+    if (isSeparateChannels) {
+        if (isUninitialized) {
+            throw std::runtime_error("cannot specify texture as uninitialized and derived from separate channels!");
+        }
+
+        if (utils::img::getFormatSizeInBytes(format) != 4) {
+            throw std::runtime_error("currently only 4-byte formats are supported when using separate channel mode!");
+        }
+
+        if (utils::img::getFormatSizeInBytes(format) % 4 != 0) {
+            throw std::runtime_error(
+                "currently only 4-component formats are supported when using separate channel mode!"
+            );
+        }
+
+        for (size_t comp = 0; comp < 3; comp++) {
+            if (paths[comp].empty()
+                && swizzle[comp] != SwizzleComp::ZERO
+                && swizzle[comp] != SwizzleComp::ONE
+                && swizzle[comp] != SwizzleComp::MAX) {
+                throw std::runtime_error("invalid swizzle component for channel provided by an empty path!");
+            }
+        }
+    }
 }
 
 uint32_t TextureBuilder::getLayerCount() const {
@@ -668,34 +694,58 @@ TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererCo
     int texWidth, texHeight, texChannels;
 
     for (const auto &path: paths) {
-        if (isHdr) {
-            stbi_set_flip_vertically_on_load(true);
-            void *src = stbi_loadf(path.string().c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-            if (!src) {
-                throw std::runtime_error("failed to load HDR texture image!");
-            }
-
-            dataSources.push_back(src);
-        } else {
-            const int desiredChannels = isSeparateChannels ? STBI_grey : STBI_rgb_alpha;
-
-            stbi_set_flip_vertically_on_load(false);
-            void *src = stbi_load(path.string().c_str(), &texWidth, &texHeight, &texChannels, desiredChannels);
-            if (!src) {
-                throw std::runtime_error("failed to load texture image!");
-            }
-
-            dataSources.push_back(src);
+        if (path.empty()) {
+            dataSources.push_back(nullptr);
+            continue;
         }
-    }
 
-    if (isSeparateChannels) {
-        // todo - merge channels
+        stbi_set_flip_vertically_on_load(isHdr);
+        const int desiredChannels = isSeparateChannels ? STBI_grey : STBI_rgb_alpha;
+        void *src;
+
+        if (isHdr) {
+            src = stbi_loadf(path.string().c_str(), &texWidth, &texHeight, &texChannels, desiredChannels);
+        } else {
+            src = stbi_load(path.string().c_str(), &texWidth, &texHeight, &texChannels, desiredChannels);
+        }
+
+        if (!src) {
+            throw std::runtime_error("failed to load texture image!");
+        }
+
+        dataSources.push_back(src);
     }
 
     const uint32_t layerCount = getLayerCount();
-    const vk::DeviceSize layerSize = texWidth * texHeight * utils::img::getFormatSizeInBytes(format);
+    const vk::DeviceSize formatSize = utils::img::getFormatSizeInBytes(format);
+    const vk::DeviceSize layerSize = texWidth * texHeight * formatSize;
     const vk::DeviceSize textureSize = layerSize * layerCount;
+
+    constexpr uint32_t componentCount = 4;
+    if (formatSize % componentCount != 0) {
+        throw std::runtime_error("texture formats with component count other than 4 are currently unsupported!");
+    }
+
+    if (isSeparateChannels) {
+        auto *merged = static_cast<uint8_t *>(malloc(textureSize));
+        if (!merged) {
+            throw std::runtime_error("malloc failed");
+        }
+
+        for (size_t i = 0; i < textureSize; i++) {
+            if (i % componentCount == componentCount - 1 || dataSources[i % componentCount] == nullptr) {
+                merged[i] = 0; // todo - utilize alpha
+            } else {
+                merged[i] = static_cast<uint8_t *>(dataSources[i % componentCount])[i / componentCount];
+            }
+        }
+
+        dataSources = {merged};
+    }
+
+    for (const auto &source: dataSources) {
+        performSwizzle(static_cast<uint8_t *>(source), layerSize);
+    }
 
     auto stagingBuffer = make_unique<Buffer>(
         **ctx.allocator,
@@ -706,10 +756,13 @@ TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererCo
 
     void *data = stagingBuffer->map();
 
-    for (size_t i = 0; i < dataSources.size(); i++) {
+    for (size_t i = 0; i < getLayerCount(); i++) {
         const size_t offset = layerSize * i;
         memcpy(static_cast<char *>(data) + offset, dataSources[i], static_cast<size_t>(layerSize));
-        stbi_image_free(dataSources[i]);
+
+        if (!isSeparateChannels) {
+            stbi_image_free(dataSources[i]);
+        }
     }
 
     stagingBuffer->unmap();
@@ -723,6 +776,43 @@ TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererCo
         },
         .layerCount = layerCount
     };
+}
+
+void TextureBuilder::performSwizzle(uint8_t *data, const size_t size) const {
+    constexpr size_t componentCount = 4;
+
+    for (size_t i = 0; i < size / componentCount; i++) {
+        const uint8_t r = data[componentCount * i];
+        const uint8_t g = data[componentCount * i + 1];
+        const uint8_t b = data[componentCount * i + 2];
+        const uint8_t a = data[componentCount * i + 3];
+
+        for (size_t comp = 0; comp < componentCount; comp++) {
+            switch (swizzle[comp]) {
+                case SwizzleComp::R:
+                    data[componentCount * i + comp] = r;
+                    break;
+                case SwizzleComp::G:
+                    data[componentCount * i + comp] = g;
+                    break;
+                case SwizzleComp::B:
+                    data[componentCount * i + comp] = b;
+                    break;
+                case SwizzleComp::A:
+                    data[componentCount * i + comp] = a;
+                    break;
+                case SwizzleComp::ZERO:
+                    data[componentCount * i + comp] = 0;
+                    break;
+                case SwizzleComp::ONE:
+                    data[componentCount * i + comp] = 1;
+                    break;
+                case SwizzleComp::MAX:
+                    data[componentCount * i + comp] = std::numeric_limits<uint8_t>::max();
+                    break;
+            }
+        }
+    }
 }
 
 // ==================== utils ====================

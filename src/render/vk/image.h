@@ -149,6 +149,16 @@ private:
     void createSampler(const RendererContext &ctx);
 };
 
+enum class SwizzleComp {
+    R,
+    G,
+    B,
+    A,
+    ZERO,
+    ONE,
+    MAX
+};
+
 class TextureBuilder {
     vk::Format format = vk::Format::eR8G8B8A8Srgb;
     vk::ImageLayout layout = vk::ImageLayout::eShaderReadOnlyOptimal;
@@ -160,6 +170,8 @@ class TextureBuilder {
     bool isHdr = false;
     bool hasMipmaps = false;
     bool isUninitialized = false;
+
+    std::array<SwizzleComp, 4> swizzle{SwizzleComp::R, SwizzleComp::G, SwizzleComp::B, SwizzleComp::A};
 
     std::optional<vk::Extent3D> desiredExtent;
 
@@ -186,9 +198,11 @@ public:
 
     TextureBuilder &makeMipmaps();
 
-    TextureBuilder &fromPaths(const std::vector<std::filesystem::path> &sources);
-
     TextureBuilder &asUninitialized(vk::Extent3D extent);
+
+    TextureBuilder &withSwizzle(std::array<SwizzleComp, 4> sw);
+
+    TextureBuilder &fromPaths(const std::vector<std::filesystem::path> &sources);
 
     [[nodiscard]] unique_ptr<Texture>
     create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool, const vk::raii::Queue &queue) const;
@@ -199,6 +213,8 @@ private:
     [[nodiscard]] uint32_t getLayerCount() const;
 
     [[nodiscard]] LoadedTextureData loadFromPaths(const RendererContext &ctx) const;
+
+    void performSwizzle(uint8_t* data, size_t size) const;
 };
 
 namespace utils::img {

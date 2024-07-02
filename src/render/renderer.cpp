@@ -115,7 +115,12 @@ VulkanRenderer::VulkanRenderer() {
     loadModel("../assets/t-60-helmet/helmet.fbx");
     loadAlbedoTexture("../assets/t-60-helmet/albedo.png");
     loadNormalMap("../assets/t-60-helmet/normal.png");
-    loadOrmMap("../assets/t-60-helmet/orm.png");
+    //loadOrmMap("../assets/t-60-helmet/orm.png");
+    loadOrmMap(
+        "",
+        "../assets/t-60-helmet/roughness.png",
+        "../assets/t-60-helmet/metallic.png"
+    );
 
     // loadModel("../assets/czajnik/czajnik.obj");
     // loadAlbedoTexture("../assets/czajnik/czajnik-albedo.png");
@@ -440,7 +445,6 @@ void VulkanRenderer::loadAlbedoTexture(const std::filesystem::path &path) {
     waitIdle();
 
     albedoTexture.reset();
-
     albedoTexture = TextureBuilder()
             .fromPaths({path})
             .makeMipmaps()
@@ -451,7 +455,6 @@ void VulkanRenderer::loadNormalMap(const std::filesystem::path &path) {
     waitIdle();
 
     normalTexture.reset();
-
     normalTexture = TextureBuilder()
             .useFormat(vk::Format::eR8G8B8A8Unorm)
             .fromPaths({path})
@@ -462,7 +465,6 @@ void VulkanRenderer::loadOrmMap(const std::filesystem::path &path) {
     waitIdle();
 
     ormTexture.reset();
-
     ormTexture = TextureBuilder()
             .useFormat(vk::Format::eR8G8B8A8Unorm)
             .fromPaths({path})
@@ -474,11 +476,28 @@ void VulkanRenderer::loadOrmMap(const std::filesystem::path &aoPath, const std::
     waitIdle();
 
     ormTexture.reset();
-
     ormTexture = TextureBuilder()
+            .useFormat(vk::Format::eR8G8B8A8Unorm)
             .asSeparateChannels()
             .fromPaths({aoPath, roughnessPath, metallicPath})
+            .withSwizzle({
+                aoPath.empty() ? SwizzleComp::MAX : SwizzleComp::R,
+                SwizzleComp::G,
+                metallicPath.empty() ? SwizzleComp::ZERO : SwizzleComp::B,
+                SwizzleComp::A
+            })
             .makeMipmaps()
+            .create(ctx, *commandPool, *graphicsQueue);
+}
+
+void VulkanRenderer::loadRmaMap(const std::filesystem::path &path) {
+    waitIdle();
+
+    ormTexture.reset();
+    ormTexture = TextureBuilder()
+            .withSwizzle({ SwizzleComp::B, SwizzleComp::R, SwizzleComp::G, SwizzleComp::A })
+            .useFormat(vk::Format::eR8G8B8A8Unorm)
+            .fromPaths({path})
             .create(ctx, *commandPool, *graphicsQueue);
 }
 
