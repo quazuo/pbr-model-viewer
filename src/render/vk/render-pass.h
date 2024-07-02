@@ -38,7 +38,4 @@ public:
     RenderPassBuilder &beginNewSubpass();
 
     [[nodiscard]] RenderPass create(const RendererContext &ctx) const;
-
-private:
-    void checkParams() const;
 };
