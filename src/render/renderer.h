@@ -238,6 +238,8 @@ class VulkanRenderer {
     float modelScale = 1.0f;
     glm::vec3 modelTranslate{};
 
+    float debugNumber = 0;
+
 public:
     explicit VulkanRenderer();
 

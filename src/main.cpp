@@ -31,6 +31,8 @@ class Engine {
     std::optional<FileType> currentTypeBeingChosen;
     std::unordered_map<FileType, std::filesystem::path> chosenPaths{};
 
+    std::string currErrorMessage;
+
 public:
     Engine() {
         window = renderer.getWindow();
@@ -94,20 +96,6 @@ private:
 
     // ========================== gui ==========================
 
-    void renderTexLoadButton(const std::string &label, const FileType fileType,
-                             const std::vector<std::string> &typeFilters) {
-        if (ImGui::Button(label.c_str(), ImVec2(180, 0))) {
-            currentTypeBeingChosen = fileType;
-            fileBrowser.SetTypeFilters(typeFilters);
-            fileBrowser.Open();
-        }
-
-        if (chosenPaths.contains(fileType)) {
-            ImGui::SameLine();
-            ImGui::Text(chosenPaths.at(fileType).filename().string().c_str());
-        }
-    }
-
     void renderGuiSection(const float deltaTime) {
         static float fps = 1 / deltaTime;
 
@@ -126,58 +114,8 @@ private:
                 ImGui::OpenPopup("Load model");
             }
 
-            if (ImGui::BeginPopupModal("Load model", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-                renderTexLoadButton("Choose mesh...", FileType::MODEL, {".obj", ".fbx"});
-                renderTexLoadButton("Choose albedo texture...", FileType::ALBEDO_PNG, {".png"});
-                renderTexLoadButton("Choose normal map...", FileType::NORMAL_PNG, {".png"});
-                renderTexLoadButton("Choose ORM map...", FileType::ORM_PNG, {".png"});
-
-                ImGui::Separator();
-
-                constexpr std::array requiredFileTypes = {
-                    FileType::MODEL,
-                    FileType::ALBEDO_PNG,
-                    FileType::NORMAL_PNG,
-                    FileType::ORM_PNG,
-                };
-
-                const bool canSubmit = std::ranges::all_of(requiredFileTypes, [&](const auto &t) {
-                    return chosenPaths.contains(t);
-                });
-
-                if (!canSubmit) {
-                    ImGui::BeginDisabled();
-                }
-
-                if (ImGui::Button("OK", ImVec2(120, 0))) {
-                    const auto modelPath = chosenPaths.at(FileType::MODEL);
-                    const auto albedoPath = chosenPaths.at(FileType::ALBEDO_PNG);
-                    const auto normalPath = chosenPaths.at(FileType::NORMAL_PNG);
-                    const auto ormPath = chosenPaths.at(FileType::ORM_PNG);
-
-                    renderer.loadModel(modelPath);
-                    renderer.loadAlbedoTexture(albedoPath);
-                    renderer.loadNormalMap(normalPath);
-                    renderer.loadOrmMap(ormPath);
-                    renderer.buildDescriptors();
-
-                    ImGui::CloseCurrentPopup();
-                }
-
-                if (!canSubmit) {
-                    ImGui::EndDisabled();
-                }
-
-                ImGui::SameLine();
-
-                if (ImGui::Button("Cancel", ImVec2(120, 0))) {
-                    ImGui::CloseCurrentPopup();
-                }
-
-                fileBrowser.Display();
-
-                ImGui::EndPopup();
-            }
+            renderLoadModelPopup();
+            renderModelLoadErrorPopup();
         }
 
         if (ImGui::CollapsingHeader("Environment ", sectionFlags)) {
@@ -186,23 +124,111 @@ private:
             fileBrowser.Display();
         }
     }
+
+    void renderTexLoadButton(const std::string &label, const FileType fileType,
+                             const std::vector<std::string> &typeFilters) {
+        if (ImGui::Button(label.c_str(), ImVec2(180, 0))) {
+            currentTypeBeingChosen = fileType;
+            fileBrowser.SetTypeFilters(typeFilters);
+            fileBrowser.Open();
+        }
+
+        if (chosenPaths.contains(fileType)) {
+            ImGui::SameLine();
+            ImGui::Text(chosenPaths.at(fileType).filename().string().c_str());
+        }
+    }
+
+    void renderLoadModelPopup() {
+        if (ImGui::BeginPopupModal("Load model", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            renderTexLoadButton("Choose mesh...", FileType::MODEL, {".obj", ".fbx"});
+            renderTexLoadButton("Choose albedo texture...", FileType::ALBEDO_PNG, {".png"});
+            renderTexLoadButton("Choose normal map...", FileType::NORMAL_PNG, {".png"});
+            renderTexLoadButton("Choose ORM map...", FileType::ORM_PNG, {".png"});
+
+            ImGui::Separator();
+
+            constexpr std::array requiredFileTypes = {
+                FileType::MODEL,
+                FileType::ALBEDO_PNG,
+                FileType::NORMAL_PNG,
+                FileType::ORM_PNG,
+            };
+
+            const bool canSubmit = std::ranges::all_of(requiredFileTypes, [&](const auto &t) {
+                return chosenPaths.contains(t);
+            });
+
+            if (!canSubmit) {
+                ImGui::BeginDisabled();
+            }
+
+            if (ImGui::Button("OK", ImVec2(120, 0))) {
+                loadModel();
+                ImGui::CloseCurrentPopup();
+            }
+
+            if (!canSubmit) {
+                ImGui::EndDisabled();
+            }
+
+            ImGui::SameLine();
+
+            if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                ImGui::CloseCurrentPopup();
+            }
+
+            fileBrowser.Display();
+
+            ImGui::EndPopup();
+        }
+    }
+
+    void loadModel() {
+        const auto modelPath = chosenPaths.at(FileType::MODEL);
+        const auto albedoPath = chosenPaths.at(FileType::ALBEDO_PNG);
+        const auto normalPath = chosenPaths.at(FileType::NORMAL_PNG);
+        const auto ormPath = chosenPaths.at(FileType::ORM_PNG);
+
+        try {
+            renderer.loadModel(modelPath);
+            renderer.loadAlbedoTexture(albedoPath);
+            renderer.loadNormalMap(normalPath);
+            renderer.loadOrmMap(ormPath);
+            renderer.buildDescriptors();
+
+        } catch (std::exception& e) {
+            ImGui::OpenPopup("Model load error");
+            currErrorMessage = e.what();
+        }
+    }
+
+    void renderModelLoadErrorPopup() const {
+        if (ImGui::BeginPopupModal("Model load error", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("An error occurred while loading the model:");
+            ImGui::Text(currErrorMessage.c_str());
+
+            if (ImGui::Button("OK", ImVec2(120, 0))) {
+                ImGui::CloseCurrentPopup();
+            }
+
+            ImGui::EndPopup();
+        }
+    }
 };
 
 static void showErrorBox(const std::string &message) {
-    const std::string prefix = "Fatal error: ";
-
     MessageBox(
         nullptr,
-        static_cast<LPCSTR>((prefix + message).c_str()),
+        static_cast<LPCSTR>(message.c_str()),
         static_cast<LPCSTR>("Error"),
         MB_OK
     );
 }
 
-
 int main() {
     if (!glfwInit()) {
-        showErrorBox("GLFW initialization failed.");
+        showErrorBox("Fatal error: GLFW initialization failed.");
         return EXIT_FAILURE;
     }
 
@@ -210,7 +236,7 @@ int main() {
         Engine engine;
         engine.run();
     } catch (std::exception &e) {
-        showErrorBox(e.what());
+        showErrorBox(std::string("Fatal error: ") + e.what());
         glfwTerminate();
         return EXIT_FAILURE;
     }
