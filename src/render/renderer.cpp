@@ -70,7 +70,13 @@ VulkanRenderer::VulkanRenderer() {
 
     ctx.allocator = make_unique<VmaAllocatorWrapper>(**ctx.physicalDevice, **ctx.device, **instance);
 
-    swapChain = make_unique<SwapChain>(ctx, *surface, findQueueFamilies(*ctx.physicalDevice), window, msaaSampleCount);
+    swapChain = make_unique<SwapChain>(
+        ctx,
+        *surface,
+        findQueueFamilies(*ctx.physicalDevice),
+        window,
+        msaaSampleCount
+    );
 
     createRenderPass();
 
@@ -106,15 +112,15 @@ VulkanRenderer::VulkanRenderer() {
     createBrdfIntegrationFramebuffer();
     computeBrdfIntegrationMap();
 
-    loadModel("../assets/t-60-helmet/source/T-60 HelmetU.fbx");
-    loadAlbedoTexture("../assets/t-60-helmet/textures/albedo.png");
-    loadNormalMap("../assets/t-60-helmet/textures/normal.png");
-    loadOrmMap("../assets/t-60-helmet/textures/orm.png");
+    loadModel("../assets/t-60-helmet/helmet.fbx");
+    loadAlbedoTexture("../assets/t-60-helmet/albedo.png");
+    loadNormalMap("../assets/t-60-helmet/normal.png");
+    loadOrmMap("../assets/t-60-helmet/orm.png");
 
-    // loadModel("../assets/default-model/czajnik.obj");
-    // loadAlbedoTexture("../assets/default-model/czajnik-albedo.png");
-    // loadNormalMap("../assets/default-model/czajnik-normal.png");
-    // loadOrmMap("../assets/default-model/czajnik-orm.png");
+    // loadModel("../assets/czajnik/czajnik.obj");
+    // loadAlbedoTexture("../assets/czajnik/czajnik-albedo.png");
+    // loadNormalMap("../assets/czajnik/czajnik-normal.png");
+    // loadOrmMap("../assets/czajnik/czajnik-orm.png");
 
     loadEnvironmentMap("../assets/envmaps/gallery.hdr");
 
@@ -1593,13 +1599,11 @@ void VulkanRenderer::recordGraphicsCommandBuffer() const {
 
     const vk::ClearColorValue clearColor{backgroundColor.x, backgroundColor.y, backgroundColor.z, 1.0f};
 
-    const std::array<vk::ClearValue, 2> clearValues{
-        {
-            clearColor,
-            vk::ClearDepthStencilValue{
-                .depth = 1.0f,
-                .stencil = 0,
-            }
+    const std::vector<vk::ClearValue> clearValues{
+        clearColor,
+        vk::ClearDepthStencilValue{
+            .depth = 1.0f,
+            .stencil = 0,
         }
     };
 

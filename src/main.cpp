@@ -3,6 +3,7 @@
 
 #define GLFW_EXPOSE_NATIVE_WIN32
 #define NOMINMAX 1
+#include <map>
 #include <GLFW/glfw3native.h>
 
 #include "render/renderer.h"
@@ -15,7 +16,97 @@ enum class FileType {
     NORMAL_PNG,
     ORM_PNG,
     RMA_PNG,
+    AO_PNG,
+    ROUGHNESS_PNG,
+    METALLIC_PNG,
     ENVMAP_HDR,
+};
+
+[[nodiscard]] static std::vector<std::string> getFileTypeExtensions(const FileType type) {
+    switch (type) {
+        case FileType::MODEL:
+            return { ".obj", ".fbx" };
+        case FileType::ALBEDO_PNG:
+        case FileType::NORMAL_PNG:
+        case FileType::ORM_PNG:
+        case FileType::RMA_PNG:
+        case FileType::AO_PNG:
+        case FileType::ROUGHNESS_PNG:
+        case FileType::METALLIC_PNG:
+            return { ".png" };
+        case FileType::ENVMAP_HDR:
+            return { ".hdr" };
+    }
+}
+
+[[nodiscard]] static bool isFileTypeOptional(const FileType type) {
+    switch (type) {
+        case FileType::AO_PNG:
+        case FileType::METALLIC_PNG:
+            return true;
+        default:
+            return false;
+    }
+}
+
+[[nodiscard]] static std::string getFileTypeLoadLabel(const FileType type) {
+    switch (type) {
+        case FileType::MODEL:
+            return "Load model...";
+        case FileType::ALBEDO_PNG:
+            return "Load color texture...";
+        case FileType::NORMAL_PNG:
+            return "Load normal map...";
+        case FileType::ORM_PNG:
+            return "Load ORM map...";
+        case FileType::RMA_PNG:
+            return "Load RMA map...";
+        case FileType::AO_PNG:
+            return "Load AO map...";
+        case FileType::ROUGHNESS_PNG:
+            return "Load roughness map...";
+        case FileType::METALLIC_PNG:
+            return "Load metallic map...";
+        case FileType::ENVMAP_HDR:
+            return "Load environment map...";
+    }
+}
+
+struct FileLoadScheme {
+    std::string name;
+    std::set<FileType> requirements;
+};
+
+static const std::vector<FileLoadScheme> fileLoadSchemes{
+    {
+        "Albedo + Normal + ORM",
+        {
+            FileType::MODEL,
+            FileType::ALBEDO_PNG,
+            FileType::NORMAL_PNG,
+            FileType::ORM_PNG,
+        }
+    },
+    {
+        "Albedo + Normal + RMA",
+        {
+            FileType::MODEL,
+            FileType::ALBEDO_PNG,
+            FileType::NORMAL_PNG,
+            FileType::RMA_PNG,
+        }
+    },
+    {
+        "Albedo + Normal + AO + Roughness + Metallic",
+        {
+            FileType::MODEL,
+            FileType::ALBEDO_PNG,
+            FileType::NORMAL_PNG,
+            FileType::AO_PNG,
+            FileType::ROUGHNESS_PNG,
+            FileType::METALLIC_PNG
+        }
+    },
 };
 
 class Engine {
@@ -30,6 +121,7 @@ class Engine {
     ImGui::FileBrowser fileBrowser;
     std::optional<FileType> currentTypeBeingChosen;
     std::unordered_map<FileType, std::filesystem::path> chosenPaths{};
+    uint32_t loadSchemeIdx = 0;
 
     std::string currErrorMessage;
 
@@ -140,23 +232,39 @@ private:
     }
 
     void renderLoadModelPopup() {
+        constexpr auto comboFlags = ImGuiComboFlags_WidthFitPreview;
+
         if (ImGui::BeginPopupModal("Load model", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            renderTexLoadButton("Choose mesh...", FileType::MODEL, {".obj", ".fbx"});
-            renderTexLoadButton("Choose albedo texture...", FileType::ALBEDO_PNG, {".png"});
-            renderTexLoadButton("Choose normal map...", FileType::NORMAL_PNG, {".png"});
-            renderTexLoadButton("Choose ORM map...", FileType::ORM_PNG, {".png"});
+            ImGui::Text("Load scheme:");
+
+            if (ImGui::BeginCombo("##scheme", fileLoadSchemes[loadSchemeIdx].name.c_str(),
+                                  comboFlags)) {
+                for (uint32_t i = 0; i < fileLoadSchemes.size(); i++) {
+                    const bool isSelected = loadSchemeIdx == i;
+
+                    if (ImGui::Selectable(fileLoadSchemes[i].name.c_str(), isSelected)) {
+                        loadSchemeIdx = i;
+                    }
+
+                    if (isSelected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+
+            for (const auto& type: fileLoadSchemes[loadSchemeIdx].requirements) {
+                renderTexLoadButton(
+                    getFileTypeLoadLabel(type),
+                    type,
+                    getFileTypeExtensions(type)
+                );
+            }
 
             ImGui::Separator();
 
-            constexpr std::array requiredFileTypes = {
-                FileType::MODEL,
-                FileType::ALBEDO_PNG,
-                FileType::NORMAL_PNG,
-                FileType::ORM_PNG,
-            };
-
-            const bool canSubmit = std::ranges::all_of(requiredFileTypes, [&](const auto &t) {
-                return chosenPaths.contains(t);
+            const bool canSubmit = std::ranges::all_of(fileLoadSchemes[loadSchemeIdx].requirements, [&](const auto &t) {
+                return isFileTypeOptional(t) || chosenPaths.contains(t);
             });
 
             if (!canSubmit) {
@@ -185,19 +293,28 @@ private:
     }
 
     void loadModel() {
-        const auto modelPath = chosenPaths.at(FileType::MODEL);
-        const auto albedoPath = chosenPaths.at(FileType::ALBEDO_PNG);
-        const auto normalPath = chosenPaths.at(FileType::NORMAL_PNG);
-        const auto ormPath = chosenPaths.at(FileType::ORM_PNG);
+        const auto& reqs = fileLoadSchemes[loadSchemeIdx].requirements;
 
         try {
-            renderer.loadModel(modelPath);
-            renderer.loadAlbedoTexture(albedoPath);
-            renderer.loadNormalMap(normalPath);
-            renderer.loadOrmMap(ormPath);
+            if (reqs.contains(FileType::MODEL)) {
+                renderer.loadModel(chosenPaths.at(FileType::MODEL));
+            }
+
+            if (reqs.contains(FileType::ALBEDO_PNG)) {
+                renderer.loadAlbedoTexture(chosenPaths.at(FileType::ALBEDO_PNG));
+            }
+
+            if (reqs.contains(FileType::NORMAL_PNG)) {
+                renderer.loadNormalMap(chosenPaths.at(FileType::NORMAL_PNG));
+            }
+
+            if (reqs.contains(FileType::ORM_PNG)) {
+                renderer.loadOrmMap(chosenPaths.at(FileType::ORM_PNG));
+            }
+
             renderer.buildDescriptors();
 
-        } catch (std::exception& e) {
+        } catch (std::exception &e) {
             ImGui::OpenPopup("Model load error");
             currErrorMessage = e.what();
         }
