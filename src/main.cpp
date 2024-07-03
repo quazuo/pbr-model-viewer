@@ -328,7 +328,7 @@ private:
                 renderer.loadOrmMap(aoPath, roughnessPath, metallicPath);
             }
 
-            renderer.buildDescriptors();
+            renderer.rebuildDescriptors();
 
         } catch (std::exception &e) {
             ImGui::OpenPopup("Model load error");

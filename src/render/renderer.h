@@ -284,7 +284,7 @@ public:
 
     void loadEnvironmentMap(const std::filesystem::path &path);
 
-    void buildDescriptors();
+    void rebuildDescriptors();
 
 private:
     static void framebufferResizeCallback(GLFWwindow *window, int width, int height);

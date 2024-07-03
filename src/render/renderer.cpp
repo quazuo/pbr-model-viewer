@@ -19,6 +19,7 @@
 #include "camera.h"
 #include "vk/cmd.h"
 #include "src/utils/glfw-statics.h"
+#include "vk/descriptor.h"
 #include "vk/pipeline.h"
 #include "vk/render-pass.h"
 
@@ -149,12 +150,11 @@ void VulkanRenderer::bindMouseDragActions() {
     inputManager->bindMouseDragCallback(GLFW_MOUSE_BUTTON_RIGHT, [&](const double dx, const double dy) {
         static constexpr float speed = 0.002;
         const float cameraDistance = glm::length(camera->getPos());
-        const float inverseScale = 1.0f / (modelScale + 0.001f);
 
         const auto viewVectors = camera->getViewVectors();
 
-        modelTranslate += cameraDistance * inverseScale * speed * viewVectors.right * static_cast<float>(dx);
-        modelTranslate -= cameraDistance * inverseScale * speed * viewVectors.up * static_cast<float>(dy);
+        modelTranslate += cameraDistance * speed * viewVectors.right * static_cast<float>(dx);
+        modelTranslate -= cameraDistance * speed * viewVectors.up * static_cast<float>(dy);
     });
 }
 
@@ -563,7 +563,7 @@ void VulkanRenderer::loadEnvironmentMap(const std::filesystem::path &path) {
     prefilterEnvmap();
 }
 
-void VulkanRenderer::buildDescriptors() {
+void VulkanRenderer::rebuildDescriptors() {
     for (auto &res: frameResources) {
         res.sceneDescriptorSet.reset();
     }
@@ -572,15 +572,17 @@ void VulkanRenderer::buildDescriptors() {
 }
 
 void VulkanRenderer::createEnvmapTextures(const std::filesystem::path &path) {
+    const auto attachmentUsageFlags = vk::ImageUsageFlagBits::eTransferSrc
+                                      | vk::ImageUsageFlagBits::eTransferDst
+                                      | vk::ImageUsageFlagBits::eSampled
+                                      | vk::ImageUsageFlagBits::eColorAttachment;
+
     skyboxTexture = TextureBuilder()
             .asCubemap()
             .asUninitialized({cubemapExtent.width, cubemapExtent.height, 1})
             .asHdr()
             .useFormat(hdrEnvmapFormat)
-            .useUsage(vk::ImageUsageFlagBits::eTransferSrc
-                      | vk::ImageUsageFlagBits::eTransferDst
-                      | vk::ImageUsageFlagBits::eSampled
-                      | vk::ImageUsageFlagBits::eColorAttachment)
+            .useUsage(attachmentUsageFlags)
             .makeMipmaps()
             .create(ctx, *commandPool, *graphicsQueue);
 
@@ -596,10 +598,7 @@ void VulkanRenderer::createEnvmapTextures(const std::filesystem::path &path) {
             .asUninitialized({64, 64, 1})
             .asHdr()
             .useFormat(hdrEnvmapFormat)
-            .useUsage(vk::ImageUsageFlagBits::eTransferSrc
-                      | vk::ImageUsageFlagBits::eTransferDst
-                      | vk::ImageUsageFlagBits::eSampled
-                      | vk::ImageUsageFlagBits::eColorAttachment)
+            .useUsage(attachmentUsageFlags)
             .makeMipmaps()
             .create(ctx, *commandPool, *graphicsQueue);
 
@@ -608,10 +607,7 @@ void VulkanRenderer::createEnvmapTextures(const std::filesystem::path &path) {
             .asUninitialized({128, 128, 1})
             .asHdr()
             .useFormat(hdrEnvmapFormat)
-            .useUsage(vk::ImageUsageFlagBits::eTransferSrc
-                      | vk::ImageUsageFlagBits::eTransferDst
-                      | vk::ImageUsageFlagBits::eSampled
-                      | vk::ImageUsageFlagBits::eColorAttachment)
+            .useUsage(attachmentUsageFlags)
             .makeMipmaps()
             .create(ctx, *commandPool, *graphicsQueue);
 }
@@ -661,155 +657,45 @@ void VulkanRenderer::createDescriptorSetLayouts() {
 }
 
 void VulkanRenderer::createSceneDescriptorSetLayouts() {
-    static constexpr vk::DescriptorSetLayoutBinding uboLayoutBinding{
-        .binding = 0U,
-        .descriptorType = vk::DescriptorType::eUniformBuffer,
-        .descriptorCount = 1U,
-        .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-    };
+    auto layout = DescriptorLayoutBuilder()
+        .addBinding(
+            vk::DescriptorType::eUniformBuffer,
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+        )
+        .addRepeatedBindings(6, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+        .create(ctx);
 
-    static constexpr vk::DescriptorSetLayoutBinding albedoSamplerLayoutBinding{
-        .binding = 1U,
-        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = 1U,
-        .stageFlags = vk::ShaderStageFlagBits::eFragment,
-    };
-
-    static constexpr vk::DescriptorSetLayoutBinding normalSamplerLayoutBinding{
-        .binding = 2U,
-        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = 1U,
-        .stageFlags = vk::ShaderStageFlagBits::eFragment,
-    };
-
-    static constexpr vk::DescriptorSetLayoutBinding ormSamplerLayoutBinding{
-        .binding = 3U,
-        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = 1U,
-        .stageFlags = vk::ShaderStageFlagBits::eFragment,
-    };
-
-    static constexpr vk::DescriptorSetLayoutBinding irradianceMapSamplerLayoutBinding{
-        .binding = 4U,
-        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = 1U,
-        .stageFlags = vk::ShaderStageFlagBits::eFragment,
-    };
-
-    static constexpr vk::DescriptorSetLayoutBinding prefilterMapSamplerLayoutBinding{
-        .binding = 5U,
-        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = 1U,
-        .stageFlags = vk::ShaderStageFlagBits::eFragment,
-    };
-
-    static constexpr vk::DescriptorSetLayoutBinding brdfLutSamplerLayoutBinding{
-        .binding = 6U,
-        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = 1U,
-        .stageFlags = vk::ShaderStageFlagBits::eFragment,
-    };
-
-    static constexpr std::array setBindings{
-        uboLayoutBinding,
-        albedoSamplerLayoutBinding,
-        normalSamplerLayoutBinding,
-        ormSamplerLayoutBinding,
-        irradianceMapSamplerLayoutBinding,
-        prefilterMapSamplerLayoutBinding,
-        brdfLutSamplerLayoutBinding,
-    };
-
-    static constexpr vk::DescriptorSetLayoutCreateInfo setLayoutInfo{
-        .bindingCount = static_cast<uint32_t>(setBindings.size()),
-        .pBindings = setBindings.data(),
-    };
-
-    sceneDescriptorLayout = make_unique<vk::raii::DescriptorSetLayout>(*ctx.device, setLayoutInfo);
+    sceneDescriptorLayout = make_unique<vk::raii::DescriptorSetLayout>(std::move(layout));
 }
 
 void VulkanRenderer::createSkyboxDescriptorSetLayouts() {
-    static constexpr vk::DescriptorSetLayoutBinding uboLayoutBinding{
-        .binding = 0U,
-        .descriptorType = vk::DescriptorType::eUniformBuffer,
-        .descriptorCount = 1U,
-        .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-    };
+    auto layout = DescriptorLayoutBuilder()
+            .addBinding(
+                vk::DescriptorType::eUniformBuffer,
+                vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+            )
+            .addBinding(vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+            .create(ctx);
 
-    static constexpr vk::DescriptorSetLayoutBinding cubemapSamplerLayoutBinding{
-        .binding = 1U,
-        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = 1U,
-        .stageFlags = vk::ShaderStageFlagBits::eFragment,
-    };
-
-    static constexpr std::array setBindings{
-        uboLayoutBinding,
-        cubemapSamplerLayoutBinding,
-    };
-
-    static constexpr vk::DescriptorSetLayoutCreateInfo setLayoutInfo{
-        .bindingCount = static_cast<uint32_t>(setBindings.size()),
-        .pBindings = setBindings.data(),
-    };
-
-    skyboxDescriptorLayout = make_unique<vk::raii::DescriptorSetLayout>(*ctx.device, setLayoutInfo);
+    skyboxDescriptorLayout = make_unique<vk::raii::DescriptorSetLayout>(std::move(layout));
 }
 
 void VulkanRenderer::createCubemapCaptureDescriptorSetLayouts() {
-    static constexpr vk::DescriptorSetLayoutBinding uboLayoutBinding{
-        .binding = 0U,
-        .descriptorType = vk::DescriptorType::eUniformBuffer,
-        .descriptorCount = 1U,
-        .stageFlags = vk::ShaderStageFlagBits::eVertex,
-    };
+    auto layout = DescriptorLayoutBuilder()
+                .addBinding(vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex)
+                .addBinding(vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+                .create(ctx);
 
-    static constexpr vk::DescriptorSetLayoutBinding envmapSamplerLayoutBinding{
-        .binding = 1U,
-        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = 1U,
-        .stageFlags = vk::ShaderStageFlagBits::eFragment,
-    };
-
-    static constexpr std::array setBindings{
-        uboLayoutBinding,
-        envmapSamplerLayoutBinding,
-    };
-
-    static constexpr vk::DescriptorSetLayoutCreateInfo setLayoutInfo{
-        .bindingCount = static_cast<uint32_t>(setBindings.size()),
-        .pBindings = setBindings.data(),
-    };
-
-    cubemapCaptureDescriptorLayout = make_unique<vk::raii::DescriptorSetLayout>(*ctx.device, setLayoutInfo);
+    cubemapCaptureDescriptorLayout = make_unique<vk::raii::DescriptorSetLayout>(std::move(layout));
 }
 
 void VulkanRenderer::createEnvmapConvoluteDescriptorSetLayouts() {
-    static constexpr vk::DescriptorSetLayoutBinding uboLayoutBinding{
-        .binding = 0U,
-        .descriptorType = vk::DescriptorType::eUniformBuffer,
-        .descriptorCount = 1U,
-        .stageFlags = vk::ShaderStageFlagBits::eVertex,
-    };
+    auto layout = DescriptorLayoutBuilder()
+                    .addBinding(vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex)
+                    .addBinding(vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+                    .create(ctx);
 
-    static constexpr vk::DescriptorSetLayoutBinding skyboxSamplerLayoutBinding{
-        .binding = 1U,
-        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = 1U,
-        .stageFlags = vk::ShaderStageFlagBits::eFragment,
-    };
-
-    static constexpr std::array setBindings{
-        uboLayoutBinding,
-        skyboxSamplerLayoutBinding,
-    };
-
-    static constexpr vk::DescriptorSetLayoutCreateInfo setLayoutInfo{
-        .bindingCount = static_cast<uint32_t>(setBindings.size()),
-        .pBindings = setBindings.data(),
-    };
-
-    envmapConvoluteDescriptorLayout = make_unique<vk::raii::DescriptorSetLayout>(*ctx.device, setLayoutInfo);
+    envmapConvoluteDescriptorLayout = make_unique<vk::raii::DescriptorSetLayout>(std::move(layout));
 }
 
 void VulkanRenderer::createDescriptorPool() {
@@ -1740,7 +1626,14 @@ void VulkanRenderer::renderGuiSection() {
         ImGui::Separator();
 
         ImGui::DragFloat("Model scale", &modelScale, 0.01, 0, std::numeric_limits<float>::max());
+
         ImGui::gizmo3D("Model rotation", modelRotation, 160);
+
+        if (ImGui::Button("Reset scale")) { modelScale = 1; }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset rotation")) { modelRotation = {1, 0, 0, 0}; }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset position")) { modelTranslate = {0, 0, 0}; }
 
         ImGui::Separator();
 
