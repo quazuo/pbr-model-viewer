@@ -1,9 +1,8 @@
 #define GLFW_INCLUDE_VULKAN
-#include "GLFW/glfw3.h"
+#include <GLFW/glfw3.h>
 
 #define GLFW_EXPOSE_NATIVE_WIN32
 #define NOMINMAX 1
-#include <map>
 #include <GLFW/glfw3native.h>
 
 #include "render/renderer.h"
@@ -36,6 +35,8 @@ enum class FileType {
             return { ".png" };
         case FileType::ENVMAP_HDR:
             return { ".hdr" };
+        default:
+            throw std::runtime_error("unexpected filetype in getFileTypeExtensions");
     }
 }
 
@@ -69,6 +70,8 @@ enum class FileType {
             return "Load metallic map...";
         case FileType::ENVMAP_HDR:
             return "Load environment map...";
+        default:
+            throw std::runtime_error("unexpected filetype in getFileTypeLoadLabel");
     }
 }
 
@@ -198,13 +201,6 @@ private:
 
         if (ImGui::CollapsingHeader("Engine ", sectionFlags)) {
             ImGui::Text("FPS: %.2f", fps);
-        }
-
-        if (ImGui::CollapsingHeader("Model ", sectionFlags)) {
-            if (ImGui::Button("Load model...")) {
-                chosenPaths.clear();
-                ImGui::OpenPopup("Load model");
-            }
 
             renderLoadModelPopup();
             renderModelLoadErrorPopup();
@@ -253,6 +249,8 @@ private:
                 ImGui::EndCombo();
             }
 
+            ImGui::Separator();
+
             for (const auto& type: fileLoadSchemes[loadSchemeIdx].requirements) {
                 renderTexLoadButton(
                     getFileTypeLoadLabel(type),
@@ -273,6 +271,7 @@ private:
 
             if (ImGui::Button("OK", ImVec2(120, 0))) {
                 loadModel();
+                chosenPaths.clear();
                 ImGui::CloseCurrentPopup();
             }
 
@@ -283,6 +282,7 @@ private:
             ImGui::SameLine();
 
             if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                chosenPaths.clear();
                 ImGui::CloseCurrentPopup();
             }
 
@@ -340,6 +340,8 @@ private:
         if (ImGui::BeginPopupModal("Model load error", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::Text("An error occurred while loading the model:");
             ImGui::Text(currErrorMessage.c_str());
+
+            ImGui::Separator();
 
             if (ImGui::Button("OK", ImVec2(120, 0))) {
                 ImGui::CloseCurrentPopup();

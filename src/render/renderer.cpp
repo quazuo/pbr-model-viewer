@@ -328,7 +328,7 @@ bool VulkanRenderer::isDeviceSuitable(const vk::raii::PhysicalDevice &physicalDe
     }
 
     const vk::PhysicalDeviceFeatures supportedFeatures = physicalDevice.getFeatures();
-    if (!supportedFeatures.samplerAnisotropy) {
+    if (!supportedFeatures.samplerAnisotropy || !supportedFeatures.fillModeNonSolid) {
         return false;
     }
 
@@ -398,6 +398,7 @@ void VulkanRenderer::createLogicalDevice() {
     }
 
     vk::PhysicalDeviceFeatures deviceFeatures{
+        .fillModeNonSolid = vk::True,
         .samplerAnisotropy = vk::True,
     };
 
@@ -495,7 +496,7 @@ void VulkanRenderer::loadRmaMap(const std::filesystem::path &path) {
 
     ormTexture.reset();
     ormTexture = TextureBuilder()
-            .withSwizzle({ SwizzleComp::B, SwizzleComp::R, SwizzleComp::G, SwizzleComp::A })
+            .withSwizzle({SwizzleComp::B, SwizzleComp::R, SwizzleComp::G, SwizzleComp::A})
             .useFormat(vk::Format::eR8G8B8A8Unorm)
             .fromPaths({path})
             .create(ctx, *commandPool, *graphicsQueue);
@@ -1222,17 +1223,17 @@ void VulkanRenderer::createCubemapConvoluteRenderPass() {
 
 void VulkanRenderer::createBrdfIntegrationRenderPass() {
     auto renderPass = RenderPassBuilder()
-                .addColorAttachment({
-                    .format = brdfIntegrationMapFormat,
-                    .samples = vk::SampleCountFlagBits::e1,
-                    .loadOp = vk::AttachmentLoadOp::eClear,
-                    .storeOp = vk::AttachmentStoreOp::eStore,
-                    .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-                    .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-                    .initialLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-                    .finalLayout = vk::ImageLayout::eColorAttachmentOptimal,
-                })
-                .create(ctx);
+            .addColorAttachment({
+                .format = brdfIntegrationMapFormat,
+                .samples = vk::SampleCountFlagBits::e1,
+                .loadOp = vk::AttachmentLoadOp::eClear,
+                .storeOp = vk::AttachmentStoreOp::eStore,
+                .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
+                .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
+                .initialLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+                .finalLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            })
+            .create(ctx);
 
     brdfIntegrationRenderPass = make_unique<RenderPass>(std::move(renderPass));
 }
@@ -1244,6 +1245,12 @@ void VulkanRenderer::createScenePipeline() {
             .withVertexShader("../shaders/obj/main-vert.spv")
             .withFragmentShader("../shaders/obj/main-frag.spv")
             .withVertices<Vertex>()
+            .withRasterizer({
+                .polygonMode = wireframeMode ? vk::PolygonMode::eLine : vk::PolygonMode::eFill,
+                .cullMode = cullBackFaces ? vk::CullModeFlagBits::eBack : vk::CullModeFlagBits::eNone,
+                .frontFace = vk::FrontFace::eCounterClockwise,
+                .lineWidth = 1.0f,
+            })
             .withMultisampling({
                 .rasterizationSamples = msaaSampleCount,
                 .minSampleShading = 1.0f,
@@ -1725,12 +1732,29 @@ void VulkanRenderer::initImgui() {
 void VulkanRenderer::renderGuiSection() {
     constexpr auto sectionFlags = ImGuiTreeNodeFlags_DefaultOpen;
 
-    if (ImGui::CollapsingHeader("Renderer ", sectionFlags)) {
-        ImGui::DragFloat("Model scale", &modelScale, 0.01, 0, std::numeric_limits<float>::max());
+    if (ImGui::CollapsingHeader("Model ", sectionFlags)) {
+        if (ImGui::Button("Load model...")) {
+            ImGui::OpenPopup("Load model");
+        }
 
         ImGui::Separator();
 
-        ImGui::DragFloat("debug number", &debugNumber, 0.01, 0, std::numeric_limits<float>::max());
+        ImGui::DragFloat("Model scale", &modelScale, 0.01, 0, std::numeric_limits<float>::max());
+        ImGui::gizmo3D("Model rotation", modelRotation, 160);
+
+        ImGui::Separator();
+
+        if (ImGui::Checkbox("Cull backfaces", &cullBackFaces)) {
+            waitIdle();
+            createScenePipeline();
+        }
+
+        if (ImGui::Checkbox("Wireframe mode", &wireframeMode)) {
+            waitIdle();
+            createScenePipeline();
+        }
+
+        // ImGui::DragFloat("debug number", &debugNumber, 0.01, 0, std::numeric_limits<float>::max());
     }
 
     camera->renderGuiSection();
@@ -1793,7 +1817,7 @@ bool VulkanRenderer::startFrame() {
     };
 
     if (ctx.device->waitSemaphores(waitInfo, UINT64_MAX) != vk::Result::eSuccess) {
-        std::cerr << "waitSemaphores on renderFinishedTimeline failed" << std::endl;
+        throw std::runtime_error("waitSemaphores on renderFinishedTimeline failed");
     }
 
     updateGraphicsUniformBuffer();
@@ -2343,13 +2367,9 @@ void VulkanRenderer::computeBrdfIntegrationMap() {
 }
 
 void VulkanRenderer::updateGraphicsUniformBuffer() const {
-    const glm::mat4 model = glm::translate(
-        glm::scale(
-            glm::identity<glm::mat4>(),
-            glm::vec3(modelScale)
-        ),
-        modelTranslate
-    );
+    const glm::mat4 model = glm::translate(modelTranslate)
+                            * mat4_cast(modelRotation)
+                            * glm::scale(glm::vec3(modelScale));
     const glm::mat4 view = camera->getViewMatrix();
     const glm::mat4 proj = camera->getProjectionMatrix();
 

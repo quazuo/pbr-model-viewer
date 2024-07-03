@@ -9,8 +9,10 @@ set(CMAKE_CXX_STANDARD 20)
 find_package(Vulkan REQUIRED)
 
 include_directories(
+        deps/
         deps/glfw/include/
         deps/glm/
+        deps/imGuIZMO.quat/
         deps/assimp/include/
         cmake-build-debug/deps/assimp/include/
         .
@@ -57,6 +59,12 @@ set(ASSIMP_INSTALL OFF CACHE BOOL "Assimp install" FORCE)
 set(ASSIMP_INSTALL_PDB OFF CACHE BOOL "Assimp install PDB" FORCE)
 add_subdirectory(deps/assimp)
 
+# imguizmo.quat
+
+set(IMGUIZMO_QUAT_SRCS
+    deps/imGuIZMO.quat/imGuIZMO.quat/imGuIZMOquat.cpp
+)
+
 # header-only deps
 
 file(GLOB HEADER_ONLY_DEPS_SRCS
@@ -75,5 +83,5 @@ file(GLOB PBR_SRCS
         "src/utils/*"
 )
 
-add_executable(pbr ${PBR_SRCS} ${HEADER_ONLY_DEPS_SRCS} ${IMGUI_SRCS} ${IMGUI_IMPL_SRCS})
+add_executable(pbr ${PBR_SRCS} ${IMGUI_SRCS} ${IMGUI_IMPL_SRCS} ${IMGUIZMO_QUAT_SRCS} ${HEADER_ONLY_DEPS_SRCS})
 target_link_libraries(pbr ${ALL_LIBS})

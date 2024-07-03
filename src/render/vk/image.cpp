@@ -460,18 +460,10 @@ void Texture::generateMipmaps(const RendererContext &ctx, const vk::raii::Comman
 void Texture::createSampler(const RendererContext &ctx) {
     const vk::PhysicalDeviceProperties properties = ctx.physicalDevice->getProperties();
 
-    const bool shouldUseNearest = false; // leftover from earlier versions, might remove altogether
-    const vk::Filter filter = shouldUseNearest
-                                  ? vk::Filter::eNearest
-                                  : vk::Filter::eLinear;
-    const vk::SamplerMipmapMode mipmapMode = shouldUseNearest
-                                                 ? vk::SamplerMipmapMode::eNearest
-                                                 : vk::SamplerMipmapMode::eLinear;
-
     const vk::SamplerCreateInfo samplerInfo{
-        .magFilter = filter,
-        .minFilter = filter,
-        .mipmapMode = mipmapMode,
+        .magFilter = vk::Filter::eLinear,
+        .minFilter = vk::Filter::eLinear,
+        .mipmapMode = vk::SamplerMipmapMode::eLinear,
         .addressModeU = vk::SamplerAddressMode::eClampToEdge,
         .addressModeV = vk::SamplerAddressMode::eClampToEdge,
         .addressModeW = vk::SamplerAddressMode::eClampToEdge,
@@ -760,7 +752,9 @@ TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererCo
         const size_t offset = layerSize * i;
         memcpy(static_cast<char *>(data) + offset, dataSources[i], static_cast<size_t>(layerSize));
 
-        if (!isSeparateChannels) {
+        if (isSeparateChannels) {
+            free(dataSources[i]);
+        } else {
             stbi_image_free(dataSources[i]);
         }
     }

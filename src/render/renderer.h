@@ -238,8 +238,12 @@ class VulkanRenderer {
 
     float modelScale = 1.0f;
     glm::vec3 modelTranslate{};
+    glm::quat modelRotation{1, 0, 0, 0};
 
     float debugNumber = 0;
+
+    bool cullBackFaces = false;
+    bool wireframeMode = false;
 
 public:
     explicit VulkanRenderer();

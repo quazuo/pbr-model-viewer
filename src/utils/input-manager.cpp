@@ -1,7 +1,7 @@
 #include "input-manager.h"
 
 #define GLFW_INCLUDE_VULKAN
-#include "GLFW/glfw3.h"
+#include <GLFW/glfw3.h>
 
 void InputManager::bindCallback(const EKey k, const EActivationType type, const EInputCallback& f) {
     callbackMap.emplace(k, std::make_pair(type, f));

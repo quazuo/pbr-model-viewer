@@ -1,17 +1,17 @@
 #pragma once
 
 #define GLFW_INCLUDE_VULKAN
-#include "GLFW/glfw3.h"
+#include <GLFW/glfw3.h>
+
+#include "src/render/libs.h"
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #define NOMINMAX 1
-
-#include "deps/imgui/imgui.h"
-#include "deps/imgui/backends/imgui_impl_glfw.h"
-#include "deps/imgui/backends/imgui_impl_vulkan.h"
-#include "deps/imgui-filebrowser/imfilebrowser.h"
-
-#include "../libs.h"
+#include <imgui/imgui.h>
+#include <imgui/backends/imgui_impl_glfw.h>
+#include <imgui/backends/imgui_impl_vulkan.h>
+#include <imgui-filebrowser/imfilebrowser.h>
+#include <imGuIZMO.quat/imGuIZMOquat.h>
 
 class GuiRenderer {
     GLFWwindow *window;
