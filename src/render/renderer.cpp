@@ -650,25 +650,25 @@ void VulkanRenderer::recreateSwapChain() {
 // ==================== descriptors ====================
 
 void VulkanRenderer::createDescriptorSetLayouts() {
-    createSceneDescriptorSetLayouts();
-    createSkyboxDescriptorSetLayouts();
-    createCubemapCaptureDescriptorSetLayouts();
-    createEnvmapConvoluteDescriptorSetLayouts();
+    createSceneDescriptorSetLayout();
+    createSkyboxDescriptorSetLayout();
+    createCubemapCaptureDescriptorSetLayout();
+    createEnvmapConvoluteDescriptorSetLayout();
 }
 
-void VulkanRenderer::createSceneDescriptorSetLayouts() {
+void VulkanRenderer::createSceneDescriptorSetLayout() {
     auto layout = DescriptorLayoutBuilder()
-        .addBinding(
-            vk::DescriptorType::eUniformBuffer,
-            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-        )
-        .addRepeatedBindings(6, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
-        .create(ctx);
+            .addBinding(
+                vk::DescriptorType::eUniformBuffer,
+                vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+            )
+            .addRepeatedBindings(6, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+            .create(ctx);
 
     sceneDescriptorLayout = make_unique<vk::raii::DescriptorSetLayout>(std::move(layout));
 }
 
-void VulkanRenderer::createSkyboxDescriptorSetLayouts() {
+void VulkanRenderer::createSkyboxDescriptorSetLayout() {
     auto layout = DescriptorLayoutBuilder()
             .addBinding(
                 vk::DescriptorType::eUniformBuffer,
@@ -680,20 +680,20 @@ void VulkanRenderer::createSkyboxDescriptorSetLayouts() {
     skyboxDescriptorLayout = make_unique<vk::raii::DescriptorSetLayout>(std::move(layout));
 }
 
-void VulkanRenderer::createCubemapCaptureDescriptorSetLayouts() {
+void VulkanRenderer::createCubemapCaptureDescriptorSetLayout() {
     auto layout = DescriptorLayoutBuilder()
-                .addBinding(vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex)
-                .addBinding(vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
-                .create(ctx);
+            .addBinding(vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex)
+            .addBinding(vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+            .create(ctx);
 
     cubemapCaptureDescriptorLayout = make_unique<vk::raii::DescriptorSetLayout>(std::move(layout));
 }
 
-void VulkanRenderer::createEnvmapConvoluteDescriptorSetLayouts() {
+void VulkanRenderer::createEnvmapConvoluteDescriptorSetLayout() {
     auto layout = DescriptorLayoutBuilder()
-                    .addBinding(vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex)
-                    .addBinding(vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
-                    .create(ctx);
+            .addBinding(vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex)
+            .addBinding(vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+            .create(ctx);
 
     envmapConvoluteDescriptorLayout = make_unique<vk::raii::DescriptorSetLayout>(std::move(layout));
 }
@@ -725,301 +725,76 @@ void VulkanRenderer::createDescriptorPool() {
 }
 
 void VulkanRenderer::createSceneDescriptorSets() {
-    constexpr uint32_t setsCount = MAX_FRAMES_IN_FLIGHT;
+    DescriptorSetBuilder builder;
 
-    const std::vector setLayouts(setsCount, **sceneDescriptorLayout);
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        if (i != 0) builder.beginNewSet();
 
-    const vk::DescriptorSetAllocateInfo allocInfo{
-        .descriptorPool = **descriptorPool,
-        .descriptorSetCount = setsCount,
-        .pSetLayouts = setLayouts.data(),
-    };
+        builder.addBuffer(
+                *frameResources[i].graphicsUniformBuffer,
+                vk::DescriptorType::eUniformBuffer,
+                sizeof(GraphicsUBO)
+            )
+            .addImageSampler(*albedoTexture)
+            .addImageSampler(*normalTexture)
+            .addImageSampler(*ormTexture)
+            .addImageSampler(*irradianceMapTexture)
+            .addImageSampler(*prefilteredEnvmapTexture)
+            .addImageSampler(*brdfIntegrationMapTexture);
+    }
 
-    std::vector<vk::raii::DescriptorSet> descriptorSets = ctx.device->allocateDescriptorSets(allocInfo);
+    auto sets = builder.create(ctx, *descriptorPool, *sceneDescriptorLayout);
 
-    for (size_t i = 0; i < setsCount; i++) {
-        const vk::DescriptorBufferInfo uboBufferInfo{
-            .buffer = **frameResources[i].graphicsUniformBuffer,
-            .offset = 0U,
-            .range = sizeof(GraphicsUBO),
-        };
-
-        const vk::WriteDescriptorSet uboDescriptorWrite{
-            .dstSet = *descriptorSets[i],
-            .dstBinding = 0U,
-            .dstArrayElement = 0U,
-            .descriptorCount = 1U,
-            .descriptorType = vk::DescriptorType::eUniformBuffer,
-            .pBufferInfo = &uboBufferInfo
-        };
-
-        const vk::DescriptorImageInfo albedoImageInfo{
-            .sampler = *albedoTexture->getSampler(),
-            .imageView = *albedoTexture->getView(),
-            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        };
-
-        const vk::WriteDescriptorSet albedoSamplerDescriptorWrite{
-            .dstSet = *descriptorSets[i],
-            .dstBinding = 1U,
-            .dstArrayElement = 0U,
-            .descriptorCount = 1U,
-            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-            .pImageInfo = &albedoImageInfo
-        };
-
-        const vk::DescriptorImageInfo normalImageInfo{
-            .sampler = *normalTexture->getSampler(),
-            .imageView = *normalTexture->getView(),
-            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        };
-
-        const vk::WriteDescriptorSet normalSamplerDescriptorWrite{
-            .dstSet = *descriptorSets[i],
-            .dstBinding = 2U,
-            .dstArrayElement = 0U,
-            .descriptorCount = 1U,
-            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-            .pImageInfo = &normalImageInfo
-        };
-
-        const vk::DescriptorImageInfo ormImageInfo{
-            .sampler = *ormTexture->getSampler(),
-            .imageView = *ormTexture->getView(),
-            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        };
-
-        const vk::WriteDescriptorSet ormSamplerDescriptorWrite{
-            .dstSet = *descriptorSets[i],
-            .dstBinding = 3U,
-            .dstArrayElement = 0U,
-            .descriptorCount = 1U,
-            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-            .pImageInfo = &ormImageInfo
-        };
-
-        const vk::DescriptorImageInfo irradianceMapImageInfo{
-            .sampler = *irradianceMapTexture->getSampler(),
-            .imageView = *irradianceMapTexture->getView(),
-            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        };
-
-        const vk::WriteDescriptorSet irradianceMapSamplerDescriptorWrite{
-            .dstSet = *descriptorSets[i],
-            .dstBinding = 4U,
-            .dstArrayElement = 0U,
-            .descriptorCount = 1U,
-            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-            .pImageInfo = &irradianceMapImageInfo
-        };
-
-        const vk::DescriptorImageInfo prefilterMapImageInfo{
-            .sampler = *prefilteredEnvmapTexture->getSampler(),
-            .imageView = *prefilteredEnvmapTexture->getView(),
-            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        };
-
-        const vk::WriteDescriptorSet prefilterMapSamplerDescriptorWrite{
-            .dstSet = *descriptorSets[i],
-            .dstBinding = 5U,
-            .dstArrayElement = 0U,
-            .descriptorCount = 1U,
-            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-            .pImageInfo = &prefilterMapImageInfo
-        };
-
-        const vk::DescriptorImageInfo brdfLutImageInfo{
-            .sampler = *brdfIntegrationMapTexture->getSampler(),
-            .imageView = *brdfIntegrationMapTexture->getView(),
-            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        };
-
-        const vk::WriteDescriptorSet brdfLutSamplerDescriptorWrite{
-            .dstSet = *descriptorSets[i],
-            .dstBinding = 6U,
-            .dstArrayElement = 0U,
-            .descriptorCount = 1U,
-            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-            .pImageInfo = &brdfLutImageInfo
-        };
-
-        const std::array descriptorWrites = {
-            uboDescriptorWrite,
-            albedoSamplerDescriptorWrite,
-            normalSamplerDescriptorWrite,
-            ormSamplerDescriptorWrite,
-            irradianceMapSamplerDescriptorWrite,
-            prefilterMapSamplerDescriptorWrite,
-            brdfLutSamplerDescriptorWrite,
-        };
-
-        ctx.device->updateDescriptorSets(descriptorWrites, nullptr);
-
-        frameResources[i].sceneDescriptorSet =
-                make_unique<vk::raii::DescriptorSet>(std::move(descriptorSets[i]));
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        frameResources[i].sceneDescriptorSet = make_unique<vk::raii::DescriptorSet>(std::move(sets[i]));
     }
 }
 
 void VulkanRenderer::createSkyboxDescriptorSets() {
-    constexpr uint32_t setsCount = MAX_FRAMES_IN_FLIGHT;
+    DescriptorSetBuilder builder;
 
-    const std::vector setLayouts(setsCount, **skyboxDescriptorLayout);
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        if (i != 0) builder.beginNewSet();
 
-    const vk::DescriptorSetAllocateInfo allocInfo{
-        .descriptorPool = **descriptorPool,
-        .descriptorSetCount = setsCount,
-        .pSetLayouts = setLayouts.data(),
-    };
+        builder.addBuffer(
+                *frameResources[i].graphicsUniformBuffer,
+                vk::DescriptorType::eUniformBuffer,
+                sizeof(GraphicsUBO)
+            )
+            .addImageSampler(*skyboxTexture);
+    }
 
-    std::vector<vk::raii::DescriptorSet> descriptorSets = ctx.device->allocateDescriptorSets(allocInfo);
+    auto sets = builder.create(ctx, *descriptorPool, *skyboxDescriptorLayout);
 
-    for (size_t i = 0; i < setsCount; i++) {
-        const vk::DescriptorBufferInfo uboBufferInfo{
-            .buffer = **frameResources[i].graphicsUniformBuffer,
-            .offset = 0U,
-            .range = sizeof(GraphicsUBO),
-        };
-
-        const vk::WriteDescriptorSet uboDescriptorWrite{
-            .dstSet = *descriptorSets[i],
-            .dstBinding = 0U,
-            .dstArrayElement = 0U,
-            .descriptorCount = 1U,
-            .descriptorType = vk::DescriptorType::eUniformBuffer,
-            .pBufferInfo = &uboBufferInfo
-        };
-
-        const vk::DescriptorImageInfo skyboxImageInfo{
-            .sampler = *skyboxTexture->getSampler(),
-            .imageView = *skyboxTexture->getView(),
-            // .sampler = *prefilteredEnvmapTexture->getSampler(),
-            // .imageView = *prefilteredEnvmapTexture->getView(),
-            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        };
-
-        const vk::WriteDescriptorSet skyboxSamplerDescriptorWrite{
-            .dstSet = *descriptorSets[i],
-            .dstBinding = 1U,
-            .dstArrayElement = 0U,
-            .descriptorCount = 1U,
-            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-            .pImageInfo = &skyboxImageInfo
-        };
-
-        const std::array descriptorWrites = {
-            uboDescriptorWrite,
-            skyboxSamplerDescriptorWrite,
-        };
-
-        ctx.device->updateDescriptorSets(descriptorWrites, nullptr);
-
-        frameResources[i].skyboxDescriptorSet =
-                make_unique<vk::raii::DescriptorSet>(std::move(descriptorSets[i]));
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        frameResources[i].skyboxDescriptorSet = make_unique<vk::raii::DescriptorSet>(std::move(sets[i]));
     }
 }
 
 void VulkanRenderer::createCubemapCaptureDescriptorSets() {
-    constexpr uint32_t setsCount = 1;
-    const std::vector setLayouts(setsCount, **cubemapCaptureDescriptorLayout);
+    auto sets = DescriptorSetBuilder()
+        .addBuffer(
+            *frameResources[0].graphicsUniformBuffer,
+            vk::DescriptorType::eUniformBuffer,
+            sizeof(GraphicsUBO)
+        )
+        .addImageSampler(*envmapTexture)
+        .create(ctx, *descriptorPool, *cubemapCaptureDescriptorLayout);
 
-    const vk::DescriptorSetAllocateInfo allocInfo{
-        .descriptorPool = **descriptorPool,
-        .descriptorSetCount = static_cast<uint32_t>(setLayouts.size()),
-        .pSetLayouts = setLayouts.data(),
-    };
-
-    std::vector<vk::raii::DescriptorSet> descriptorSets = ctx.device->allocateDescriptorSets(allocInfo);
-
-    const vk::DescriptorBufferInfo uboBufferInfo{
-        .buffer = **frameResources[0].graphicsUniformBuffer,
-        .offset = 0U,
-        .range = sizeof(GraphicsUBO),
-    };
-
-    const vk::WriteDescriptorSet uboDescriptorWrite{
-        .dstSet = *descriptorSets[0],
-        .dstBinding = 0U,
-        .dstArrayElement = 0U,
-        .descriptorCount = 1U,
-        .descriptorType = vk::DescriptorType::eUniformBuffer,
-        .pBufferInfo = &uboBufferInfo
-    };
-
-    const vk::DescriptorImageInfo envmapImageInfo{
-        .sampler = *envmapTexture->getSampler(),
-        .imageView = *envmapTexture->getView(),
-        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-    };
-
-    const vk::WriteDescriptorSet envmapSamplerDescriptorWrite{
-        .dstSet = *descriptorSets[0],
-        .dstBinding = 1U,
-        .dstArrayElement = 0U,
-        .descriptorCount = 1U,
-        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-        .pImageInfo = &envmapImageInfo
-    };
-
-    const std::array descriptorWrites = {
-        uboDescriptorWrite,
-        envmapSamplerDescriptorWrite
-    };
-
-    ctx.device->updateDescriptorSets(descriptorWrites, nullptr);
-
-    cubemapCaptureDescriptorSet = make_unique<vk::raii::DescriptorSet>(std::move(descriptorSets[0]));
+    cubemapCaptureDescriptorSet = make_unique<vk::raii::DescriptorSet>(std::move(sets[0]));
 }
 
 void VulkanRenderer::createEnvmapConvoluteDescriptorSets() {
-    constexpr uint32_t setsCount = 1;
-    const std::vector setLayouts(setsCount, **envmapConvoluteDescriptorLayout);
+    auto sets = DescriptorSetBuilder()
+            .addBuffer(
+                *frameResources[0].graphicsUniformBuffer,
+                vk::DescriptorType::eUniformBuffer,
+                sizeof(GraphicsUBO)
+            )
+            .addImageSampler(*skyboxTexture)
+            .create(ctx, *descriptorPool, *envmapConvoluteDescriptorLayout);
 
-    const vk::DescriptorSetAllocateInfo allocInfo{
-        .descriptorPool = **descriptorPool,
-        .descriptorSetCount = static_cast<uint32_t>(setLayouts.size()),
-        .pSetLayouts = setLayouts.data(),
-    };
-
-    std::vector<vk::raii::DescriptorSet> descriptorSets = ctx.device->allocateDescriptorSets(allocInfo);
-
-    const vk::DescriptorBufferInfo uboBufferInfo{
-        .buffer = **frameResources[0].graphicsUniformBuffer,
-        .offset = 0U,
-        .range = sizeof(GraphicsUBO),
-    };
-
-    const vk::WriteDescriptorSet uboDescriptorWrite{
-        .dstSet = *descriptorSets[0],
-        .dstBinding = 0U,
-        .dstArrayElement = 0U,
-        .descriptorCount = 1U,
-        .descriptorType = vk::DescriptorType::eUniformBuffer,
-        .pBufferInfo = &uboBufferInfo
-    };
-
-    const vk::DescriptorImageInfo skyboxImageInfo{
-        .sampler = *skyboxTexture->getSampler(),
-        .imageView = *skyboxTexture->getView(),
-        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-    };
-
-    const vk::WriteDescriptorSet skyboxSamplerDescriptorWrite{
-        .dstSet = *descriptorSets[0],
-        .dstBinding = 1U,
-        .dstArrayElement = 0U,
-        .descriptorCount = 1U,
-        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-        .pImageInfo = &skyboxImageInfo
-    };
-
-    const std::array descriptorWrites = {
-        uboDescriptorWrite,
-        skyboxSamplerDescriptorWrite
-    };
-
-    ctx.device->updateDescriptorSets(descriptorWrites, nullptr);
-
-    envmapConvoluteDescriptorSet = make_unique<vk::raii::DescriptorSet>(std::move(descriptorSets[0]));
+    envmapConvoluteDescriptorSet = make_unique<vk::raii::DescriptorSet>(std::move(sets[0]));
 }
 
 // ==================== render passes ====================

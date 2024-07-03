@@ -344,13 +344,13 @@ private:
 
     void createDescriptorSetLayouts();
 
-    void createSceneDescriptorSetLayouts();
+    void createSceneDescriptorSetLayout();
 
-    void createSkyboxDescriptorSetLayouts();
+    void createSkyboxDescriptorSetLayout();
 
-    void createCubemapCaptureDescriptorSetLayouts();
+    void createCubemapCaptureDescriptorSetLayout();
 
-    void createEnvmapConvoluteDescriptorSetLayouts();
+    void createEnvmapConvoluteDescriptorSetLayout();
 
     void createDescriptorPool();
 
