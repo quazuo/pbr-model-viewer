@@ -40,78 +40,125 @@ vk::raii::DescriptorSetLayout DescriptorLayoutBuilder::create(const RendererCont
     return {*ctx.device, setLayoutInfo};
 }
 
-DescriptorSetBuilder &DescriptorSetBuilder::addBuffer(const Buffer &buffer, const vk::DescriptorType type,
-                                                      const vk::DeviceSize size, const vk::DeviceSize offset) {
+DescriptorSet &DescriptorSet::queueUpdate(const uint32_t binding, const Buffer &buffer, const vk::DescriptorType type,
+                                          const vk::DeviceSize size, const vk::DeviceSize offset) {
     const vk::DescriptorBufferInfo bufferInfo{
         .buffer = *buffer,
         .offset = offset,
         .range = size,
     };
 
-    const vk::WriteDescriptorSet descriptorWrite{
-        .dstBinding = static_cast<uint32_t>(setWrites.back().size()),
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = type,
-    };
+    queuedUpdates.emplace_back(DescriptorUpdate{
+        .binding = binding,
+        .type = type,
+        .info = bufferInfo,
+    });
 
-    infos.back().emplace_back(bufferInfo);
-    setWrites.back().emplace_back(descriptorWrite);
     return *this;
 }
 
-DescriptorSetBuilder &DescriptorSetBuilder::addImageSampler(const Texture& texture) {
+DescriptorSet &DescriptorSet::queueUpdate(const uint32_t binding, const Texture &texture) {
     const vk::DescriptorImageInfo imageInfo{
-        .sampler = texture.getSampler(),
-        .imageView = texture.getView(),
+        .sampler = *texture.getSampler(),
+        .imageView = *texture.getView(),
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
 
-    const vk::WriteDescriptorSet descriptorWrite{
-        .dstBinding = static_cast<uint32_t>(setWrites.back().size()),
+    queuedUpdates.emplace_back(DescriptorUpdate{
+        .binding = binding,
+        .type = vk::DescriptorType::eCombinedImageSampler,
+        .info = imageInfo,
+    });
+
+    return *this;
+}
+
+void DescriptorSet::commitUpdates(const RendererContext &ctx) {
+    std::vector<vk::WriteDescriptorSet> descriptorWrites;
+
+    for (const auto &update: queuedUpdates) {
+        vk::WriteDescriptorSet write{
+            .dstSet = **set,
+            .dstBinding = update.binding,
+            .dstArrayElement = 0,
+            .descriptorCount = 1,
+            .descriptorType = update.type,
+        };
+
+        if (std::holds_alternative<vk::DescriptorBufferInfo>(update.info)) {
+            write.pBufferInfo = &std::get<vk::DescriptorBufferInfo>(update.info);
+        } else if (std::holds_alternative<vk::DescriptorImageInfo>(update.info)) {
+            write.pImageInfo = &std::get<vk::DescriptorImageInfo>(update.info);
+        } else {
+            throw std::runtime_error("unexpected variant in DescriptorSet::commitUpdates");
+        }
+
+        descriptorWrites.emplace_back(write);
+    }
+
+    ctx.device->updateDescriptorSets(descriptorWrites, nullptr);
+
+    queuedUpdates.clear();
+}
+
+void DescriptorSet::updateBinding(const RendererContext &ctx, const uint32_t binding, const Buffer &buffer,
+                                  const vk::DescriptorType type, const vk::DeviceSize size,
+                                  const vk::DeviceSize offset) const {
+    const vk::DescriptorBufferInfo bufferInfo{
+        .buffer = *buffer,
+        .offset = offset,
+        .range = size,
+    };
+
+    const vk::WriteDescriptorSet write{
+        .dstSet = **set,
+        .dstBinding = binding,
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = type,
+        .pBufferInfo = &bufferInfo,
+    };
+
+    ctx.device->updateDescriptorSets(write, nullptr);
+}
+
+void DescriptorSet::updateBinding(const RendererContext &ctx, const uint32_t binding, const Texture &texture) const {
+    const vk::DescriptorImageInfo imageInfo{
+        .sampler = *texture.getSampler(),
+        .imageView = *texture.getView(),
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+    };
+
+    const vk::WriteDescriptorSet write{
+        .dstSet = **set,
+        .dstBinding = binding,
         .dstArrayElement = 0,
         .descriptorCount = 1,
         .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+        .pImageInfo = &imageInfo,
     };
 
-    infos.back().emplace_back(imageInfo);
-    setWrites.back().emplace_back(descriptorWrite);
-    return *this;
+    ctx.device->updateDescriptorSets(write, nullptr);
 }
 
-DescriptorSetBuilder &DescriptorSetBuilder::beginNewSet() {
-    infos.emplace_back();
-    setWrites.emplace_back();
-    return *this;
-}
-
-std::vector<vk::raii::DescriptorSet>
-DescriptorSetBuilder::create(const RendererContext &ctx, const vk::raii::DescriptorPool &pool,
-                             const vk::raii::DescriptorSetLayout &layout) {
-    const uint32_t setsCount = setWrites.size();
-    const std::vector setLayouts(setsCount, *layout);
+std::vector<DescriptorSet>
+utils::desc::createDescriptorSets(const RendererContext &ctx, const vk::raii::DescriptorPool &pool,
+                                  const vk::raii::DescriptorSetLayout &layout, const uint32_t count) {
+    const std::vector setLayouts(count, *layout);
 
     const vk::DescriptorSetAllocateInfo allocInfo{
         .descriptorPool = *pool,
-        .descriptorSetCount = setsCount,
+        .descriptorSetCount = count,
         .pSetLayouts = setLayouts.data(),
     };
 
     std::vector<vk::raii::DescriptorSet> descriptorSets = ctx.device->allocateDescriptorSets(allocInfo);
 
-    for (size_t i = 0; i < setsCount; i++) {
-        for (size_t j = 0; j < setWrites[i].size(); j++) {
-            setWrites[i][j].dstSet = *descriptorSets[i];
+    std::vector<DescriptorSet> finalSets;
 
-            if (std::holds_alternative<vk::DescriptorBufferInfo>(infos[i][j])) {
-                setWrites[i][j].pBufferInfo = &std::get<vk::DescriptorBufferInfo>(infos[i][j]);
-            } else if (std::holds_alternative<vk::DescriptorImageInfo>(infos[i][j])) {
-                setWrites[i][j].pImageInfo = &std::get<vk::DescriptorImageInfo>(infos[i][j]);
-            }
-        }
-
-        ctx.device->updateDescriptorSets(setWrites[i], nullptr);
+    for (size_t i = 0; i < count; i++) {
+        finalSets.emplace_back(std::move(descriptorSets[i]));
     }
 
-    return descriptorSets;
+    return finalSets;
 }

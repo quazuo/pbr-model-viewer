@@ -20,21 +20,39 @@ public:
     [[nodiscard]] vk::raii::DescriptorSetLayout create(const RendererContext &ctx);
 };
 
-class DescriptorSetBuilder {
-    using DescriptorInfo = std::variant<vk::DescriptorBufferInfo, vk::DescriptorImageInfo>;
+class DescriptorSet {
+    unique_ptr<vk::raii::DescriptorSet> set;
 
-    std::vector<std::vector<DescriptorInfo>> infos{1};
-    std::vector<std::vector<vk::WriteDescriptorSet> > setWrites{1};
+    struct DescriptorUpdate {
+        uint32_t binding{};
+        vk::DescriptorType type{};
+        std::variant<vk::DescriptorBufferInfo, vk::DescriptorImageInfo> info;
+    };
+
+    std::vector<DescriptorUpdate> queuedUpdates;
 
 public:
-    DescriptorSetBuilder &addBuffer(const Buffer &buffer, vk::DescriptorType type, vk::DeviceSize size,
-                                    vk::DeviceSize offset = 0);
+    explicit DescriptorSet(vk::raii::DescriptorSet &&s)
+        : set(make_unique<vk::raii::DescriptorSet>(std::move(s))) {
+    }
 
-    DescriptorSetBuilder &addImageSampler(const Texture& texture);
+    [[nodiscard]] const vk::raii::DescriptorSet &operator*() const { return *set; }
 
-    DescriptorSetBuilder &beginNewSet();
+    DescriptorSet &queueUpdate(uint32_t binding, const Buffer &buffer, vk::DescriptorType type,
+                               vk::DeviceSize size, vk::DeviceSize offset = 0);
 
-    [[nodiscard]] std::vector<vk::raii::DescriptorSet>
-    create(const RendererContext &ctx, const vk::raii::DescriptorPool &pool,
-           const vk::raii::DescriptorSetLayout &layout);
+    DescriptorSet &queueUpdate(uint32_t binding, const Texture &texture);
+
+    void commitUpdates(const RendererContext &ctx);
+
+    void updateBinding(const RendererContext &ctx, uint32_t binding, const Buffer &buffer, vk::DescriptorType type,
+                       vk::DeviceSize size, vk::DeviceSize offset = 0) const;
+
+    void updateBinding(const RendererContext &ctx, uint32_t binding, const Texture &texture) const;
 };
+
+namespace utils::desc {
+    [[nodiscard]] std::vector<DescriptorSet>
+    createDescriptorSets(const RendererContext &ctx, const vk::raii::DescriptorPool &pool,
+                         const vk::raii::DescriptorSetLayout &layout, uint32_t count);
+}

@@ -328,8 +328,6 @@ private:
                 renderer.loadOrmMap(aoPath, roughnessPath, metallicPath);
             }
 
-            renderer.rebuildDescriptors();
-
         } catch (std::exception &e) {
             ImGui::OpenPopup("Model load error");
             currErrorMessage = e.what();
@@ -367,6 +365,7 @@ int main() {
         return EXIT_FAILURE;
     }
 
+#ifdef NDEBUG
     try {
         Engine engine;
         engine.run();
@@ -375,6 +374,10 @@ int main() {
         glfwTerminate();
         return EXIT_FAILURE;
     }
+#else
+    Engine engine;
+    engine.run();
+#endif
 
     glfwTerminate();
 

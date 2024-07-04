@@ -99,34 +99,42 @@ VulkanRenderer::VulkanRenderer() {
     createSkyboxVertexBuffer();
     createScreenSpaceQuadVertexBuffer();
 
+    createIblTextures();
+    createSkyboxDescriptorSets();
+    createEnvmapConvoluteDescriptorSets();
+
     createCubemapCaptureRenderPass();
     createCubemapCapturePipeline();
+    createCubemapCaptureFramebuffer();
 
     createCubemapConvoluteRenderPass();
     createIrradianceCapturePipeline();
+    createIrradianceCaptureFramebuffer();
 
     createPrefilterPipeline();
+    createPrefilterFramebuffers();
 
     createBrdfIntegrationRenderPass();
     createBrdfIntegrationPipeline();
-    createBrdfIntegrationMapTexture();
     createBrdfIntegrationFramebuffer();
     computeBrdfIntegrationMap();
 
-    loadModel("../assets/t-60-helmet/helmet.fbx");
-    loadAlbedoTexture("../assets/t-60-helmet/albedo.png");
-    loadNormalMap("../assets/t-60-helmet/normal.png");
-    //loadOrmMap("../assets/t-60-helmet/orm.png");
-    loadOrmMap(
-        "",
-        "../assets/t-60-helmet/roughness.png",
-        "../assets/t-60-helmet/metallic.png"
-    );
+    createSceneDescriptorSets();
 
-    // loadModel("../assets/czajnik/czajnik.obj");
-    // loadAlbedoTexture("../assets/czajnik/czajnik-albedo.png");
-    // loadNormalMap("../assets/czajnik/czajnik-normal.png");
-    // loadOrmMap("../assets/czajnik/czajnik-orm.png");
+    // loadModel("../assets/t-60-helmet/helmet.fbx");
+    // loadAlbedoTexture("../assets/t-60-helmet/albedo.png");
+    // loadNormalMap("../assets/t-60-helmet/normal.png");
+    // //loadOrmMap("../assets/t-60-helmet/orm.png");
+    // loadOrmMap(
+    //     "",
+    //     "../assets/t-60-helmet/roughness.png",
+    //     "../assets/t-60-helmet/metallic.png"
+    // );
+
+    loadModel("../assets/czajnik/czajnik.obj");
+    loadAlbedoTexture("../assets/czajnik/czajnik-albedo.png");
+    loadNormalMap("../assets/czajnik/czajnik-normal.png");
+    loadOrmMap("../assets/czajnik/czajnik-orm.png");
 
     loadEnvironmentMap("../assets/envmaps/gallery.hdr");
 
@@ -450,6 +458,10 @@ void VulkanRenderer::loadAlbedoTexture(const std::filesystem::path &path) {
             .fromPaths({path})
             .makeMipmaps()
             .create(ctx, *commandPool, *graphicsQueue);
+
+    for (auto& res: frameResources) {
+        res.sceneDescriptorSet->updateBinding(ctx, 1, *albedoTexture);
+    }
 }
 
 void VulkanRenderer::loadNormalMap(const std::filesystem::path &path) {
@@ -460,6 +472,10 @@ void VulkanRenderer::loadNormalMap(const std::filesystem::path &path) {
             .useFormat(vk::Format::eR8G8B8A8Unorm)
             .fromPaths({path})
             .create(ctx, *commandPool, *graphicsQueue);
+
+    for (auto& res: frameResources) {
+        res.sceneDescriptorSet->updateBinding(ctx, 2, *normalTexture);
+    }
 }
 
 void VulkanRenderer::loadOrmMap(const std::filesystem::path &path) {
@@ -470,6 +486,10 @@ void VulkanRenderer::loadOrmMap(const std::filesystem::path &path) {
             .useFormat(vk::Format::eR8G8B8A8Unorm)
             .fromPaths({path})
             .create(ctx, *commandPool, *graphicsQueue);
+
+    for (auto& res: frameResources) {
+        res.sceneDescriptorSet->updateBinding(ctx, 3, *ormTexture);
+    }
 }
 
 void VulkanRenderer::loadOrmMap(const std::filesystem::path &aoPath, const std::filesystem::path &roughnessPath,
@@ -489,6 +509,10 @@ void VulkanRenderer::loadOrmMap(const std::filesystem::path &aoPath, const std::
             })
             .makeMipmaps()
             .create(ctx, *commandPool, *graphicsQueue);
+
+    for (auto& res: frameResources) {
+        res.sceneDescriptorSet->updateBinding(ctx, 3, *ormTexture);
+    }
 }
 
 void VulkanRenderer::loadRmaMap(const std::filesystem::path &path) {
@@ -500,78 +524,34 @@ void VulkanRenderer::loadRmaMap(const std::filesystem::path &path) {
             .useFormat(vk::Format::eR8G8B8A8Unorm)
             .fromPaths({path})
             .create(ctx, *commandPool, *graphicsQueue);
+
+    for (auto& res: frameResources) {
+        res.sceneDescriptorSet->updateBinding(ctx, 3, *ormTexture);
+    }
 }
 
 void VulkanRenderer::loadEnvironmentMap(const std::filesystem::path &path) {
     waitIdle();
 
-    for (auto &res: frameResources) {
-        res.sceneDescriptorSet.reset();
-        res.skyboxDescriptorSet.reset();
+    envmapTexture = TextureBuilder()
+            .asHdr()
+            .useFormat(hdrEnvmapFormat)
+            .fromPaths({path})
+            .makeMipmaps()
+            .create(ctx, *commandPool, *graphicsQueue);
+
+    if (cubemapCaptureDescriptorSet) {
+        cubemapCaptureDescriptorSet->updateBinding(ctx, 1, *envmapTexture);
+    } else {
+        createCubemapCaptureDescriptorSets();
     }
 
-    cubemapCaptureDescriptorSet.reset();
-    envmapConvoluteDescriptorSet.reset();
-
-    createEnvmapTextures(path);
-
-    createSceneDescriptorSets();
-    createSkyboxDescriptorSets();
-    createCubemapCaptureDescriptorSets();
-    createEnvmapConvoluteDescriptorSets();
-
-    createCubemapCaptureFramebuffer();
-    createIrradianceCaptureFramebuffer();
-    createPrefilterFramebuffers();
-
     captureCubemap();
-    utils::img::transitionImageLayout(
-        ctx,
-        **skyboxTexture->getImage(),
-        vk::ImageLayout::eShaderReadOnlyOptimal,
-        vk::ImageLayout::eTransferDstOptimal,
-        skyboxTexture->getMipLevels(),
-        6,
-        *commandPool,
-        *graphicsQueue
-    );
-    skyboxTexture->generateMipmaps(
-        ctx,
-        *commandPool,
-        *graphicsQueue,
-        vk::ImageLayout::eShaderReadOnlyOptimal
-    );
-
     captureIrradianceMap();
-    utils::img::transitionImageLayout(
-        ctx,
-        **irradianceMapTexture->getImage(),
-        vk::ImageLayout::eShaderReadOnlyOptimal,
-        vk::ImageLayout::eTransferDstOptimal,
-        irradianceMapTexture->getMipLevels(),
-        6,
-        *commandPool,
-        *graphicsQueue
-    );
-    irradianceMapTexture->generateMipmaps(
-        ctx,
-        *commandPool,
-        *graphicsQueue,
-        vk::ImageLayout::eShaderReadOnlyOptimal
-    );
-
     prefilterEnvmap();
 }
 
-void VulkanRenderer::rebuildDescriptors() {
-    for (auto &res: frameResources) {
-        res.sceneDescriptorSet.reset();
-    }
-
-    createSceneDescriptorSets();
-}
-
-void VulkanRenderer::createEnvmapTextures(const std::filesystem::path &path) {
+void VulkanRenderer::createIblTextures() {
     const auto attachmentUsageFlags = vk::ImageUsageFlagBits::eTransferSrc
                                       | vk::ImageUsageFlagBits::eTransferDst
                                       | vk::ImageUsageFlagBits::eSampled
@@ -583,13 +563,6 @@ void VulkanRenderer::createEnvmapTextures(const std::filesystem::path &path) {
             .asHdr()
             .useFormat(hdrEnvmapFormat)
             .useUsage(attachmentUsageFlags)
-            .makeMipmaps()
-            .create(ctx, *commandPool, *graphicsQueue);
-
-    envmapTexture = TextureBuilder()
-            .asHdr()
-            .useFormat(hdrEnvmapFormat)
-            .fromPaths({path})
             .makeMipmaps()
             .create(ctx, *commandPool, *graphicsQueue);
 
@@ -610,9 +583,7 @@ void VulkanRenderer::createEnvmapTextures(const std::filesystem::path &path) {
             .useUsage(attachmentUsageFlags)
             .makeMipmaps()
             .create(ctx, *commandPool, *graphicsQueue);
-}
 
-void VulkanRenderer::createBrdfIntegrationMapTexture() {
     brdfIntegrationMapTexture = TextureBuilder()
             .asUninitialized({brdfIntegrationMapExtent.width, brdfIntegrationMapExtent.height, 1})
             .useFormat(brdfIntegrationMapFormat)
@@ -701,7 +672,7 @@ void VulkanRenderer::createEnvmapConvoluteDescriptorSetLayout() {
 void VulkanRenderer::createDescriptorPool() {
     static constexpr vk::DescriptorPoolSize uboPoolSize{
         .type = vk::DescriptorType::eUniformBuffer,
-        .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 2 + 3,
+        .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 2 + 2,
     };
 
     static constexpr vk::DescriptorPoolSize samplerPoolSize{
@@ -725,76 +696,71 @@ void VulkanRenderer::createDescriptorPool() {
 }
 
 void VulkanRenderer::createSceneDescriptorSets() {
-    DescriptorSetBuilder builder;
+    auto sets = utils::desc::createDescriptorSets(ctx, *descriptorPool, *sceneDescriptorLayout, MAX_FRAMES_IN_FLIGHT);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        if (i != 0) builder.beginNewSet();
+        frameResources[i].sceneDescriptorSet = make_unique<DescriptorSet>(std::move(sets[i]));
+    }
 
-        builder.addBuffer(
-                *frameResources[i].graphicsUniformBuffer,
+    for (auto& res: frameResources) {
+        res.sceneDescriptorSet->queueUpdate(
+                0,
+                *res.graphicsUniformBuffer,
                 vk::DescriptorType::eUniformBuffer,
                 sizeof(GraphicsUBO)
             )
-            .addImageSampler(*albedoTexture)
-            .addImageSampler(*normalTexture)
-            .addImageSampler(*ormTexture)
-            .addImageSampler(*irradianceMapTexture)
-            .addImageSampler(*prefilteredEnvmapTexture)
-            .addImageSampler(*brdfIntegrationMapTexture);
-    }
-
-    auto sets = builder.create(ctx, *descriptorPool, *sceneDescriptorLayout);
-
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        frameResources[i].sceneDescriptorSet = make_unique<vk::raii::DescriptorSet>(std::move(sets[i]));
+            .queueUpdate(4, *irradianceMapTexture)
+            .queueUpdate(5, *prefilteredEnvmapTexture)
+            .queueUpdate(6, *brdfIntegrationMapTexture)
+            .commitUpdates(ctx);
     }
 }
 
 void VulkanRenderer::createSkyboxDescriptorSets() {
-    DescriptorSetBuilder builder;
+    auto sets = utils::desc::createDescriptorSets(ctx, *descriptorPool, *skyboxDescriptorLayout, MAX_FRAMES_IN_FLIGHT);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        if (i != 0) builder.beginNewSet();
+        frameResources[i].skyboxDescriptorSet = make_unique<DescriptorSet>(std::move(sets[i]));
+    }
 
-        builder.addBuffer(
-                *frameResources[i].graphicsUniformBuffer,
+    for (auto& res: frameResources) {
+        res.skyboxDescriptorSet->queueUpdate(
+                0,
+                *res.graphicsUniformBuffer,
                 vk::DescriptorType::eUniformBuffer,
                 sizeof(GraphicsUBO)
             )
-            .addImageSampler(*skyboxTexture);
-    }
-
-    auto sets = builder.create(ctx, *descriptorPool, *skyboxDescriptorLayout);
-
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        frameResources[i].skyboxDescriptorSet = make_unique<vk::raii::DescriptorSet>(std::move(sets[i]));
+            .queueUpdate(1, *skyboxTexture)
+            .commitUpdates(ctx);
     }
 }
 
 void VulkanRenderer::createCubemapCaptureDescriptorSets() {
-    auto sets = DescriptorSetBuilder()
-        .addBuffer(
+    auto sets = utils::desc::createDescriptorSets(ctx, *descriptorPool, *cubemapCaptureDescriptorLayout, 1);
+    cubemapCaptureDescriptorSet = make_unique<DescriptorSet>(std::move(sets[0]));
+
+    cubemapCaptureDescriptorSet->queueUpdate(
+            0,
             *frameResources[0].graphicsUniformBuffer,
             vk::DescriptorType::eUniformBuffer,
             sizeof(GraphicsUBO)
         )
-        .addImageSampler(*envmapTexture)
-        .create(ctx, *descriptorPool, *cubemapCaptureDescriptorLayout);
-
-    cubemapCaptureDescriptorSet = make_unique<vk::raii::DescriptorSet>(std::move(sets[0]));
+        .queueUpdate(1, *envmapTexture)
+        .commitUpdates(ctx);
 }
 
 void VulkanRenderer::createEnvmapConvoluteDescriptorSets() {
-    auto sets = DescriptorSetBuilder()
-            .addBuffer(
-                *frameResources[0].graphicsUniformBuffer,
-                vk::DescriptorType::eUniformBuffer,
-                sizeof(GraphicsUBO)
-            )
-            .addImageSampler(*skyboxTexture)
-            .create(ctx, *descriptorPool, *envmapConvoluteDescriptorLayout);
+    auto sets = utils::desc::createDescriptorSets(ctx, *descriptorPool, *envmapConvoluteDescriptorLayout, 1);
+    envmapConvoluteDescriptorSet = make_unique<DescriptorSet>(std::move(sets[0]));
 
-    envmapConvoluteDescriptorSet = make_unique<vk::raii::DescriptorSet>(std::move(sets[0]));
+    envmapConvoluteDescriptorSet->queueUpdate(
+            0,
+            *frameResources[0].graphicsUniformBuffer,
+            vk::DescriptorType::eUniformBuffer,
+            sizeof(GraphicsUBO)
+        )
+        .queueUpdate(1, *skyboxTexture)
+        .commitUpdates(ctx);
 }
 
 // ==================== render passes ====================
@@ -1179,7 +1145,7 @@ void VulkanRenderer::createBrdfIntegrationFramebuffer() {
     const vk::Extent3D extent = brdfIntegrationMapTexture->getImage().getExtent();
 
     const vk::FramebufferCreateInfo createInfo{
-        .renderPass = **brdfIntegrationRenderPass,
+        .renderPass = ***brdfIntegrationRenderPass,
         .attachmentCount = static_cast<uint32_t>(attachments.size()),
         .pAttachments = attachments.data(),
         .width = extent.width,
@@ -1297,7 +1263,7 @@ void VulkanRenderer::recordGraphicsCommandBuffer() const {
     const vk::Extent2D swapChainExtent = swapChain->getExtent();
 
     const vk::RenderPassBeginInfo renderPassInfo{
-        .renderPass = **sceneRenderPass,
+        .renderPass = ***sceneRenderPass,
         .framebuffer = *swapChain->getCurrentFramebuffer(),
         .renderArea = {
             .offset = {0, 0},
@@ -1447,7 +1413,7 @@ void VulkanRenderer::renderGui(const std::function<void()> &renderCommands) {
     const auto &commandBuffer = *frameResources[currentFrameIdx].guiCmdBuffer.buffer;
 
     const vk::CommandBufferInheritanceInfo inheritanceInfo{
-        .renderPass = **sceneRenderPass,
+        .renderPass = ***sceneRenderPass,
         .framebuffer = *swapChain->getCurrentFramebuffer(),
     };
 
@@ -1612,7 +1578,7 @@ void VulkanRenderer::drawScene() {
     };
 
     const vk::CommandBufferInheritanceInfo inheritanceInfo{
-        .renderPass = **sceneRenderPass,
+        .renderPass = ***sceneRenderPass,
         .framebuffer = *swapChain->getCurrentFramebuffer(),
     };
 
@@ -1637,7 +1603,7 @@ void VulkanRenderer::drawScene() {
         *skyboxPipeline->getLayout(),
         0,
         {
-            **frameResources[currentFrameIdx].skyboxDescriptorSet,
+            ***frameResources[currentFrameIdx].skyboxDescriptorSet,
         },
         nullptr
     );
@@ -1658,7 +1624,7 @@ void VulkanRenderer::drawScene() {
         *scenePipeline->getLayout(),
         0,
         {
-            **frameResources[currentFrameIdx].sceneDescriptorSet,
+            ***frameResources[currentFrameIdx].sceneDescriptorSet,
         },
         nullptr
     );
@@ -1720,7 +1686,7 @@ void VulkanRenderer::captureCubemap() {
     };
 
     const vk::RenderPassBeginInfo renderPassInfo{
-        .renderPass = **cubemapCaptureRenderPass,
+        .renderPass = ***cubemapCaptureRenderPass,
         .framebuffer = **cubemapCaptureFramebuffer,
         .renderArea = {
             .offset = {0, 0},
@@ -1744,7 +1710,7 @@ void VulkanRenderer::captureCubemap() {
         *cubemapCapturePipelines->getLayout(),
         0,
         {
-            **cubemapCaptureDescriptorSet,
+            ***cubemapCaptureDescriptorSet,
         },
         nullptr
     );
@@ -1784,6 +1750,24 @@ void VulkanRenderer::captureCubemap() {
         *commandPool,
         *graphicsQueue
     );
+
+    utils::img::transitionImageLayout(
+        ctx,
+        **skyboxTexture->getImage(),
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::ImageLayout::eTransferDstOptimal,
+        skyboxTexture->getMipLevels(),
+        6,
+        *commandPool,
+        *graphicsQueue
+    );
+
+    skyboxTexture->generateMipmaps(
+        ctx,
+        *commandPool,
+        *graphicsQueue,
+        vk::ImageLayout::eShaderReadOnlyOptimal
+    );
 }
 
 void VulkanRenderer::captureIrradianceMap() {
@@ -1810,7 +1794,7 @@ void VulkanRenderer::captureIrradianceMap() {
     };
 
     const vk::RenderPassBeginInfo renderPassInfo{
-        .renderPass = **envmapConvoluteRenderPass,
+        .renderPass = ***envmapConvoluteRenderPass,
         .framebuffer = **irradianceCaptureFramebuffer,
         .renderArea = {
             .offset = {0, 0},
@@ -1834,7 +1818,7 @@ void VulkanRenderer::captureIrradianceMap() {
         *irradianceCapturePipelines->getLayout(),
         0,
         {
-            **envmapConvoluteDescriptorSet,
+            ***envmapConvoluteDescriptorSet,
         },
         nullptr
     );
@@ -1874,6 +1858,24 @@ void VulkanRenderer::captureIrradianceMap() {
         *commandPool,
         *graphicsQueue
     );
+
+    utils::img::transitionImageLayout(
+        ctx,
+        **irradianceMapTexture->getImage(),
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::ImageLayout::eTransferDstOptimal,
+        irradianceMapTexture->getMipLevels(),
+        6,
+        *commandPool,
+        *graphicsQueue
+    );
+
+    irradianceMapTexture->generateMipmaps(
+        ctx,
+        *commandPool,
+        *graphicsQueue,
+        vk::ImageLayout::eShaderReadOnlyOptimal
+    );
 }
 
 void VulkanRenderer::prefilterEnvmap() {
@@ -1908,7 +1910,7 @@ void VulkanRenderer::prefilterEnvmap() {
         commandBuffer.setScissor(0, scissor);
 
         const vk::RenderPassBeginInfo renderPassInfo{
-            .renderPass = **envmapConvoluteRenderPass,
+            .renderPass = ***envmapConvoluteRenderPass,
             .framebuffer = **prefilterFramebuffers[mipLevel],
             .renderArea = {
                 .offset = {0, 0},
@@ -1927,7 +1929,7 @@ void VulkanRenderer::prefilterEnvmap() {
             *prefilterPipelines->getLayout(),
             0,
             {
-                **envmapConvoluteDescriptorSet,
+                ***envmapConvoluteDescriptorSet,
             },
             nullptr
         );
@@ -1995,7 +1997,7 @@ void VulkanRenderer::computeBrdfIntegrationMap() {
     };
 
     const vk::RenderPassBeginInfo renderPassInfo{
-        .renderPass = **brdfIntegrationRenderPass,
+        .renderPass = ***brdfIntegrationRenderPass,
         .framebuffer = **brdfIntegrationFramebuffer,
         .renderArea = {
             .offset = {0, 0},

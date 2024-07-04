@@ -17,6 +17,7 @@ class Camera;
 class Buffer;
 class PipelinePack;
 class RenderPass;
+class DescriptorSet;
 class Texture;
 class SwapChain;
 class GuiRenderer;
@@ -167,8 +168,8 @@ class VulkanRenderer {
     std::vector<unique_ptr<vk::raii::Framebuffer>> prefilterFramebuffers;
     unique_ptr<vk::raii::Framebuffer> brdfIntegrationFramebuffer;
 
-    unique_ptr<vk::raii::DescriptorSet> cubemapCaptureDescriptorSet;
-    unique_ptr<vk::raii::DescriptorSet> envmapConvoluteDescriptorSet;
+    unique_ptr<DescriptorSet> cubemapCaptureDescriptorSet;
+    unique_ptr<DescriptorSet> envmapConvoluteDescriptorSet;
 
     unique_ptr<PipelinePack> scenePipeline;
     unique_ptr<PipelinePack> skyboxPipeline;
@@ -208,8 +209,8 @@ class VulkanRenderer {
         unique_ptr<Buffer> graphicsUniformBuffer;
         void *graphicsUboMapped{};
 
-        unique_ptr<vk::raii::DescriptorSet> sceneDescriptorSet;
-        unique_ptr<vk::raii::DescriptorSet> skyboxDescriptorSet;
+        unique_ptr<DescriptorSet> sceneDescriptorSet;
+        unique_ptr<DescriptorSet> skyboxDescriptorSet;
     };
 
     static constexpr size_t MAX_FRAMES_IN_FLIGHT = 3;
@@ -284,8 +285,6 @@ public:
 
     void loadEnvironmentMap(const std::filesystem::path &path);
 
-    void rebuildDescriptors();
-
 private:
     static void framebufferResizeCallback(GLFWwindow *window, int width, int height);
 
@@ -332,9 +331,7 @@ private:
 
     // ==================== assets ====================
 
-    void createEnvmapTextures(const std::filesystem::path &path);
-
-    void createBrdfIntegrationMapTexture();
+    void createIblTextures();
 
     // ==================== swap chain ====================
 
