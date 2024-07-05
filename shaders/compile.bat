@@ -3,7 +3,7 @@
 for /D %%i in (C:\VulkanSDK\*) do set "SDK_DIR=%%i"
 set "IS_ERROR=0"
 
-set shaders="main" "skybox" "sphere-cube" "convolute" "prefilter" "brdf-integrate"
+set shaders="main" "skybox" "prepass" "sphere-cube" "convolute" "prefilter" "brdf-integrate"
 
 (for %%a in (%shaders%) do (
    @echo on

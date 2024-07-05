@@ -24,6 +24,7 @@ class RenderPassBuilder {
         std::vector<vk::AttachmentReference> colorAttachmentRefs;
         std::vector<vk::AttachmentReference> resolveAttachmentRefs;
         std::optional<vk::AttachmentReference> depthStencilAttachmentRef;
+        std::vector<vk::SubpassDependency> selfDependencies;
     };
 
     std::vector<Subpass> subpasses{1};
@@ -34,6 +35,8 @@ public:
     RenderPassBuilder &addResolveAttachment(const vk::AttachmentDescription &desc);
 
     RenderPassBuilder &useDepthStencilAttachment(const vk::AttachmentDescription &desc);
+
+    RenderPassBuilder &withSelfDependency(vk::SubpassDependency dependency);
 
     RenderPassBuilder &beginNewSubpass();
 

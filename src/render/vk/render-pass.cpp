@@ -37,6 +37,13 @@ RenderPassBuilder & RenderPassBuilder::useDepthStencilAttachment(const vk::Attac
     return *this;
 }
 
+RenderPassBuilder & RenderPassBuilder::withSelfDependency(vk::SubpassDependency dependency) {
+    dependency.srcSubpass = subpasses.size() - 1;
+    dependency.dstSubpass = subpasses.size() - 1;
+    subpasses.back().selfDependencies.emplace_back(dependency);
+    return *this;
+}
+
 RenderPassBuilder & RenderPassBuilder::beginNewSubpass() {
     subpasses.emplace_back();
     return *this;
@@ -76,6 +83,7 @@ RenderPass RenderPassBuilder::create(const RendererContext &ctx) const {
 
         subpassDescriptions.emplace_back(desc);
         dependencies.emplace_back(dependency);
+        dependencies.insert(dependencies.end(), subpass.selfDependencies.begin(), subpass.selfDependencies.end());
     }
 
     const vk::RenderPassCreateInfo renderPassInfo{

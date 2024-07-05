@@ -143,8 +143,8 @@ void DescriptorSet::updateBinding(const RendererContext &ctx, const uint32_t bin
 
 std::vector<DescriptorSet>
 utils::desc::createDescriptorSets(const RendererContext &ctx, const vk::raii::DescriptorPool &pool,
-                                  const vk::raii::DescriptorSetLayout &layout, const uint32_t count) {
-    const std::vector setLayouts(count, *layout);
+                                  const shared_ptr<vk::raii::DescriptorSetLayout>& layout, const uint32_t count) {
+    const std::vector setLayouts(count, **layout);
 
     const vk::DescriptorSetAllocateInfo allocInfo{
         .descriptorPool = *pool,
@@ -157,7 +157,7 @@ utils::desc::createDescriptorSets(const RendererContext &ctx, const vk::raii::De
     std::vector<DescriptorSet> finalSets;
 
     for (size_t i = 0; i < count; i++) {
-        finalSets.emplace_back(std::move(descriptorSets[i]));
+        finalSets.emplace_back(layout, std::move(descriptorSets[i]));
     }
 
     return finalSets;

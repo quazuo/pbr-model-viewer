@@ -9,6 +9,7 @@
 
 #include "libs.h"
 #include "globals.h"
+#include "vk/cmd.h"
 
 class Image;
 class InputManager;
@@ -145,6 +146,11 @@ class VulkanRenderer {
     unique_ptr<Texture> normalTexture;
     unique_ptr<Texture> ormTexture;
 
+    struct {
+        unique_ptr<Texture> depth;
+        unique_ptr<Texture> normal;
+    } gBufferTextures;
+
     unique_ptr<Texture> skyboxTexture;
     unique_ptr<Texture> envmapTexture;
     unique_ptr<Texture> irradianceMapTexture;
@@ -154,18 +160,15 @@ class VulkanRenderer {
     unique_ptr<vk::raii::DescriptorPool> descriptorPool;
 
     unique_ptr<RenderPass> sceneRenderPass;
+    unique_ptr<RenderPass> prepassRenderPass;
     unique_ptr<RenderPass> cubemapCaptureRenderPass;
     unique_ptr<RenderPass> envmapConvoluteRenderPass;
     unique_ptr<RenderPass> brdfIntegrationRenderPass;
 
-    unique_ptr<vk::raii::DescriptorSetLayout> sceneDescriptorLayout;
-    unique_ptr<vk::raii::DescriptorSetLayout> skyboxDescriptorLayout;
-    unique_ptr<vk::raii::DescriptorSetLayout> cubemapCaptureDescriptorLayout;
-    unique_ptr<vk::raii::DescriptorSetLayout> envmapConvoluteDescriptorLayout;
-
+    unique_ptr<vk::raii::Framebuffer> prepassFramebuffer;
     unique_ptr<vk::raii::Framebuffer> cubemapCaptureFramebuffer;
     unique_ptr<vk::raii::Framebuffer> irradianceCaptureFramebuffer;
-    std::vector<unique_ptr<vk::raii::Framebuffer>> prefilterFramebuffers;
+    std::vector<unique_ptr<vk::raii::Framebuffer> > prefilterFramebuffers;
     unique_ptr<vk::raii::Framebuffer> brdfIntegrationFramebuffer;
 
     unique_ptr<DescriptorSet> cubemapCaptureDescriptorSet;
@@ -173,6 +176,7 @@ class VulkanRenderer {
 
     unique_ptr<PipelinePack> scenePipeline;
     unique_ptr<PipelinePack> skyboxPipeline;
+    unique_ptr<PipelinePack> prepassPipeline;
     unique_ptr<PipelinePack> cubemapCapturePipelines;
     unique_ptr<PipelinePack> irradianceCapturePipelines;
     unique_ptr<PipelinePack> prefilterPipelines;
@@ -201,16 +205,16 @@ class VulkanRenderer {
         // primary command buffer
         unique_ptr<vk::raii::CommandBuffer> graphicsCmdBuffer;
 
-        struct SecondaryCommandBuffer {
-            unique_ptr<vk::raii::CommandBuffer> buffer;
-            bool wasRecordedThisFrame = false;
-        } sceneCmdBuffer, guiCmdBuffer;
+        SecondaryCommandBuffer sceneCmdBuffer;
+        SecondaryCommandBuffer prepassCmdBuffer;
+        SecondaryCommandBuffer guiCmdBuffer;
 
         unique_ptr<Buffer> graphicsUniformBuffer;
         void *graphicsUboMapped{};
 
         unique_ptr<DescriptorSet> sceneDescriptorSet;
         unique_ptr<DescriptorSet> skyboxDescriptorSet;
+        unique_ptr<DescriptorSet> prepassDescriptorSet;
     };
 
     static constexpr size_t MAX_FRAMES_IN_FLIGHT = 3;
@@ -218,9 +222,7 @@ class VulkanRenderer {
 
     vk::SampleCountFlagBits msaaSampleCount = vk::SampleCountFlagBits::e1;
 
-    static constexpr vk::Extent2D cubemapExtent = {2048, 2048};
-    static constexpr vk::Extent2D brdfIntegrationMapExtent = { 512, 512 };
-
+    static constexpr auto prepassNormalFormat = vk::Format::eR8G8B8A8Unorm;
     static constexpr auto hdrEnvmapFormat = vk::Format::eR32G32B32A32Sfloat;
     static constexpr auto brdfIntegrationMapFormat = vk::Format::eR8G8B8A8Unorm;
 
@@ -331,6 +333,8 @@ private:
 
     // ==================== assets ====================
 
+    void createPrepassTextures();
+
     void createIblTextures();
 
     // ==================== swap chain ====================
@@ -339,33 +343,27 @@ private:
 
     // ==================== descriptors ====================
 
-    void createDescriptorSetLayouts();
-
-    void createSceneDescriptorSetLayout();
-
-    void createSkyboxDescriptorSetLayout();
-
-    void createCubemapCaptureDescriptorSetLayout();
-
-    void createEnvmapConvoluteDescriptorSetLayout();
-
     void createDescriptorPool();
 
     void createSceneDescriptorSets();
 
     void createSkyboxDescriptorSets();
 
-    void createCubemapCaptureDescriptorSets();
+    void createPrepassDescriptorSets();
 
-    void createEnvmapConvoluteDescriptorSets();
+    void createCubemapCaptureDescriptorSet();
+
+    void createEnvmapConvoluteDescriptorSet();
 
     // ==================== render passes ====================
 
-    void createRenderPass();
+    void createSceneRenderPass();
+
+    void createPrepassRenderPass();
 
     void createCubemapCaptureRenderPass();
 
-    void createCubemapConvoluteRenderPass();
+    void createEnvmapConvoluteRenderPass();
 
     void createBrdfIntegrationRenderPass();
 
@@ -374,6 +372,8 @@ private:
     void createScenePipeline();
 
     void createSkyboxPipeline();
+
+    void createPrepassPipeline();
 
     void createCubemapCapturePipeline();
 
@@ -389,7 +389,7 @@ private:
 
     // ==================== buffers ====================
 
-    void createVertexBuffer();
+    void createModelVertexBuffer();
 
     void createSkyboxVertexBuffer();
 
@@ -404,6 +404,8 @@ private:
 
     // ==================== framebuffers ====================
 
+    void createPrepassFramebuffer();
+
     void createCubemapCaptureFramebuffer();
 
     void createIrradianceCaptureFramebuffer();
@@ -417,7 +419,7 @@ private:
 
     [[nodiscard]] unique_ptr<vk::raii::Framebuffer>
     createMipPerLayerCubemapFramebuffer(const Texture &texture, const vk::raii::RenderPass &renderPass,
-                                           uint32_t mipLevel) const;
+                                        uint32_t mipLevel) const;
 
     // ==================== commands ====================
 
@@ -425,7 +427,7 @@ private:
 
     void createCommandBuffers();
 
-    void recordGraphicsCommandBuffer() const;
+    void recordGraphicsCommandBuffer();
 
     // ==================== sync ====================
 
@@ -446,7 +448,12 @@ public:
 
     void renderGui(const std::function<void()> &renderCommands);
 
+    void runPrepass();
+
     void drawScene();
+
+private:
+    void drawModel(const vk::raii::CommandBuffer& commandBuffer) const;
 
     void captureCubemap();
 
@@ -456,6 +463,5 @@ public:
 
     void computeBrdfIntegrationMap();
 
-private:
     void updateGraphicsUniformBuffer() const;
 };

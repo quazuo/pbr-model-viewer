@@ -39,3 +39,22 @@ void utils::cmd::doSingleTimeCommands(const vk::raii::Device &device, const vk::
     func(cmdBuffer);
     endSingleTimeCommands(cmdBuffer, queue);
 }
+
+void utils::cmd::setDynamicStates(const vk::raii::CommandBuffer &commandBuffer, const vk::Extent2D drawExtent) {
+    const vk::Viewport viewport{
+        .x = 0.0f,
+        .y = static_cast<float>(drawExtent.height), // flip the y-axis
+        .width = static_cast<float>(drawExtent.width),
+        .height = -1 * static_cast<float>(drawExtent.height), // flip the y-axis
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
+    };
+
+    const vk::Rect2D scissor{
+        .offset = {0, 0},
+        .extent = drawExtent
+    };
+
+    commandBuffer.setViewport(0, viewport);
+    commandBuffer.setScissor(0, scissor);
+}

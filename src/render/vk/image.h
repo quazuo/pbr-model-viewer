@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <map>
 
 #include "deps/vma/vk_mem_alloc.h"
 #include "src/render/libs.h"
@@ -24,10 +25,12 @@ protected:
     std::vector<unique_ptr<vk::raii::ImageView> > mipViews;
     vk::Extent3D extent;
     vk::Format format{};
+    uint32_t mipLevels;
+    vk::ImageAspectFlags aspectMask;
 
 public:
     explicit Image(const RendererContext &ctx, const vk::ImageCreateInfo &imageInfo,
-                   vk::MemoryPropertyFlags properties);
+                   vk::MemoryPropertyFlags properties, vk::ImageAspectFlags aspect);
 
     virtual ~Image();
 
@@ -57,21 +60,25 @@ public:
 
     [[nodiscard]] vk::Extent3D getExtent() const { return extent; }
 
+    [[nodiscard]] vk::Extent2D getExtent2d() const { return {extent.width, extent.height}; }
+
     [[nodiscard]] vk::Format getFormat() const { return format; }
 
-    virtual void createViews(const RendererContext &ctx, vk::Format format, vk::ImageAspectFlags aspectFlags,
-                             uint32_t mipLevels);
+    virtual void createViews(const RendererContext &ctx);
 
     /**
-     * Copies the contents of a given buffer to this image and waits until completion.
+     * Records commands that copy the contents of a given buffer to this image.
      *
-     * @param ctx Renderer context.
      * @param buffer Buffer from which to copy.
-     * @param cmdPool Command pool from which a single-time command buffer should be allocated.
-     * @param queue Queue to which the commands should be submitted.
+     * @param commandBuffer Command buffer to which the commands will be recorded.
      */
-    virtual void copyFromBuffer(const RendererContext &ctx, vk::Buffer buffer, const vk::raii::CommandPool &cmdPool,
-                                const vk::raii::Queue &queue);
+    virtual void copyFromBuffer(vk::Buffer buffer, const vk::raii::CommandBuffer& commandBuffer);
+
+    virtual void transitionLayout(vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
+                                  const vk::raii::CommandBuffer& commandBuffer) const;
+
+    void transitionLayout(vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
+                          vk::ImageSubresourceRange range, const vk::raii::CommandBuffer& commandBuffer) const;
 
     void saveToFile(const RendererContext &ctx, const std::filesystem::path &path,
                     const vk::raii::CommandPool &cmdPool, const vk::raii::Queue &queue) const;
@@ -103,11 +110,12 @@ public:
         return *layerMipViews[layerIndex][mipLevel];
     }
 
-    void createViews(const RendererContext &ctx, vk::Format format, vk::ImageAspectFlags aspectFlags,
-                     uint32_t mipLevels) override;
+    void createViews(const RendererContext &ctx) override;
 
-    void copyFromBuffer(const RendererContext &ctx, vk::Buffer buffer, const vk::raii::CommandPool &cmdPool,
-                        const vk::raii::Queue &queue) override;
+    void copyFromBuffer(vk::Buffer buffer, const vk::raii::CommandBuffer& commandBuffer) override;
+
+    void transitionLayout(vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
+                          const vk::raii::CommandBuffer& commandBuffer) const override;
 };
 
 class Texture {
@@ -214,7 +222,7 @@ private:
 
     [[nodiscard]] LoadedTextureData loadFromPaths(const RendererContext &ctx) const;
 
-    void performSwizzle(uint8_t* data, size_t size) const;
+    void performSwizzle(uint8_t *data, size_t size) const;
 };
 
 namespace utils::img {
@@ -226,11 +234,71 @@ namespace utils::img {
     createCubeImageView(const RendererContext &ctx, vk::Image image, vk::Format format,
                         vk::ImageAspectFlags aspectFlags, uint32_t baseMipLevel, uint32_t mipLevels);
 
-    void transitionImageLayout(const RendererContext &ctx, vk::Image image, vk::ImageLayout oldLayout,
-                               vk::ImageLayout newLayout, uint32_t mipLevels, uint32_t layerCount,
-                               const vk::raii::CommandPool &cmdPool, const vk::raii::Queue &queue);
-
     void saveToFile(...);
 
     [[nodiscard]] size_t getFormatSizeInBytes(vk::Format format);
 }
+
+struct ImageBarrierInfo {
+    vk::AccessFlagBits srcAccessMask;
+    vk::AccessFlagBits dstAccessMask;
+    vk::PipelineStageFlagBits srcStage;
+    vk::PipelineStageFlagBits dstStage;
+};
+
+static std::map<std::pair<vk::ImageLayout, vk::ImageLayout>, ImageBarrierInfo> transitionBarrierSchemes{
+    {
+        {vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferSrcOptimal},
+        {
+            .srcAccessMask = {},
+            .dstAccessMask = vk::AccessFlagBits::eTransferRead,
+            .srcStage = vk::PipelineStageFlagBits::eTopOfPipe,
+            .dstStage = vk::PipelineStageFlagBits::eTransfer,
+        }
+    },
+    {
+        {vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal},
+        {
+            .srcAccessMask = {},
+            .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
+            .srcStage = vk::PipelineStageFlagBits::eTopOfPipe,
+            .dstStage = vk::PipelineStageFlagBits::eTransfer,
+        }
+    },
+    {
+        {vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal},
+        {
+            .srcAccessMask = vk::AccessFlagBits::eTransferRead,
+            .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+            .srcStage = vk::PipelineStageFlagBits::eTransfer,
+            .dstStage = vk::PipelineStageFlagBits::eFragmentShader,
+        }
+    },
+    {
+        {vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal},
+        {
+            .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+            .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+            .srcStage = vk::PipelineStageFlagBits::eTransfer,
+            .dstStage = vk::PipelineStageFlagBits::eFragmentShader,
+        }
+    },
+    {
+        {vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eTransferSrcOptimal},
+        {
+            .srcAccessMask = vk::AccessFlagBits::eShaderRead,
+            .dstAccessMask = vk::AccessFlagBits::eTransferRead,
+            .srcStage = vk::PipelineStageFlagBits::eFragmentShader,
+            .dstStage = vk::PipelineStageFlagBits::eTransfer,
+        }
+    },
+    {
+        {vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eTransferDstOptimal},
+        {
+            .srcAccessMask = vk::AccessFlagBits::eShaderRead,
+            .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
+            .srcStage = vk::PipelineStageFlagBits::eFragmentShader,
+            .dstStage = vk::PipelineStageFlagBits::eTransfer,
+        }
+    }
+};

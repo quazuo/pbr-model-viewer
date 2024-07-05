@@ -1,5 +1,6 @@
 #pragma once
 
+#include <utility>
 #include <variant>
 
 #include "src/render/libs.h"
@@ -21,6 +22,7 @@ public:
 };
 
 class DescriptorSet {
+    shared_ptr<vk::raii::DescriptorSetLayout> layout;
     unique_ptr<vk::raii::DescriptorSet> set;
 
     struct DescriptorUpdate {
@@ -32,11 +34,13 @@ class DescriptorSet {
     std::vector<DescriptorUpdate> queuedUpdates;
 
 public:
-    explicit DescriptorSet(vk::raii::DescriptorSet &&s)
-        : set(make_unique<vk::raii::DescriptorSet>(std::move(s))) {
+    explicit DescriptorSet(decltype(layout) l, vk::raii::DescriptorSet &&s)
+        : layout(std::move(l)), set(make_unique<vk::raii::DescriptorSet>(std::move(s))) {
     }
 
     [[nodiscard]] const vk::raii::DescriptorSet &operator*() const { return *set; }
+
+    [[nodiscard]] const vk::raii::DescriptorSetLayout &getLayout() const { return *layout; }
 
     DescriptorSet &queueUpdate(uint32_t binding, const Buffer &buffer, vk::DescriptorType type,
                                vk::DeviceSize size, vk::DeviceSize offset = 0);
@@ -54,5 +58,5 @@ public:
 namespace utils::desc {
     [[nodiscard]] std::vector<DescriptorSet>
     createDescriptorSets(const RendererContext &ctx, const vk::raii::DescriptorPool &pool,
-                         const vk::raii::DescriptorSetLayout &layout, uint32_t count);
+                         const shared_ptr<vk::raii::DescriptorSetLayout>& layout, uint32_t count);
 }
