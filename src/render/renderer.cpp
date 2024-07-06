@@ -433,7 +433,7 @@ void VulkanRenderer::createLogicalDevice() {
         .samplerAnisotropy = vk::True,
     };
 
-    vk::PhysicalDeviceMultiviewFeatures multiviewFeatures {
+    vk::PhysicalDeviceMultiviewFeatures multiviewFeatures{
         .multiview = vk::True,
     };
 
@@ -580,7 +580,7 @@ void VulkanRenderer::loadEnvironmentMap(const std::filesystem::path &path) {
 
     captureCubemap();
     captureIrradianceMap();
-    // prefilterEnvmap();
+    prefilterEnvmap();
 }
 
 void VulkanRenderer::createPrepassTextures() {
@@ -912,19 +912,21 @@ void VulkanRenderer::createIrradianceCaptureRenderInfo() {
 }
 
 void VulkanRenderer::createPrefilterRenderInfo() {
-    const std::vector colorAttachments{
-        vk::RenderingAttachmentInfo{
-            .imageView = *prefilteredEnvmapTexture->getAttachmentView(),
-            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .storeOp = vk::AttachmentStoreOp::eStore,
-            .clearValue = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f},
-        }
-    };
+    for (uint32_t i = 0; i < maxPrefilterMipLevels; i++) {
+        const std::vector colorAttachments{
+            vk::RenderingAttachmentInfo{
+                .imageView = *prefilteredEnvmapTexture->getMipView(i),
+                .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                .loadOp = vk::AttachmentLoadOp::eClear,
+                .storeOp = vk::AttachmentStoreOp::eStore,
+                .clearValue = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f},
+            }
+        };
 
-    prefilterRenderInfo = {
-        .colorAttachments = colorAttachments,
-    };
+        prefilterRenderInfos.emplace_back(RenderInfo{
+            .colorAttachments = colorAttachments,
+        });
+    }
 }
 
 void VulkanRenderer::createBrdfIntegrationRenderInfo() {
@@ -1042,7 +1044,7 @@ void VulkanRenderer::createCubemapCapturePipeline() {
             .withColorFormats({hdrEnvmapFormat})
             .create(ctx);
 
-    cubemapCapturePipelines = make_unique<PipelinePack>(std::move(pipeline));
+    cubemapCapturePipeline = make_unique<PipelinePack>(std::move(pipeline));
 }
 
 void VulkanRenderer::createIrradianceCapturePipeline() {
@@ -1067,7 +1069,7 @@ void VulkanRenderer::createIrradianceCapturePipeline() {
             .withColorFormats({hdrEnvmapFormat})
             .create(ctx);
 
-    irradianceCapturePipelines = make_unique<PipelinePack>(std::move(pipeline));
+    irradianceCapturePipeline = make_unique<PipelinePack>(std::move(pipeline));
 }
 
 void VulkanRenderer::createPrefilterPipeline() {
@@ -1099,7 +1101,7 @@ void VulkanRenderer::createPrefilterPipeline() {
             .withColorFormats({hdrEnvmapFormat})
             .create(ctx);
 
-    prefilterPipelines = make_unique<PipelinePack>(std::move(pipeline));
+    prefilterPipeline = make_unique<PipelinePack>(std::move(pipeline));
 }
 
 void VulkanRenderer::createBrdfIntegrationPipeline() {
@@ -1576,9 +1578,7 @@ void VulkanRenderer::runPrepass() {
         vk::PipelineBindPoint::eGraphics,
         *prepassPipeline->getLayout(),
         0,
-        {
-            ***frameResources[currentFrameIdx].prepassDescriptorSet,
-        },
+        ***frameResources[currentFrameIdx].prepassDescriptorSet,
         nullptr
     );
 
@@ -1628,9 +1628,7 @@ void VulkanRenderer::drawScene() {
         vk::PipelineBindPoint::eGraphics,
         *skyboxPipeline->getLayout(),
         0,
-        {
-            ***frameResources[currentFrameIdx].skyboxDescriptorSet,
-        },
+        ***frameResources[currentFrameIdx].skyboxDescriptorSet,
         nullptr
     );
 
@@ -1648,9 +1646,7 @@ void VulkanRenderer::drawScene() {
         vk::PipelineBindPoint::eGraphics,
         *scenePipeline->getLayout(),
         0,
-        {
-            ***frameResources[currentFrameIdx].sceneDescriptorSet,
-        },
+        ***frameResources[currentFrameIdx].sceneDescriptorSet,
         nullptr
     );
 
@@ -1696,15 +1692,13 @@ void VulkanRenderer::captureCubemap() {
 
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        *cubemapCapturePipelines->getLayout(),
+        *cubemapCapturePipeline->getLayout(),
         0,
-        {
-            ***cubemapCaptureDescriptorSet,
-        },
+        ***cubemapCaptureDescriptorSet,
         nullptr
     );
 
-     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***cubemapCapturePipelines);
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***cubemapCapturePipeline);
 
     commandBuffer.draw(skyboxVertices.size(), 1, 0, 0);
 
@@ -1739,15 +1733,13 @@ void VulkanRenderer::captureIrradianceMap() {
 
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        *irradianceCapturePipelines->getLayout(),
+        *irradianceCapturePipeline->getLayout(),
         0,
-        {
-            ***envmapConvoluteDescriptorSet,
-        },
+        ***envmapConvoluteDescriptorSet,
         nullptr
     );
 
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***irradianceCapturePipelines);
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***irradianceCapturePipeline);
 
     commandBuffer.draw(skyboxVertices.size(), 1, 0, 0);
 
@@ -1781,28 +1773,26 @@ void VulkanRenderer::prefilterEnvmap() {
 
         utils::cmd::setDynamicStates(commandBuffer, extent);
 
-        commandBuffer.beginRendering(prefilterRenderInfo.get(extent, 6));
+        commandBuffer.beginRendering(prefilterRenderInfos[mipLevel].get(extent, 6));
 
         commandBuffer.bindVertexBuffers(0, **skyboxVertexBuffer, {0});
 
         commandBuffer.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics,
-            *prefilterPipelines->getLayout(),
+            *prefilterPipeline->getLayout(),
             0,
-            {
-                ***envmapConvoluteDescriptorSet,
-            },
+            ***envmapConvoluteDescriptorSet,
             nullptr
         );
 
-        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***prefilterPipelines);
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***prefilterPipeline);
 
         const PrefilterPushConstants prefilterPushConstants{
             .roughness = static_cast<float>(mipLevel) / (maxPrefilterMipLevels - 1)
         };
 
         commandBuffer.pushConstants<PrefilterPushConstants>(
-            *prefilterPipelines->getLayout(),
+            *prefilterPipeline->getLayout(),
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0u,
             prefilterPushConstants

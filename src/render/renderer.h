@@ -170,15 +170,15 @@ class VulkanRenderer {
     RenderInfo prepassRenderInfo;
     RenderInfo cubemapCaptureRenderInfo;
     RenderInfo irradianceCaptureRenderInfo;
-    RenderInfo prefilterRenderInfo;
+    std::vector<RenderInfo> prefilterRenderInfos;
     RenderInfo brdfIntegrationRenderInfo;
 
     unique_ptr<PipelinePack> scenePipeline;
     unique_ptr<PipelinePack> skyboxPipeline;
     unique_ptr<PipelinePack> prepassPipeline;
-    unique_ptr<PipelinePack> cubemapCapturePipelines;
-    unique_ptr<PipelinePack> irradianceCapturePipelines;
-    unique_ptr<PipelinePack> prefilterPipelines;
+    unique_ptr<PipelinePack> cubemapCapturePipeline;
+    unique_ptr<PipelinePack> irradianceCapturePipeline;
+    unique_ptr<PipelinePack> prefilterPipeline;
     unique_ptr<PipelinePack> brdfIntegrationPipeline;
 
     unique_ptr<vk::raii::CommandPool> commandPool;
