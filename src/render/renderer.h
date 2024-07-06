@@ -435,13 +435,13 @@ public:
 private:
     void drawModel(const vk::raii::CommandBuffer &commandBuffer) const;
 
-    void captureCubemap();
+    void captureCubemap() const;
 
-    void captureIrradianceMap();
+    void captureIrradianceMap() const;
 
-    void prefilterEnvmap();
+    void prefilterEnvmap() const;
 
-    void computeBrdfIntegrationMap();
+    void computeBrdfIntegrationMap() const;
 
     void updateGraphicsUniformBuffer() const;
 };

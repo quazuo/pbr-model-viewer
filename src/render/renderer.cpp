@@ -1679,7 +1679,7 @@ void VulkanRenderer::drawModel(const vk::raii::CommandBuffer &commandBuffer) con
     }
 }
 
-void VulkanRenderer::captureCubemap() {
+void VulkanRenderer::captureCubemap() const {
     const vk::Extent2D extent = skyboxTexture->getImage().getExtent2d();
 
     const auto commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
@@ -1720,7 +1720,7 @@ void VulkanRenderer::captureCubemap() {
     );
 }
 
-void VulkanRenderer::captureIrradianceMap() {
+void VulkanRenderer::captureIrradianceMap() const {
     const vk::Extent2D extent = irradianceMapTexture->getImage().getExtent2d();
 
     const auto commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
@@ -1761,7 +1761,7 @@ void VulkanRenderer::captureIrradianceMap() {
     );
 }
 
-void VulkanRenderer::prefilterEnvmap() {
+void VulkanRenderer::prefilterEnvmap() const {
     const auto commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
 
     for (uint32_t mipLevel = 0; mipLevel < maxPrefilterMipLevels; mipLevel++) {
@@ -1806,7 +1806,7 @@ void VulkanRenderer::prefilterEnvmap() {
     utils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
 }
 
-void VulkanRenderer::computeBrdfIntegrationMap() {
+void VulkanRenderer::computeBrdfIntegrationMap() const {
     const vk::Extent2D extent{
         .width = brdfIntegrationMapTexture->getImage().getExtent().width,
         .height = brdfIntegrationMapTexture->getImage().getExtent().height
