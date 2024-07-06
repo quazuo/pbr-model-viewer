@@ -17,8 +17,7 @@ class GuiRenderer {
     GLFWwindow *window;
 
 public:
-    explicit GuiRenderer(GLFWwindow *w, ImGui_ImplVulkan_InitInfo &imguiInitInfo,
-                         const vk::raii::RenderPass &renderPass);
+    explicit GuiRenderer(GLFWwindow *w, ImGui_ImplVulkan_InitInfo &imguiInitInfo);
 
     ~GuiRenderer();
 

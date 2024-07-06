@@ -21,7 +21,6 @@
 #include "src/utils/glfw-statics.h"
 #include "vk/descriptor.h"
 #include "vk/pipeline.h"
-#include "vk/render-pass.h"
 
 VmaAllocatorWrapper::VmaAllocatorWrapper(const vk::PhysicalDevice physicalDevice, const vk::Device device,
                                          const vk::Instance instance) {
@@ -79,10 +78,6 @@ VulkanRenderer::VulkanRenderer() {
         msaaSampleCount
     );
 
-    createSceneRenderPass();
-
-    swapChain->createFramebuffers(ctx, **sceneRenderPass);
-
     createCommandPool();
     createCommandBuffers();
 
@@ -92,10 +87,9 @@ VulkanRenderer::VulkanRenderer() {
     updateGraphicsUniformBuffer();
 
     createPrepassTextures();
-    createPrepassRenderPass();
+    createPrepassRenderInfo();
     createPrepassDescriptorSets();
     createPrepassPipeline();
-    createPrepassFramebuffer();
 
     createIblTextures();
 
@@ -103,24 +97,21 @@ VulkanRenderer::VulkanRenderer() {
     createSkyboxDescriptorSets();
     createSkyboxPipeline();
 
-    createCubemapCaptureRenderPass();
+    createCubemapCaptureRenderInfo();
     createCubemapCaptureDescriptorSet();
     createCubemapCapturePipeline();
-    createCubemapCaptureFramebuffer();
 
     createEnvmapConvoluteDescriptorSet();
-    createEnvmapConvoluteRenderPass();
 
+    createIrradianceCaptureRenderInfo();
     createIrradianceCapturePipeline();
-    createIrradianceCaptureFramebuffer();
 
+    createPrefilterRenderInfo();
     createPrefilterPipeline();
-    createPrefilterFramebuffers();
 
     createScreenSpaceQuadVertexBuffer();
-    createBrdfIntegrationRenderPass();
+    createBrdfIntegrationRenderInfo();
     createBrdfIntegrationPipeline();
-    createBrdfIntegrationFramebuffer();
     computeBrdfIntegrationMap();
 
     createSceneDescriptorSets();
@@ -345,6 +336,27 @@ bool VulkanRenderer::isDeviceSuitable(const vk::raii::PhysicalDevice &physicalDe
         return false;
     }
 
+    const auto supportedFeatures2Chain = physicalDevice.getFeatures2<
+        vk::PhysicalDeviceFeatures2,
+        vk::PhysicalDeviceVulkan12Features,
+        vk::PhysicalDeviceSynchronization2FeaturesKHR,
+        vk::PhysicalDeviceDynamicRenderingFeatures>();
+
+    const auto vulkan12Features = supportedFeatures2Chain.get<vk::PhysicalDeviceVulkan12Features>();
+    if (!vulkan12Features.timelineSemaphore) {
+        return false;
+    }
+
+    const auto sync2Features = supportedFeatures2Chain.get<vk::PhysicalDeviceSynchronization2FeaturesKHR>();
+    if (!sync2Features.synchronization2) {
+        return false;
+    }
+
+    const auto dynamicRenderFeatures = supportedFeatures2Chain.get<vk::PhysicalDeviceDynamicRenderingFeatures>();
+    if (!dynamicRenderFeatures.dynamicRendering) {
+        return false;
+    }
+
     return true;
 }
 
@@ -415,7 +427,12 @@ void VulkanRenderer::createLogicalDevice() {
         .samplerAnisotropy = vk::True,
     };
 
+    vk::PhysicalDeviceDynamicRenderingFeatures dynamicRenderFeatures{
+        .dynamicRendering = vk::True,
+    };
+
     vk::PhysicalDeviceSynchronization2FeaturesKHR sync2Features{
+        .pNext = &dynamicRenderFeatures,
         .synchronization2 = vk::True,
     };
 
@@ -647,10 +664,8 @@ void VulkanRenderer::recreateSwapChain() {
         window,
         msaaSampleCount
     );
-    swapChain->createFramebuffers(ctx, **sceneRenderPass);
 
     createPrepassTextures();
-    createPrepassFramebuffer();
 }
 
 // ==================== descriptors ====================
@@ -807,133 +822,113 @@ void VulkanRenderer::createEnvmapConvoluteDescriptorSet() {
             .commitUpdates(ctx);
 }
 
-// ==================== render passes ====================
+// ==================== render infos ====================
 
-void VulkanRenderer::createSceneRenderPass() {
-    auto renderPass = RenderPassBuilder()
-            .addColorAttachment({
-                .format = swapChain->getImageFormat(),
-                .samples = msaaSampleCount,
-                .loadOp = vk::AttachmentLoadOp::eClear,
-                .storeOp = vk::AttachmentStoreOp::eStore,
-                .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-                .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-                .initialLayout = vk::ImageLayout::eUndefined,
-                .finalLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            })
-            .useDepthStencilAttachment({
-                .format = swapChain->getDepthFormat(),
-                .samples = msaaSampleCount,
-                .loadOp = vk::AttachmentLoadOp::eClear,
-                .storeOp = vk::AttachmentStoreOp::eDontCare,
-                .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-                .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-                .initialLayout = vk::ImageLayout::eUndefined,
-                .finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
-            })
-            .addResolveAttachment({
-                .format = swapChain->getImageFormat(),
-                .samples = vk::SampleCountFlagBits::e1,
-                .loadOp = vk::AttachmentLoadOp::eDontCare,
-                .storeOp = vk::AttachmentStoreOp::eStore,
-                .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-                .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-                .initialLayout = vk::ImageLayout::eUndefined,
-                .finalLayout = vk::ImageLayout::ePresentSrcKHR,
-            })
-            .create(ctx);
-
-    sceneRenderPass = make_unique<RenderPass>(std::move(renderPass));
+vk::RenderingInfo RenderInfo::get(const vk::Extent2D extent, const uint32_t layers,
+                                  const vk::RenderingFlags flags) const {
+    return {
+        .flags = flags,
+        .renderArea = {
+            .offset = {0, 0},
+            .extent = extent
+        },
+        .layerCount = layers,
+        .colorAttachmentCount = static_cast<uint32_t>(colorAttachments.size()),
+        .pColorAttachments = colorAttachments.data(),
+        .pDepthAttachment = depthAttachment ? &depthAttachment.value() : nullptr
+    };
 }
 
-void VulkanRenderer::createPrepassRenderPass() {
-    auto renderPass = RenderPassBuilder()
-            .addColorAttachment({
-                .format = prepassNormalFormat,
-                .samples = vk::SampleCountFlagBits::e1,
-                .loadOp = vk::AttachmentLoadOp::eClear,
-                .storeOp = vk::AttachmentStoreOp::eStore,
-                .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-                .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-                .initialLayout = vk::ImageLayout::eUndefined,
-                .finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-            })
-            .useDepthStencilAttachment({
-                .format = swapChain->getDepthFormat(),
-                .samples = vk::SampleCountFlagBits::e1,
-                .loadOp = vk::AttachmentLoadOp::eClear,
-                .storeOp = vk::AttachmentStoreOp::eDontCare,
-                .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-                .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-                .initialLayout = vk::ImageLayout::eUndefined,
-                .finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-            })
-            .create(ctx);
-
-    prepassRenderPass = make_unique<RenderPass>(std::move(renderPass));
-}
-
-void VulkanRenderer::createCubemapCaptureRenderPass() {
-    auto builder = RenderPassBuilder();
-
-    for (uint32_t i = 0; i < 6; i++) {
-        if (i > 0) {
-            builder.beginNewSubpass();
-        }
-
-        builder.addColorAttachment({
-            .format = hdrEnvmapFormat,
-            .samples = vk::SampleCountFlagBits::e1,
+void VulkanRenderer::createPrepassRenderInfo() {
+    const std::vector colorAttachments{
+        vk::RenderingAttachmentInfo{
+            .imageView = *gBufferTextures.normal->getView(),
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
             .loadOp = vk::AttachmentLoadOp::eClear,
             .storeOp = vk::AttachmentStoreOp::eStore,
-            .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-            .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-            .initialLayout = vk::ImageLayout::eUndefined,
-            .finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        });
-    }
+            .clearValue = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f},
+        }
+    };
 
-    cubemapCaptureRenderPass = make_unique<RenderPass>(builder.create(ctx));
+    const vk::RenderingAttachmentInfo depthAttachment{
+        .imageView = *gBufferTextures.depth->getView(),
+        .imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
+        .loadOp = vk::AttachmentLoadOp::eClear,
+        .storeOp = vk::AttachmentStoreOp::eDontCare,
+        .clearValue = vk::ClearDepthStencilValue{
+            .depth = 1.0f,
+            .stencil = 0,
+        },
+    };
+
+    prepassRenderInfo = {
+        .colorAttachments = colorAttachments,
+        .depthAttachment = depthAttachment
+    };
 }
 
-void VulkanRenderer::createEnvmapConvoluteRenderPass() {
-    auto builder = RenderPassBuilder();
-
-    for (uint32_t i = 0; i < 6; i++) {
-        if (i > 0) {
-            builder.beginNewSubpass();
-        }
-
-        builder.addColorAttachment({
-            .format = hdrEnvmapFormat,
-            .samples = vk::SampleCountFlagBits::e1,
+void VulkanRenderer::createCubemapCaptureRenderInfo() {
+    const std::vector colorAttachments{
+        vk::RenderingAttachmentInfo{
+            .imageView = *skyboxTexture->getAttachmentView(),
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
             .loadOp = vk::AttachmentLoadOp::eClear,
             .storeOp = vk::AttachmentStoreOp::eStore,
-            .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-            .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-            .initialLayout = vk::ImageLayout::eUndefined,
-            .finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        });
-    }
+            .clearValue = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f},
+        }
+    };
 
-    envmapConvoluteRenderPass = make_unique<RenderPass>(builder.create(ctx));
+    cubemapCaptureRenderInfo = {
+        .colorAttachments = colorAttachments,
+    };
 }
 
-void VulkanRenderer::createBrdfIntegrationRenderPass() {
-    auto renderPass = RenderPassBuilder()
-            .addColorAttachment({
-                .format = brdfIntegrationMapFormat,
-                .samples = vk::SampleCountFlagBits::e1,
-                .loadOp = vk::AttachmentLoadOp::eClear,
-                .storeOp = vk::AttachmentStoreOp::eStore,
-                .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-                .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-                .initialLayout = vk::ImageLayout::eUndefined,
-                .finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-            })
-            .create(ctx);
+void VulkanRenderer::createIrradianceCaptureRenderInfo() {
+    const std::vector colorAttachments{
+        vk::RenderingAttachmentInfo{
+            .imageView = *irradianceMapTexture->getAttachmentView(),
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .clearValue = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f},
+        }
+    };
 
-    brdfIntegrationRenderPass = make_unique<RenderPass>(std::move(renderPass));
+    irradianceCaptureRenderInfo = {
+        .colorAttachments = colorAttachments,
+    };
+}
+
+void VulkanRenderer::createPrefilterRenderInfo() {
+    const std::vector colorAttachments{
+        vk::RenderingAttachmentInfo{
+            .imageView = *prefilteredEnvmapTexture->getAttachmentView(),
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .clearValue = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f},
+        }
+    };
+
+    prefilterRenderInfo = {
+        .colorAttachments = colorAttachments,
+    };
+}
+
+void VulkanRenderer::createBrdfIntegrationRenderInfo() {
+    const std::vector colorAttachments{
+        vk::RenderingAttachmentInfo{
+            .imageView = *brdfIntegrationMapTexture->getAttachmentView(),
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .clearValue = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f},
+        }
+    };
+
+    brdfIntegrationRenderInfo = {
+        .colorAttachments = colorAttachments,
+    };
 }
 
 // ==================== pipelines ====================
@@ -956,7 +951,9 @@ void VulkanRenderer::createScenePipeline() {
             .withDescriptorLayouts({
                 *frameResources[0].sceneDescriptorSet->getLayout(),
             })
-            .create(ctx, **sceneRenderPass);
+            .withColorFormats({swapChain->getImageFormat()})
+            .withDepthFormat(swapChain->getDepthFormat())
+            .create(ctx);
 
     scenePipeline = make_unique<PipelinePack>(std::move(pipeline));
 }
@@ -983,7 +980,9 @@ void VulkanRenderer::createSkyboxPipeline() {
             .withDescriptorLayouts({
                 *frameResources[0].skyboxDescriptorSet->getLayout(),
             })
-            .create(ctx, **sceneRenderPass);
+            .withColorFormats({swapChain->getImageFormat()})
+            .withDepthFormat(swapChain->getDepthFormat())
+            .create(ctx);
 
     skyboxPipeline = make_unique<PipelinePack>(std::move(pipeline));
 }
@@ -1002,7 +1001,9 @@ void VulkanRenderer::createPrepassPipeline() {
             .withDescriptorLayouts({
                 *frameResources[0].prepassDescriptorSet->getLayout(),
             })
-            .create(ctx, **prepassRenderPass);
+            .withColorFormats({gBufferTextures.normal->getFormat()})
+            .withDepthFormat(swapChain->getDepthFormat())
+            .create(ctx);
 
     prepassPipeline = make_unique<PipelinePack>(std::move(pipeline));
 }
@@ -1033,7 +1034,8 @@ void VulkanRenderer::createCubemapCapturePipeline() {
                 }
             })
             .forSubpasses(6)
-            .create(ctx, **cubemapCaptureRenderPass);
+            .withColorFormats({hdrEnvmapFormat})
+            .create(ctx);
 
     cubemapCapturePipelines = make_unique<PipelinePack>(std::move(pipeline));
 }
@@ -1064,7 +1066,8 @@ void VulkanRenderer::createIrradianceCapturePipeline() {
                 }
             })
             .forSubpasses(6)
-            .create(ctx, **envmapConvoluteRenderPass);
+            .withColorFormats({hdrEnvmapFormat})
+            .create(ctx);
 
     irradianceCapturePipelines = make_unique<PipelinePack>(std::move(pipeline));
 }
@@ -1095,7 +1098,8 @@ void VulkanRenderer::createPrefilterPipeline() {
                 }
             })
             .forSubpasses(6)
-            .create(ctx, **envmapConvoluteRenderPass);
+            .withColorFormats({hdrEnvmapFormat})
+            .create(ctx);
 
     prefilterPipelines = make_unique<PipelinePack>(std::move(pipeline));
 }
@@ -1115,7 +1119,8 @@ void VulkanRenderer::createBrdfIntegrationPipeline() {
                 .depthTestEnable = vk::False,
                 .depthWriteEnable = vk::False,
             })
-            .create(ctx, **brdfIntegrationRenderPass);
+            .withColorFormats({brdfIntegrationMapFormat})
+            .create(ctx);
 
     brdfIntegrationPipeline = make_unique<PipelinePack>(std::move(pipeline));
 }
@@ -1201,114 +1206,6 @@ void VulkanRenderer::createUniformBuffers() {
     }
 }
 
-void VulkanRenderer::createPrepassFramebuffer() {
-    std::vector attachments{
-        *gBufferTextures.normal->getView(),
-        *gBufferTextures.depth->getView()
-    };
-
-    const vk::Extent2D extent = swapChain->getExtent();
-
-    const vk::FramebufferCreateInfo createInfo{
-        .renderPass = ***prepassRenderPass,
-        .attachmentCount = static_cast<uint32_t>(attachments.size()),
-        .pAttachments = attachments.data(),
-        .width = extent.width,
-        .height = extent.height,
-        .layers = 1,
-    };
-
-    prepassFramebuffer = make_unique<vk::raii::Framebuffer>(*ctx.device, createInfo);
-}
-
-void VulkanRenderer::createCubemapCaptureFramebuffer() {
-    cubemapCaptureFramebuffer = createPerLayerCubemapFramebuffer(
-        *skyboxTexture,
-        **cubemapCaptureRenderPass
-    );
-}
-
-void VulkanRenderer::createIrradianceCaptureFramebuffer() {
-    irradianceCaptureFramebuffer = createPerLayerCubemapFramebuffer(
-        *irradianceMapTexture,
-        **envmapConvoluteRenderPass
-    );
-}
-
-void VulkanRenderer::createPrefilterFramebuffers() {
-    prefilterFramebuffers.clear();
-
-    for (uint32_t mip = 0; mip < maxPrefilterMipLevels; mip++) {
-        prefilterFramebuffers.emplace_back(
-            createMipPerLayerCubemapFramebuffer(
-                *prefilteredEnvmapTexture,
-                **envmapConvoluteRenderPass,
-                mip
-            )
-        );
-    }
-}
-
-void VulkanRenderer::createBrdfIntegrationFramebuffer() {
-    std::vector attachments{*brdfIntegrationMapTexture->getAttachmentView()};
-
-    const vk::Extent3D extent = brdfIntegrationMapTexture->getImage().getExtent();
-
-    const vk::FramebufferCreateInfo createInfo{
-        .renderPass = ***brdfIntegrationRenderPass,
-        .attachmentCount = static_cast<uint32_t>(attachments.size()),
-        .pAttachments = attachments.data(),
-        .width = extent.width,
-        .height = extent.height,
-        .layers = 1,
-    };
-
-    brdfIntegrationFramebuffer = make_unique<vk::raii::Framebuffer>(*ctx.device, createInfo);
-}
-
-unique_ptr<vk::raii::Framebuffer>
-VulkanRenderer::createPerLayerCubemapFramebuffer(const Texture &texture, const vk::raii::RenderPass &renderPass) const {
-    std::vector<vk::ImageView> attachments;
-
-    for (uint32_t i = 0; i < 6; i++) {
-        attachments.push_back(*texture.getAttachmentLayerView(i));
-    }
-
-    const vk::FramebufferCreateInfo createInfo{
-        .renderPass = *renderPass,
-        .attachmentCount = static_cast<uint32_t>(attachments.size()),
-        .pAttachments = attachments.data(),
-        .width = texture.getImage().getExtent().width,
-        .height = texture.getImage().getExtent().height,
-        .layers = 1,
-    };
-
-    return make_unique<vk::raii::Framebuffer>(*ctx.device, createInfo);
-}
-
-unique_ptr<vk::raii::Framebuffer>
-VulkanRenderer::createMipPerLayerCubemapFramebuffer(const Texture &texture, const vk::raii::RenderPass &renderPass,
-                                                    const uint32_t mipLevel) const {
-    std::vector<vk::ImageView> attachments;
-
-    for (uint32_t layer = 0; layer < 6; layer++) {
-        attachments.push_back(*texture.getLayerMipView(layer, mipLevel));
-    }
-
-    const uint32_t mipScalingFactor = 1 << mipLevel;
-
-    const vk::FramebufferCreateInfo createInfo{
-        .renderPass = *renderPass,
-        .attachmentCount = static_cast<uint32_t>(attachments.size()),
-        .pAttachments = attachments.data(),
-        .width = texture.getImage().getExtent().width / mipScalingFactor,
-        .height = texture.getImage().getExtent().height / mipScalingFactor,
-        .layers = 1,
-    };
-
-    return make_unique<vk::raii::Framebuffer>(*ctx.device, createInfo);
-}
-
 // ==================== commands ====================
 
 void VulkanRenderer::createCommandPool() {
@@ -1355,55 +1252,25 @@ void VulkanRenderer::createCommandBuffers() {
 void VulkanRenderer::recordGraphicsCommandBuffer() {
     const auto &commandBuffer = *frameResources[currentFrameIdx].graphicsCmdBuffer;
 
-    const vk::Extent2D swapChainExtent = swapChain->getExtent();
-
-    const vk::ClearColorValue clearColor{backgroundColor.x, backgroundColor.y, backgroundColor.z, 1.0f};
-
-    const std::vector<vk::ClearValue> clearValues{
-        clearColor,
-        vk::ClearDepthStencilValue{
-            .depth = 1.0f,
-            .stencil = 0,
-        }
-    };
-
-    const vk::RenderPassBeginInfo prepassInfo{
-        .renderPass = ***prepassRenderPass,
-        .framebuffer = **prepassFramebuffer,
-        .renderArea = {
-            .offset = {0, 0},
-            .extent = swapChainExtent
-        },
-        .clearValueCount = static_cast<uint32_t>(clearValues.size()),
-        .pClearValues = clearValues.data()
-    };
-
-    const vk::RenderPassBeginInfo mainPassInfo{
-        .renderPass = ***sceneRenderPass,
-        .framebuffer = *swapChain->getCurrentFramebuffer(),
-        .renderArea = {
-            .offset = {0, 0},
-            .extent = swapChainExtent
-        },
-        .clearValueCount = static_cast<uint32_t>(clearValues.size()),
-        .pClearValues = clearValues.data()
-    };
+    constexpr auto renderingFlags = vk::RenderingFlagBits::eContentsSecondaryCommandBuffers;
 
     constexpr vk::CommandBufferBeginInfo beginInfo;
     commandBuffer.begin(beginInfo);
 
+    swapChain->transitionToAttachmentLayout(commandBuffer);
+
     // prepass
 
-    commandBuffer.beginRenderPass(prepassInfo, vk::SubpassContents::eSecondaryCommandBuffers);
+    commandBuffer.beginRendering(prepassRenderInfo.get(swapChain->getExtent(), 1, renderingFlags));
 
     runPrepass();
     commandBuffer.executeCommands(**frameResources[currentFrameIdx].prepassCmdBuffer);
 
-    commandBuffer.endRenderPass();
+    commandBuffer.endRendering();
 
     // main pass
 
-    commandBuffer.beginRenderPass(mainPassInfo, vk::SubpassContents::eSecondaryCommandBuffers);
+    commandBuffer.beginRendering(swapChain->getRenderInfo().get(swapChain->getExtent(), 1, renderingFlags));
 
     if (frameResources[currentFrameIdx].sceneCmdBuffer.wasRecordedThisFrame) {
         commandBuffer.executeCommands(**frameResources[currentFrameIdx].sceneCmdBuffer);
@@ -1413,7 +1280,9 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
         commandBuffer.executeCommands(**frameResources[currentFrameIdx].guiCmdBuffer);
     }
 
-    commandBuffer.endRenderPass();
+    commandBuffer.endRendering();
+
+    swapChain->transitionToPresentLayout(commandBuffer);
 
     commandBuffer.end();
 }
@@ -1478,9 +1347,10 @@ void VulkanRenderer::initImgui() {
         .MinImageCount = imageCount,
         .ImageCount = imageCount,
         .MSAASamples = static_cast<VkSampleCountFlagBits>(msaaSampleCount),
+        .UseDynamicRendering = true,
     };
 
-    guiRenderer = make_unique<GuiRenderer>(window, imguiInitInfo, **sceneRenderPass);
+    guiRenderer = make_unique<GuiRenderer>(window, imguiInitInfo);
 }
 
 void VulkanRenderer::renderGuiSection() {
@@ -1539,16 +1409,7 @@ void VulkanRenderer::tick(const float deltaTime) {
 void VulkanRenderer::renderGui(const std::function<void()> &renderCommands) {
     const auto &commandBuffer = *frameResources[currentFrameIdx].guiCmdBuffer.buffer;
 
-    const vk::CommandBufferInheritanceInfo inheritanceInfo{
-        .renderPass = ***sceneRenderPass,
-        .framebuffer = *swapChain->getCurrentFramebuffer(),
-    };
-
-    const vk::CommandBufferBeginInfo beginInfo{
-        .flags = vk::CommandBufferUsageFlagBits::eRenderPassContinue,
-        .pInheritanceInfo = &inheritanceInfo,
-    };
-
+    constexpr vk::CommandBufferBeginInfo beginInfo;
     commandBuffer.begin(beginInfo);
 
     guiRenderer->startRendering();
@@ -1685,9 +1546,17 @@ void VulkanRenderer::runPrepass() {
 
     const vk::Extent2D swapChainExtent = swapChain->getExtent();
 
+    const std::vector colorAttachmentFormats{gBufferTextures.normal->getFormat()};
+
+    const vk::CommandBufferInheritanceRenderingInfo inheritanceRenderingInfo{
+        .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
+        .pColorAttachmentFormats = colorAttachmentFormats.data(),
+        .depthAttachmentFormat = swapChain->getDepthFormat(),
+        .rasterizationSamples = vk::SampleCountFlagBits::e1,
+    };
+
     const vk::CommandBufferInheritanceInfo inheritanceInfo{
-        .renderPass = ***prepassRenderPass,
-        .framebuffer = **prepassFramebuffer,
+        .pNext = &inheritanceRenderingInfo
     };
 
     const vk::CommandBufferBeginInfo beginInfo{
@@ -1729,9 +1598,17 @@ void VulkanRenderer::drawScene() {
 
     const vk::Extent2D swapChainExtent = swapChain->getExtent();
 
+    const std::vector colorAttachmentFormats{swapChain->getImageFormat()};
+
+    const vk::CommandBufferInheritanceRenderingInfo inheritanceRenderingInfo{
+        .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
+        .pColorAttachmentFormats = colorAttachmentFormats.data(),
+        .depthAttachmentFormat = swapChain->getDepthFormat(),
+        .rasterizationSamples = msaaSampleCount,
+    };
+
     const vk::CommandBufferInheritanceInfo inheritanceInfo{
-        .renderPass = ***sceneRenderPass,
-        .framebuffer = *swapChain->getCurrentFramebuffer(),
+        .pNext = &inheritanceRenderingInfo
     };
 
     const vk::CommandBufferBeginInfo beginInfo{
@@ -1822,25 +1699,11 @@ static const std::array cubemapFaceViews{
 void VulkanRenderer::captureCubemap() {
     const vk::Extent2D extent = skyboxTexture->getImage().getExtent2d();
 
-    constexpr vk::ClearColorValue clearColor{0, 0, 0, 1};
-    const std::vector<vk::ClearValue> clearValues{6, clearColor};
-
-    const vk::RenderPassBeginInfo renderPassInfo{
-        .renderPass = ***cubemapCaptureRenderPass,
-        .framebuffer = **cubemapCaptureFramebuffer,
-        .renderArea = {
-            .offset = {0, 0},
-            .extent = extent,
-        },
-        .clearValueCount = static_cast<uint32_t>(clearValues.size()),
-        .pClearValues = clearValues.data()
-    };
-
     const auto commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
 
     utils::cmd::setDynamicStates(commandBuffer, extent);
 
-    commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+    commandBuffer.beginRendering(cubemapCaptureRenderInfo.get(extent, 6));
 
     commandBuffer.bindVertexBuffers(0, **skyboxVertexBuffer, {0});
 
@@ -1869,13 +1732,9 @@ void VulkanRenderer::captureCubemap() {
         );
 
         commandBuffer.draw(skyboxVertices.size(), 1, 0, 0);
-
-        if (i != 5) {
-            commandBuffer.nextSubpass(vk::SubpassContents::eInline);
-        }
     }
 
-    commandBuffer.endRenderPass();
+    commandBuffer.endRendering();
 
     skyboxTexture->getImage().transitionLayout(
         vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -1896,25 +1755,11 @@ void VulkanRenderer::captureCubemap() {
 void VulkanRenderer::captureIrradianceMap() {
     const vk::Extent2D extent = irradianceMapTexture->getImage().getExtent2d();
 
-    constexpr vk::ClearColorValue clearColor{0, 0, 0, 1};
-    const std::vector<vk::ClearValue> clearValues{6, clearColor};
-
-    const vk::RenderPassBeginInfo renderPassInfo{
-        .renderPass = ***envmapConvoluteRenderPass,
-        .framebuffer = **irradianceCaptureFramebuffer,
-        .renderArea = {
-            .offset = {0, 0},
-            .extent = extent,
-        },
-        .clearValueCount = static_cast<uint32_t>(clearValues.size()),
-        .pClearValues = clearValues.data()
-    };
-
     const auto commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
 
     utils::cmd::setDynamicStates(commandBuffer, extent);
 
-    commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+    commandBuffer.beginRendering(irradianceCaptureRenderInfo.get(extent, 6));
 
     commandBuffer.bindVertexBuffers(0, **skyboxVertexBuffer, {0});
 
@@ -1943,13 +1788,9 @@ void VulkanRenderer::captureIrradianceMap() {
         );
 
         commandBuffer.draw(skyboxVertices.size(), 1, 0, 0);
-
-        if (i != 5) {
-            commandBuffer.nextSubpass(vk::SubpassContents::eInline);
-        }
     }
 
-    commandBuffer.endRenderPass();
+    commandBuffer.endRendering();
 
     irradianceMapTexture->getImage().transitionLayout(
         vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -1968,9 +1809,6 @@ void VulkanRenderer::captureIrradianceMap() {
 }
 
 void VulkanRenderer::prefilterEnvmap() {
-    constexpr vk::ClearColorValue clearColor{0, 0, 0, 1};
-    const std::vector<vk::ClearValue> clearValues{6, clearColor};
-
     const auto commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
 
     for (uint32_t mipLevel = 0; mipLevel < maxPrefilterMipLevels; mipLevel++) {
@@ -1982,18 +1820,7 @@ void VulkanRenderer::prefilterEnvmap() {
 
         utils::cmd::setDynamicStates(commandBuffer, extent);
 
-        const vk::RenderPassBeginInfo renderPassInfo{
-            .renderPass = ***envmapConvoluteRenderPass,
-            .framebuffer = **prefilterFramebuffers[mipLevel],
-            .renderArea = {
-                .offset = {0, 0},
-                .extent = extent,
-            },
-            .clearValueCount = static_cast<uint32_t>(clearValues.size()),
-            .pClearValues = clearValues.data()
-        };
-
-        commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+        commandBuffer.beginRendering(prefilterRenderInfo.get(extent, 6));
 
         commandBuffer.bindVertexBuffers(0, **skyboxVertexBuffer, {0});
 
@@ -2023,13 +1850,9 @@ void VulkanRenderer::prefilterEnvmap() {
             );
 
             commandBuffer.draw(skyboxVertices.size(), 1, 0, 0);
-
-            if (i != 5) {
-                commandBuffer.nextSubpass(vk::SubpassContents::eInline);
-            }
         }
 
-        commandBuffer.endRenderPass();
+        commandBuffer.endRendering();
     }
 
     utils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
@@ -2041,25 +1864,11 @@ void VulkanRenderer::computeBrdfIntegrationMap() {
         .height = brdfIntegrationMapTexture->getImage().getExtent().height
     };
 
-    constexpr vk::ClearColorValue clearColor{0, 0, 0, 1};
-    const std::vector<vk::ClearValue> clearValues{clearColor};
-
-    const vk::RenderPassBeginInfo renderPassInfo{
-        .renderPass = ***brdfIntegrationRenderPass,
-        .framebuffer = **brdfIntegrationFramebuffer,
-        .renderArea = {
-            .offset = {0, 0},
-            .extent = extent,
-        },
-        .clearValueCount = static_cast<uint32_t>(clearValues.size()),
-        .pClearValues = clearValues.data()
-    };
-
     const auto commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
 
     utils::cmd::setDynamicStates(commandBuffer, extent);
 
-    commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+    commandBuffer.beginRendering(brdfIntegrationRenderInfo.get(extent, 6));
 
     commandBuffer.bindVertexBuffers(0, **screenSpaceQuadVertexBuffer, {0});
 
@@ -2067,7 +1876,7 @@ void VulkanRenderer::computeBrdfIntegrationMap() {
 
     commandBuffer.draw(screenSpaceQuadVertices.size(), 1, 0, 0);
 
-    commandBuffer.endRenderPass();
+    commandBuffer.endRendering();
 
     utils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
 }

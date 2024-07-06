@@ -8,7 +8,7 @@
 struct RendererContext;
 
 class PipelinePack {
-    std::vector<unique_ptr<vk::raii::Pipeline>> pipelines;
+    std::vector<unique_ptr<vk::raii::Pipeline> > pipelines;
     unique_ptr<vk::raii::PipelineLayout> layout;
 
     friend class PipelineBuilder;
@@ -16,11 +16,11 @@ class PipelinePack {
     PipelinePack() = default;
 
 public:
-    [[nodiscard]] const vk::raii::Pipeline& operator*() const { return *pipelines[0]; }
+    [[nodiscard]] const vk::raii::Pipeline &operator*() const { return *pipelines[0]; }
 
-    [[nodiscard]] const vk::raii::Pipeline& operator[](const uint32_t idx) const { return *pipelines[idx]; }
+    [[nodiscard]] const vk::raii::Pipeline &operator[](const uint32_t idx) const { return *pipelines[idx]; }
 
-    [[nodiscard]] const vk::raii::PipelineLayout& getLayout() const { return *layout; }
+    [[nodiscard]] const vk::raii::PipelineLayout &getLayout() const { return *layout; }
 };
 
 class PipelineBuilder {
@@ -39,27 +39,33 @@ class PipelineBuilder {
     std::optional<vk::PipelineMultisampleStateCreateInfo> multisamplingOverride;
     std::optional<vk::PipelineDepthStencilStateCreateInfo> depthStencilOverride;
 
-public:
-    PipelineBuilder& withVertexShader(const std::filesystem::path &path);
+    vk::PipelineRenderingCreateInfo renderingInfo;
 
-    PipelineBuilder& withFragmentShader(const std::filesystem::path &path);
+public:
+    PipelineBuilder &withVertexShader(const std::filesystem::path &path);
+
+    PipelineBuilder &withFragmentShader(const std::filesystem::path &path);
 
     template<typename T>
-    PipelineBuilder& withVertices();
+    PipelineBuilder &withVertices();
 
     PipelineBuilder &withDescriptorLayouts(const std::vector<vk::DescriptorSetLayout> &layouts);
 
     PipelineBuilder &withPushConstants(const std::vector<vk::PushConstantRange> &ranges);
 
-    PipelineBuilder &withRasterizer(const vk::PipelineRasterizationStateCreateInfo& rasterizer);
+    PipelineBuilder &withRasterizer(const vk::PipelineRasterizationStateCreateInfo &rasterizer);
 
-    PipelineBuilder &withMultisampling(const vk::PipelineMultisampleStateCreateInfo& multisampling);
+    PipelineBuilder &withMultisampling(const vk::PipelineMultisampleStateCreateInfo &multisampling);
 
-    PipelineBuilder &withDepthStencil(const vk::PipelineDepthStencilStateCreateInfo& depthStencil);
+    PipelineBuilder &withDepthStencil(const vk::PipelineDepthStencilStateCreateInfo &depthStencil);
 
     PipelineBuilder &forSubpasses(uint32_t count);
 
-    [[nodiscard]] PipelinePack create(const RendererContext &ctx, const vk::raii::RenderPass& renderPass) const;
+    PipelineBuilder &withColorFormats(const std::vector<vk::Format> &formats);
+
+    PipelineBuilder &withDepthFormat(vk::Format format);
+
+    [[nodiscard]] PipelinePack create(const RendererContext &ctx) const;
 
 private:
     void checkParams() const;

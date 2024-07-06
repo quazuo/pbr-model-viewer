@@ -52,7 +52,18 @@ PipelineBuilder &PipelineBuilder::forSubpasses(const uint32_t count) {
     return *this;
 }
 
-PipelinePack PipelineBuilder::create(const RendererContext &ctx, const vk::raii::RenderPass &renderPass) const {
+PipelineBuilder &PipelineBuilder::withColorFormats(const std::vector<vk::Format> &formats) {
+    renderingInfo.colorAttachmentCount = static_cast<uint32_t>(formats.size());
+    renderingInfo.pColorAttachmentFormats = formats.data();
+    return *this;
+}
+
+PipelineBuilder & PipelineBuilder::withDepthFormat(const vk::Format format) {
+    renderingInfo.depthAttachmentFormat = format;
+    return *this;
+}
+
+PipelinePack PipelineBuilder::create(const RendererContext &ctx) const {
     PipelinePack result;
 
     vk::raii::ShaderModule vertShaderModule = createShaderModule(ctx, vertexShaderPath);
@@ -150,6 +161,7 @@ PipelinePack PipelineBuilder::create(const RendererContext &ctx, const vk::raii:
 
     for (uint32_t subpassIndex = 0; subpassIndex < subpassCount; subpassIndex++) {
         const vk::GraphicsPipelineCreateInfo pipelineInfo{
+            .pNext = &renderingInfo,
             .stageCount = static_cast<uint32_t>(shaderStages.size()),
             .pStages = shaderStages.data(),
             .pVertexInputState = &vertexInputInfo,
@@ -161,7 +173,6 @@ PipelinePack PipelineBuilder::create(const RendererContext &ctx, const vk::raii:
             .pColorBlendState = &colorBlending,
             .pDynamicState = &dynamicState,
             .layout = **result.layout,
-            .renderPass = *renderPass,
             .subpass = subpassIndex,
         };
 

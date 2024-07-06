@@ -18,6 +18,7 @@ struct SwapChainSupportDetails {
 struct RendererContext;
 struct QueueFamilyIndices;
 struct GLFWwindow;
+struct RenderInfo;
 
 /**
  * Abstraction over a Vulkan swap chain, making it easier to manage by hiding all the Vulkan API calls.
@@ -66,11 +67,12 @@ public:
     [[nodiscard]] uint32_t getCurrentImageIndex() const { return currentImageIndex; }
 
     /**
-     * Returns the framebuffer associated with the most recently acquired image.
-     * @return The most recent framebuffer.
+     * Returns the image view associated with the most recently acquired image.
+     * @return The most recent image view.
      */
-    [[nodiscard]] const vk::raii::Framebuffer &
-    getCurrentFramebuffer() const { return *framebuffers[currentImageIndex]; }
+    [[nodiscard]] const vk::raii::ImageView &getCurrentImageView() const { return *imageViews[currentImageIndex]; }
+
+    [[nodiscard]] RenderInfo getRenderInfo() const;
 
     /**
      * Requests a new image from the swap chain and signals a given semaphore when the image is available.
@@ -81,7 +83,9 @@ public:
 
     [[nodiscard]] static uint32_t getImageCount(const RendererContext &ctx, const vk::raii::SurfaceKHR &surface);
 
-    void createFramebuffers(const RendererContext &ctx, const vk::raii::RenderPass &renderPass);
+    void transitionToAttachmentLayout(const vk::raii::CommandBuffer& commandBuffer) const;
+
+    void transitionToPresentLayout(const vk::raii::CommandBuffer& commandBuffer) const;
 
 private:
     void createImageViews(const RendererContext &ctx);

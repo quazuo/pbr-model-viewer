@@ -66,6 +66,91 @@ uint32_t SwapChain::getImageCount(const RendererContext &ctx, const vk::raii::Su
     return imageCount;
 }
 
+void SwapChain::transitionToAttachmentLayout(const vk::raii::CommandBuffer &commandBuffer) const {
+    const vk::ImageMemoryBarrier barrier{
+        .dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
+        .oldLayout = vk::ImageLayout::eUndefined,
+        .newLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image = images[currentImageIndex],
+        .subresourceRange = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+          }
+    };
+
+    commandBuffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTopOfPipe,
+        vk::PipelineStageFlagBits::eColorAttachmentOutput,
+        {},
+        nullptr,
+        nullptr,
+        barrier
+    );
+}
+
+void SwapChain::transitionToPresentLayout(const vk::raii::CommandBuffer &commandBuffer) const {
+    const vk::ImageMemoryBarrier barrier{
+        .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
+        .oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        .newLayout = vk::ImageLayout::ePresentSrcKHR,
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image = images[currentImageIndex],
+        .subresourceRange = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+          }
+    };
+
+    commandBuffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eColorAttachmentOutput,
+        vk::PipelineStageFlagBits::eBottomOfPipe,
+        {},
+        nullptr,
+        nullptr,
+        barrier
+    );
+}
+
+RenderInfo SwapChain::getRenderInfo() const {
+    const std::vector colorAttachments{
+        vk::RenderingAttachmentInfo {
+            .imageView = *colorImage->getView(),
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .resolveMode = vk::ResolveModeFlagBits::eAverage,
+            .resolveImageView = *getCurrentImageView(),
+            .resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .clearValue = vk::ClearColorValue {0.0f, 0.0f, 0.0f, 1.0f},
+        }
+    };
+
+    const vk::RenderingAttachmentInfo depthAttachment {
+        .imageView = *depthImage->getView(),
+        .imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
+        .loadOp = vk::AttachmentLoadOp::eClear,
+        .storeOp = vk::AttachmentStoreOp::eDontCare,
+        .clearValue = vk::ClearDepthStencilValue{
+            .depth = 1.0f,
+            .stencil = 0,
+        },
+    };
+
+    return {
+        .colorAttachments = colorAttachments,
+        .depthAttachment = depthAttachment
+    };
+}
+
 std::pair<vk::Result, uint32_t> SwapChain::acquireNextImage(const vk::raii::Semaphore &semaphore) {
     try {
         const auto &[result, imageIndex] = swapChain->acquireNextImage(UINT64_MAX, *semaphore);
@@ -142,24 +227,6 @@ void SwapChain::createImageViews(const RendererContext &ctx) {
         );
 
         imageViews.push_back(std::move(imageView));
-    }
-}
-
-void SwapChain::createFramebuffers(const RendererContext &ctx, const vk::raii::RenderPass &renderPass) {
-    for (const auto &imageView: imageViews) {
-        const std::array attachments = {*colorImage->getView(), *depthImage->getView(), **imageView};
-
-        const vk::FramebufferCreateInfo createInfo{
-            .renderPass = *renderPass,
-            .attachmentCount = static_cast<uint32_t>(attachments.size()),
-            .pAttachments = attachments.data(),
-            .width = extent.width,
-            .height = extent.height,
-            .layers = 1,
-        };
-
-        auto framebuffer = make_unique<vk::raii::Framebuffer>(*ctx.device, createInfo);
-        framebuffers.emplace_back(std::move(framebuffer));
     }
 }
 

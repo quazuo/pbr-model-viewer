@@ -17,7 +17,6 @@ class Model;
 class Camera;
 class Buffer;
 class PipelinePack;
-class RenderPass;
 class DescriptorSet;
 class Texture;
 class SwapChain;
@@ -32,6 +31,7 @@ static constexpr std::array deviceExtensions{
     VK_KHR_MAINTENANCE2_EXTENSION_NAME,
     VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
     VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
+    VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
 };
 
 #ifdef NDEBUG
@@ -121,6 +121,14 @@ struct RendererContext {
     unique_ptr<VmaAllocatorWrapper> allocator;
 };
 
+struct RenderInfo {
+    std::vector<vk::RenderingAttachmentInfo> colorAttachments;
+    std::optional<vk::RenderingAttachmentInfo> depthAttachment;
+
+    [[nodiscard]] vk::RenderingInfo get(vk::Extent2D extent, uint32_t layers = 1,
+                                        vk::RenderingFlags flags = {}) const;
+};
+
 class VulkanRenderer {
     struct GLFWwindow *window = nullptr;
 
@@ -159,20 +167,14 @@ class VulkanRenderer {
 
     unique_ptr<vk::raii::DescriptorPool> descriptorPool;
 
-    unique_ptr<RenderPass> sceneRenderPass;
-    unique_ptr<RenderPass> prepassRenderPass;
-    unique_ptr<RenderPass> cubemapCaptureRenderPass;
-    unique_ptr<RenderPass> envmapConvoluteRenderPass;
-    unique_ptr<RenderPass> brdfIntegrationRenderPass;
-
-    unique_ptr<vk::raii::Framebuffer> prepassFramebuffer;
-    unique_ptr<vk::raii::Framebuffer> cubemapCaptureFramebuffer;
-    unique_ptr<vk::raii::Framebuffer> irradianceCaptureFramebuffer;
-    std::vector<unique_ptr<vk::raii::Framebuffer> > prefilterFramebuffers;
-    unique_ptr<vk::raii::Framebuffer> brdfIntegrationFramebuffer;
-
     unique_ptr<DescriptorSet> cubemapCaptureDescriptorSet;
     unique_ptr<DescriptorSet> envmapConvoluteDescriptorSet;
+
+    RenderInfo prepassRenderInfo;
+    RenderInfo cubemapCaptureRenderInfo;
+    RenderInfo irradianceCaptureRenderInfo;
+    RenderInfo prefilterRenderInfo;
+    RenderInfo brdfIntegrationRenderInfo;
 
     unique_ptr<PipelinePack> scenePipeline;
     unique_ptr<PipelinePack> skyboxPipeline;
@@ -355,17 +357,17 @@ private:
 
     void createEnvmapConvoluteDescriptorSet();
 
-    // ==================== render passes ====================
+    // ==================== render infos ====================
 
-    void createSceneRenderPass();
+    void createPrepassRenderInfo();
 
-    void createPrepassRenderPass();
+    void createCubemapCaptureRenderInfo();
 
-    void createCubemapCaptureRenderPass();
+    void createIrradianceCaptureRenderInfo();
 
-    void createEnvmapConvoluteRenderPass();
+    void createPrefilterRenderInfo();
 
-    void createBrdfIntegrationRenderPass();
+    void createBrdfIntegrationRenderInfo();
 
     // ==================== pipelines ====================
 
@@ -402,25 +404,6 @@ private:
 
     void createUniformBuffers();
 
-    // ==================== framebuffers ====================
-
-    void createPrepassFramebuffer();
-
-    void createCubemapCaptureFramebuffer();
-
-    void createIrradianceCaptureFramebuffer();
-
-    void createPrefilterFramebuffers();
-
-    void createBrdfIntegrationFramebuffer();
-
-    [[nodiscard]] unique_ptr<vk::raii::Framebuffer>
-    createPerLayerCubemapFramebuffer(const Texture &texture, const vk::raii::RenderPass &renderPass) const;
-
-    [[nodiscard]] unique_ptr<vk::raii::Framebuffer>
-    createMipPerLayerCubemapFramebuffer(const Texture &texture, const vk::raii::RenderPass &renderPass,
-                                        uint32_t mipLevel) const;
-
     // ==================== commands ====================
 
     void createCommandPool();
@@ -453,7 +436,7 @@ public:
     void drawScene();
 
 private:
-    void drawModel(const vk::raii::CommandBuffer& commandBuffer) const;
+    void drawModel(const vk::raii::CommandBuffer &commandBuffer) const;
 
     void captureCubemap();
 

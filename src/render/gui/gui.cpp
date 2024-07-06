@@ -1,7 +1,6 @@
 #include "gui.h"
 
-GuiRenderer::GuiRenderer(GLFWwindow *w, ImGui_ImplVulkan_InitInfo &imguiInitInfo,
-                         const vk::raii::RenderPass &renderPass) : window(w) {
+GuiRenderer::GuiRenderer(GLFWwindow *w, ImGui_ImplVulkan_InitInfo &imguiInitInfo) : window(w) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO &io = ImGui::GetIO();
@@ -11,7 +10,7 @@ GuiRenderer::GuiRenderer(GLFWwindow *w, ImGui_ImplVulkan_InitInfo &imguiInitInfo
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
 
-    ImGui_ImplVulkan_Init(&imguiInitInfo, static_cast<VkRenderPass>(*renderPass));
+    ImGui_ImplVulkan_Init(&imguiInitInfo, nullptr);
 
     imguiGizmo::setGizmoFeelingRot(0.3);
 }
