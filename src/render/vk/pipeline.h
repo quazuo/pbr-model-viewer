@@ -33,8 +33,6 @@ class PipelineBuilder {
     std::vector<vk::DescriptorSetLayout> descriptorSetLayouts;
     std::vector<vk::PushConstantRange> pushConstantRanges;
 
-    uint32_t subpassCount = 1;
-
     std::optional<vk::PipelineRasterizationStateCreateInfo> rasterizerOverride;
     std::optional<vk::PipelineMultisampleStateCreateInfo> multisamplingOverride;
     std::optional<vk::PipelineDepthStencilStateCreateInfo> depthStencilOverride;
@@ -59,7 +57,7 @@ public:
 
     PipelineBuilder &withDepthStencil(const vk::PipelineDepthStencilStateCreateInfo &depthStencil);
 
-    PipelineBuilder &forSubpasses(uint32_t count);
+    PipelineBuilder &forViews(uint32_t count);
 
     PipelineBuilder &withColorFormats(const std::vector<vk::Format> &formats);
 

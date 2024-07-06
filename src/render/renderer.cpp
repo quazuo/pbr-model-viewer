@@ -340,6 +340,7 @@ bool VulkanRenderer::isDeviceSuitable(const vk::raii::PhysicalDevice &physicalDe
         vk::PhysicalDeviceFeatures2,
         vk::PhysicalDeviceVulkan12Features,
         vk::PhysicalDeviceSynchronization2FeaturesKHR,
+        vk::PhysicalDeviceMultiviewFeatures,
         vk::PhysicalDeviceDynamicRenderingFeatures>();
 
     const auto vulkan12Features = supportedFeatures2Chain.get<vk::PhysicalDeviceVulkan12Features>();
@@ -349,6 +350,11 @@ bool VulkanRenderer::isDeviceSuitable(const vk::raii::PhysicalDevice &physicalDe
 
     const auto sync2Features = supportedFeatures2Chain.get<vk::PhysicalDeviceSynchronization2FeaturesKHR>();
     if (!sync2Features.synchronization2) {
+        return false;
+    }
+
+    const auto multiviewFeatures = supportedFeatures2Chain.get<vk::PhysicalDeviceMultiviewFeatures>();
+    if (!multiviewFeatures.multiview) {
         return false;
     }
 
@@ -427,7 +433,12 @@ void VulkanRenderer::createLogicalDevice() {
         .samplerAnisotropy = vk::True,
     };
 
+    vk::PhysicalDeviceMultiviewFeatures multiviewFeatures {
+        .multiview = vk::True,
+    };
+
     vk::PhysicalDeviceDynamicRenderingFeatures dynamicRenderFeatures{
+        .pNext = &multiviewFeatures,
         .dynamicRendering = vk::True,
     };
 
@@ -569,7 +580,7 @@ void VulkanRenderer::loadEnvironmentMap(const std::filesystem::path &path) {
 
     captureCubemap();
     captureIrradianceMap();
-    prefilterEnvmap();
+    // prefilterEnvmap();
 }
 
 void VulkanRenderer::createPrepassTextures() {
@@ -824,7 +835,7 @@ void VulkanRenderer::createEnvmapConvoluteDescriptorSet() {
 
 // ==================== render infos ====================
 
-vk::RenderingInfo RenderInfo::get(const vk::Extent2D extent, const uint32_t layers,
+vk::RenderingInfo RenderInfo::get(const vk::Extent2D extent, const uint32_t views,
                                   const vk::RenderingFlags flags) const {
     return {
         .flags = flags,
@@ -832,7 +843,8 @@ vk::RenderingInfo RenderInfo::get(const vk::Extent2D extent, const uint32_t laye
             .offset = {0, 0},
             .extent = extent
         },
-        .layerCount = layers,
+        .layerCount = views == 1 ? 1u : 0u,
+        .viewMask = views == 1 ? 0 : (1u << views) - 1,
         .colorAttachmentCount = static_cast<uint32_t>(colorAttachments.size()),
         .pColorAttachments = colorAttachments.data(),
         .pDepthAttachment = depthAttachment ? &depthAttachment.value() : nullptr
@@ -1026,14 +1038,7 @@ void VulkanRenderer::createCubemapCapturePipeline() {
             .withDescriptorLayouts({
                 *cubemapCaptureDescriptorSet->getLayout(),
             })
-            .withPushConstants({
-                vk::PushConstantRange{
-                    .stageFlags = vk::ShaderStageFlagBits::eVertex,
-                    .offset = 0,
-                    .size = sizeof(SkyboxPushConstants),
-                }
-            })
-            .forSubpasses(6)
+            .forViews(6)
             .withColorFormats({hdrEnvmapFormat})
             .create(ctx);
 
@@ -1058,14 +1063,7 @@ void VulkanRenderer::createIrradianceCapturePipeline() {
             .withDescriptorLayouts({
                 *envmapConvoluteDescriptorSet->getLayout(),
             })
-            .withPushConstants({
-                vk::PushConstantRange{
-                    .stageFlags = vk::ShaderStageFlagBits::eVertex,
-                    .offset = 0,
-                    .size = sizeof(SkyboxPushConstants),
-                }
-            })
-            .forSubpasses(6)
+            .forViews(6)
             .withColorFormats({hdrEnvmapFormat})
             .create(ctx);
 
@@ -1097,7 +1095,7 @@ void VulkanRenderer::createPrefilterPipeline() {
                     .size = sizeof(PrefilterPushConstants),
                 }
             })
-            .forSubpasses(6)
+            .forViews(6)
             .withColorFormats({hdrEnvmapFormat})
             .create(ctx);
 
@@ -1685,17 +1683,6 @@ void VulkanRenderer::drawModel(const vk::raii::CommandBuffer &commandBuffer) con
     }
 }
 
-static const glm::mat4 cubemapFaceProjection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
-
-static const std::array cubemapFaceViews{
-    glm::lookAt(glm::vec3(0), glm::vec3(-1, 0, 0), glm::vec3(0, 1, 0)),
-    glm::lookAt(glm::vec3(0), glm::vec3(1, 0, 0), glm::vec3(0, 1, 0)),
-    glm::lookAt(glm::vec3(0), glm::vec3(0, 1, 0), glm::vec3(0, 0, -1)),
-    glm::lookAt(glm::vec3(0), glm::vec3(0, -1, 0), glm::vec3(0, 0, 1)),
-    glm::lookAt(glm::vec3(0), glm::vec3(0, 0, 1), glm::vec3(0, 1, 0)),
-    glm::lookAt(glm::vec3(0), glm::vec3(0, 0, -1), glm::vec3(0, 1, 0))
-};
-
 void VulkanRenderer::captureCubemap() {
     const vk::Extent2D extent = skyboxTexture->getImage().getExtent2d();
 
@@ -1717,22 +1704,9 @@ void VulkanRenderer::captureCubemap() {
         nullptr
     );
 
-    for (uint32_t i = 0; i < 6; i++) {
-        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *(*cubemapCapturePipelines)[i]);
+     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***cubemapCapturePipelines);
 
-        const SkyboxPushConstants pushConstants{
-            .view = cubemapFaceViews[i],
-        };
-
-        commandBuffer.pushConstants<SkyboxPushConstants>(
-            *cubemapCapturePipelines->getLayout(),
-            vk::ShaderStageFlagBits::eVertex,
-            0u,
-            pushConstants
-        );
-
-        commandBuffer.draw(skyboxVertices.size(), 1, 0, 0);
-    }
+    commandBuffer.draw(skyboxVertices.size(), 1, 0, 0);
 
     commandBuffer.endRendering();
 
@@ -1773,22 +1747,9 @@ void VulkanRenderer::captureIrradianceMap() {
         nullptr
     );
 
-    for (size_t i = 0; i < 6; i++) {
-        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *(*irradianceCapturePipelines)[i]);
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***irradianceCapturePipelines);
 
-        const SkyboxPushConstants pushConstants{
-            .view = cubemapFaceViews[i],
-        };
-
-        commandBuffer.pushConstants<SkyboxPushConstants>(
-            *irradianceCapturePipelines->getLayout(),
-            vk::ShaderStageFlagBits::eVertex,
-            0u,
-            pushConstants
-        );
-
-        commandBuffer.draw(skyboxVertices.size(), 1, 0, 0);
-    }
+    commandBuffer.draw(skyboxVertices.size(), 1, 0, 0);
 
     commandBuffer.endRendering();
 
@@ -1834,23 +1795,20 @@ void VulkanRenderer::prefilterEnvmap() {
             nullptr
         );
 
-        for (size_t i = 0; i < 6; i++) {
-            commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *(*prefilterPipelines)[i]);
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***prefilterPipelines);
 
-            const PrefilterPushConstants prefilterPushConstants{
-                .view = cubemapFaceViews[i],
-                .roughness = static_cast<float>(mipLevel) / (maxPrefilterMipLevels - 1)
-            };
+        const PrefilterPushConstants prefilterPushConstants{
+            .roughness = static_cast<float>(mipLevel) / (maxPrefilterMipLevels - 1)
+        };
 
-            commandBuffer.pushConstants<PrefilterPushConstants>(
-                *prefilterPipelines->getLayout(),
-                vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-                0u,
-                prefilterPushConstants
-            );
+        commandBuffer.pushConstants<PrefilterPushConstants>(
+            *prefilterPipelines->getLayout(),
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            0u,
+            prefilterPushConstants
+        );
 
-            commandBuffer.draw(skyboxVertices.size(), 1, 0, 0);
-        }
+        commandBuffer.draw(skyboxVertices.size(), 1, 0, 0);
 
         commandBuffer.endRendering();
     }
@@ -1868,7 +1826,7 @@ void VulkanRenderer::computeBrdfIntegrationMap() {
 
     utils::cmd::setDynamicStates(commandBuffer, extent);
 
-    commandBuffer.beginRendering(brdfIntegrationRenderInfo.get(extent, 6));
+    commandBuffer.beginRendering(brdfIntegrationRenderInfo.get(extent));
 
     commandBuffer.bindVertexBuffers(0, **screenSpaceQuadVertexBuffer, {0});
 
@@ -1881,6 +1839,17 @@ void VulkanRenderer::computeBrdfIntegrationMap() {
     utils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
 }
 
+static const glm::mat4 cubemapFaceProjection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
+
+static const std::array cubemapFaceViews{
+    glm::lookAt(glm::vec3(0), glm::vec3(-1, 0, 0), glm::vec3(0, 1, 0)),
+    glm::lookAt(glm::vec3(0), glm::vec3(1, 0, 0), glm::vec3(0, 1, 0)),
+    glm::lookAt(glm::vec3(0), glm::vec3(0, 1, 0), glm::vec3(0, 0, -1)),
+    glm::lookAt(glm::vec3(0), glm::vec3(0, -1, 0), glm::vec3(0, 0, 1)),
+    glm::lookAt(glm::vec3(0), glm::vec3(0, 0, 1), glm::vec3(0, 1, 0)),
+    glm::lookAt(glm::vec3(0), glm::vec3(0, 0, -1), glm::vec3(0, 1, 0))
+};
+
 void VulkanRenderer::updateGraphicsUniformBuffer() const {
     const glm::mat4 model = glm::translate(modelTranslate)
                             * mat4_cast(modelRotation)
@@ -1891,7 +1860,7 @@ void VulkanRenderer::updateGraphicsUniformBuffer() const {
     glm::ivec2 windowSize{};
     glfwGetWindowSize(window, &windowSize.x, &windowSize.y);
 
-    const GraphicsUBO graphicsUbo{
+    GraphicsUBO graphicsUbo{
         .window = {
             .windowWidth = static_cast<uint32_t>(windowSize.x),
             .windowHeight = static_cast<uint32_t>(windowSize.y),
@@ -1910,6 +1879,10 @@ void VulkanRenderer::updateGraphicsUniformBuffer() const {
             .lightDir = glm::normalize(glm::vec3(1, 1.5, -2)),
         }
     };
+
+    for (size_t i = 0; i < 6; i++) {
+        graphicsUbo.matrices.cubemapCaptureViews[i] = cubemapFaceViews[i];
+    }
 
     memcpy(frameResources[currentFrameIdx].graphicsUboMapped, &graphicsUbo, sizeof(graphicsUbo));
 }

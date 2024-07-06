@@ -47,8 +47,8 @@ PipelineBuilder &PipelineBuilder::withDepthStencil(const vk::PipelineDepthStenci
     return *this;
 }
 
-PipelineBuilder &PipelineBuilder::forSubpasses(const uint32_t count) {
-    subpassCount = count;
+PipelineBuilder &PipelineBuilder::forViews(const uint32_t count) {
+    if (count != 1) renderingInfo.viewMask = (1u << count) - 1;
     return *this;
 }
 
@@ -159,25 +159,22 @@ PipelinePack PipelineBuilder::create(const RendererContext &ctx) const {
 
     result.layout = make_unique<vk::raii::PipelineLayout>(*ctx.device, pipelineLayoutInfo);
 
-    for (uint32_t subpassIndex = 0; subpassIndex < subpassCount; subpassIndex++) {
-        const vk::GraphicsPipelineCreateInfo pipelineInfo{
-            .pNext = &renderingInfo,
-            .stageCount = static_cast<uint32_t>(shaderStages.size()),
-            .pStages = shaderStages.data(),
-            .pVertexInputState = &vertexInputInfo,
-            .pInputAssemblyState = &inputAssembly,
-            .pViewportState = &viewportState,
-            .pRasterizationState = &rasterizer,
-            .pMultisampleState = &multisampling,
-            .pDepthStencilState = &depthStencil,
-            .pColorBlendState = &colorBlending,
-            .pDynamicState = &dynamicState,
-            .layout = **result.layout,
-            .subpass = subpassIndex,
-        };
+    const vk::GraphicsPipelineCreateInfo pipelineInfo{
+        .pNext = &renderingInfo,
+        .stageCount = static_cast<uint32_t>(shaderStages.size()),
+        .pStages = shaderStages.data(),
+        .pVertexInputState = &vertexInputInfo,
+        .pInputAssemblyState = &inputAssembly,
+        .pViewportState = &viewportState,
+        .pRasterizationState = &rasterizer,
+        .pMultisampleState = &multisampling,
+        .pDepthStencilState = &depthStencil,
+        .pColorBlendState = &colorBlending,
+        .pDynamicState = &dynamicState,
+        .layout = **result.layout,
+    };
 
-        result.pipelines.emplace_back(make_unique<vk::raii::Pipeline>(*ctx.device, nullptr, pipelineInfo));
-    }
+    result.pipelines.emplace_back(make_unique<vk::raii::Pipeline>(*ctx.device, nullptr, pipelineInfo));
 
     return result;
 }

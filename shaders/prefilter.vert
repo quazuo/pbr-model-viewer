@@ -1,5 +1,7 @@
 #version 450
 
+#extension GL_EXT_multiview : enable
+
 #include "ubo.glsl"
 
 layout(location = 0) in vec3 inPosition;
@@ -21,5 +23,6 @@ void main() {
     localPosition = inPosition;
     localPosition.x *= -1;
 
-    gl_Position = ubo.matrices.cubemap_capture_proj * constants.view * vec4(inPosition, 1.0);
+    const mat4 view = ubo.matrices.cubemap_capture_views[gl_ViewIndex];
+    gl_Position = ubo.matrices.cubemap_capture_proj * view * vec4(inPosition, 1.0);
 }

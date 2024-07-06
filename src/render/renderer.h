@@ -32,6 +32,7 @@ static constexpr std::array deviceExtensions{
     VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
     VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
     VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
+    VK_KHR_MULTIVIEW_EXTENSION_NAME,
 };
 
 #ifdef NDEBUG
@@ -65,6 +66,7 @@ struct GraphicsUBO {
         glm::mat4 proj;
         glm::mat4 inverseVp;
         glm::mat4 staticView;
+        glm::mat4 cubemapCaptureViews[6];
         glm::mat4 cubemapCaptureProj;
     };
 
@@ -79,12 +81,7 @@ struct GraphicsUBO {
     alignas(16) MiscData misc{};
 };
 
-struct SkyboxPushConstants {
-    glm::mat4 view;
-};
-
 struct PrefilterPushConstants {
-    glm::mat4 view;
     float roughness;
 };
 
@@ -125,7 +122,7 @@ struct RenderInfo {
     std::vector<vk::RenderingAttachmentInfo> colorAttachments;
     std::optional<vk::RenderingAttachmentInfo> depthAttachment;
 
-    [[nodiscard]] vk::RenderingInfo get(vk::Extent2D extent, uint32_t layers = 1,
+    [[nodiscard]] vk::RenderingInfo get(vk::Extent2D extent, uint32_t views = 1,
                                         vk::RenderingFlags flags = {}) const;
 };
 
