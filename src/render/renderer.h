@@ -127,6 +127,8 @@ struct RenderInfo {
 };
 
 class VulkanRenderer {
+    using TimelineSemValueType = std::uint64_t;
+
     struct GLFWwindow *window = nullptr;
 
     unique_ptr<Camera> camera;
@@ -193,7 +195,7 @@ class VulkanRenderer {
         struct {
             struct Timeline {
                 unique_ptr<vk::raii::Semaphore> semaphore;
-                std::uint64_t timeline = 0u;
+                TimelineSemValueType timeline = 0;
             };
 
             unique_ptr<vk::raii::Semaphore> imageAvailableSemaphore;

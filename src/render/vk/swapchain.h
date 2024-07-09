@@ -1,5 +1,7 @@
 #pragma once
 
+#include <iostream>
+
 #include "image.h"
 
 #include "src/render/libs.h"
@@ -73,6 +75,8 @@ public:
     [[nodiscard]] const vk::raii::ImageView &getCurrentImageView() const { return *imageViews[currentImageIndex]; }
 
     [[nodiscard]] RenderInfo getRenderInfo() const;
+
+    [[nodiscard]] RenderInfo getGuiRenderInfo() const;
 
     /**
      * Requests a new image from the swap chain and signals a given semaphore when the image is available.

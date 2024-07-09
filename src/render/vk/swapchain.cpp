@@ -151,6 +151,14 @@ RenderInfo SwapChain::getRenderInfo() const {
     };
 }
 
+RenderInfo SwapChain::getGuiRenderInfo() const {
+    auto info = getRenderInfo();
+    info.colorAttachments[0].loadOp = vk::AttachmentLoadOp::eLoad;
+    info.depthAttachment.reset();
+
+    return info;
+}
+
 std::pair<vk::Result, uint32_t> SwapChain::acquireNextImage(const vk::raii::Semaphore &semaphore) {
     try {
         const auto &[result, imageIndex] = swapChain->acquireNextImage(UINT64_MAX, *semaphore);

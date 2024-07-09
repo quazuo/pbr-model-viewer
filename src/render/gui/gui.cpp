@@ -21,7 +21,7 @@ GuiRenderer::~GuiRenderer() {
     ImGui::DestroyContext();
 }
 
-void GuiRenderer::startRendering() {
+void GuiRenderer::beginRendering() {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
@@ -41,7 +41,7 @@ void GuiRenderer::startRendering() {
     ImGui::Begin("main window", nullptr, flags);
 }
 
-void GuiRenderer::finishRendering(const vk::raii::CommandBuffer &commandBuffer) {
+void GuiRenderer::endRendering(const vk::raii::CommandBuffer &commandBuffer) {
     ImGui::End();
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *commandBuffer);

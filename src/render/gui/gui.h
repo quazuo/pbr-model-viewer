@@ -25,7 +25,7 @@ public:
 
     GuiRenderer& operator=(const GuiRenderer& other) = delete;
 
-    void startRendering();
+    void beginRendering();
 
-    void finishRendering(const vk::raii::CommandBuffer& commandBuffer);
+    void endRendering(const vk::raii::CommandBuffer& commandBuffer);
 };

@@ -163,6 +163,7 @@ private:
                 });
             }
 
+            // renderer.runPrepass();
             renderer.drawScene();
 
             renderer.endFrame();

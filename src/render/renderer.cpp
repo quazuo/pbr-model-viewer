@@ -665,9 +665,9 @@ void VulkanRenderer::recreateSwapChain() {
         glfwWaitEvents();
     }
 
-    ctx.device->waitIdle();
+    waitIdle();
 
-    swapChain = {};
+    swapChain.reset();
     swapChain = make_unique<SwapChain>(
         ctx,
         *surface,
@@ -677,6 +677,7 @@ void VulkanRenderer::recreateSwapChain() {
     );
 
     createPrepassTextures();
+    createPrepassRenderInfo();
 }
 
 // ==================== descriptors ====================
@@ -1261,26 +1262,27 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
 
     // prepass
 
-    commandBuffer.beginRendering(prepassRenderInfo.get(swapChain->getExtent(), 1, renderingFlags));
-
-    runPrepass();
-    commandBuffer.executeCommands(**frameResources[currentFrameIdx].prepassCmdBuffer);
-
-    commandBuffer.endRendering();
+    if (frameResources[currentFrameIdx].prepassCmdBuffer.wasRecordedThisFrame) {
+        commandBuffer.beginRendering(prepassRenderInfo.get(swapChain->getExtent(), 1, renderingFlags));
+        commandBuffer.executeCommands(**frameResources[currentFrameIdx].prepassCmdBuffer);
+        commandBuffer.endRendering();
+    }
 
     // main pass
 
-    commandBuffer.beginRendering(swapChain->getRenderInfo().get(swapChain->getExtent(), 1, renderingFlags));
-
     if (frameResources[currentFrameIdx].sceneCmdBuffer.wasRecordedThisFrame) {
+        commandBuffer.beginRendering(swapChain->getRenderInfo().get(swapChain->getExtent(), 1, renderingFlags));
         commandBuffer.executeCommands(**frameResources[currentFrameIdx].sceneCmdBuffer);
+        commandBuffer.endRendering();
     }
+
+    // gui pass
 
     if (frameResources[currentFrameIdx].guiCmdBuffer.wasRecordedThisFrame) {
+        commandBuffer.beginRendering(swapChain->getGuiRenderInfo().get(swapChain->getExtent(), 1, renderingFlags));
         commandBuffer.executeCommands(**frameResources[currentFrameIdx].guiCmdBuffer);
+        commandBuffer.endRendering();
     }
-
-    commandBuffer.endRendering();
 
     swapChain->transitionToPresentLayout(commandBuffer);
 
@@ -1348,6 +1350,7 @@ void VulkanRenderer::initImgui() {
         .ImageCount = imageCount,
         .MSAASamples = static_cast<VkSampleCountFlagBits>(msaaSampleCount),
         .UseDynamicRendering = true,
+        .ColorAttachmentFormat = static_cast<VkFormat>(swapChain->getImageFormat()),
     };
 
     guiRenderer = make_unique<GuiRenderer>(window, imguiInitInfo);
@@ -1409,12 +1412,28 @@ void VulkanRenderer::tick(const float deltaTime) {
 void VulkanRenderer::renderGui(const std::function<void()> &renderCommands) {
     const auto &commandBuffer = *frameResources[currentFrameIdx].guiCmdBuffer.buffer;
 
-    constexpr vk::CommandBufferBeginInfo beginInfo;
+    const std::vector colorAttachmentFormats{swapChain->getImageFormat()};
+
+    const vk::CommandBufferInheritanceRenderingInfo inheritanceRenderingInfo{
+        .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
+        .pColorAttachmentFormats = colorAttachmentFormats.data(),
+        .rasterizationSamples = msaaSampleCount,
+    };
+
+    const vk::CommandBufferInheritanceInfo inheritanceInfo{
+        .pNext = &inheritanceRenderingInfo
+    };
+
+    const vk::CommandBufferBeginInfo beginInfo{
+        .flags = vk::CommandBufferUsageFlagBits::eRenderPassContinue,
+        .pInheritanceInfo = &inheritanceInfo,
+    };
+
     commandBuffer.begin(beginInfo);
 
-    guiRenderer->startRendering();
+    guiRenderer->beginRendering();
     renderCommands();
-    guiRenderer->finishRendering(commandBuffer);
+    guiRenderer->endRendering(commandBuffer);
 
     commandBuffer.end();
 
@@ -1455,6 +1474,7 @@ bool VulkanRenderer::startFrame() {
     }
 
     frameResources[currentFrameIdx].sceneCmdBuffer.wasRecordedThisFrame = false;
+    frameResources[currentFrameIdx].prepassCmdBuffer.wasRecordedThisFrame = false;
     frameResources[currentFrameIdx].guiCmdBuffer.wasRecordedThisFrame = false;
 
     return true;
@@ -1469,8 +1489,8 @@ void VulkanRenderer::endFrame() {
         **sync.imageAvailableSemaphore
     };
 
-    const std::vector waitSemaphoreValues = {
-        static_cast<std::uint64_t>(0)
+    const std::vector<TimelineSemValueType> waitSemaphoreValues = {
+        0
     };
 
     static constexpr vk::PipelineStageFlags waitStages[] = {
@@ -1484,9 +1504,9 @@ void VulkanRenderer::endFrame() {
     };
 
     sync.renderFinishedTimeline.timeline++;
-    const std::vector signalSemaphoreValues{
+    const std::vector<TimelineSemValueType> signalSemaphoreValues{
         sync.renderFinishedTimeline.timeline,
-        static_cast<std::uint64_t>(0)
+        0
     };
 
     const vk::TimelineSemaphoreSubmitInfo timelineSubmitInfo{
@@ -1501,13 +1521,18 @@ void VulkanRenderer::endFrame() {
         .waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores.size()),
         .pWaitSemaphores = waitSemaphores.data(),
         .pWaitDstStageMask = waitStages,
-        .commandBufferCount = 1U,
+        .commandBufferCount = 1,
         .pCommandBuffers = &**frameResources[currentFrameIdx].graphicsCmdBuffer,
         .signalSemaphoreCount = signalSemaphores.size(),
         .pSignalSemaphores = signalSemaphores.data(),
     };
 
-    graphicsQueue->submit(graphicsSubmitInfo);
+    try {
+        graphicsQueue->submit(graphicsSubmitInfo);
+    } catch (std::exception& e) {
+        std::cerr << e.what() << std::endl;
+        throw e;
+    }
 
     const std::array presentWaitSemaphores = {**sync.readyToPresentSemaphore};
 
@@ -1542,9 +1567,11 @@ void VulkanRenderer::endFrame() {
 }
 
 void VulkanRenderer::runPrepass() {
-    const auto &commandBuffer = *frameResources[currentFrameIdx].prepassCmdBuffer.buffer;
+    if (!model) {
+        return;
+    }
 
-    const vk::Extent2D swapChainExtent = swapChain->getExtent();
+    const auto &commandBuffer = *frameResources[currentFrameIdx].prepassCmdBuffer.buffer;
 
     const std::vector colorAttachmentFormats{gBufferTextures.normal->getFormat()};
 
@@ -1566,7 +1593,7 @@ void VulkanRenderer::runPrepass() {
 
     commandBuffer.begin(beginInfo);
 
-    utils::cmd::setDynamicStates(commandBuffer, swapChainExtent);
+    utils::cmd::setDynamicStates(commandBuffer, swapChain->getExtent());
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***prepassPipeline);
 
@@ -1582,9 +1609,7 @@ void VulkanRenderer::runPrepass() {
         nullptr
     );
 
-    if (model) {
-        drawModel(commandBuffer);
-    }
+    drawModel(commandBuffer);
 
     commandBuffer.end();
 
@@ -1592,6 +1617,10 @@ void VulkanRenderer::runPrepass() {
 }
 
 void VulkanRenderer::drawScene() {
+    if (!model) {
+        return;
+    }
+
     const auto &commandBuffer = *frameResources[currentFrameIdx].sceneCmdBuffer.buffer;
 
     const vk::Extent2D swapChainExtent = swapChain->getExtent();
@@ -1650,9 +1679,7 @@ void VulkanRenderer::drawScene() {
         nullptr
     );
 
-    if (model) {
-        drawModel(commandBuffer);
-    }
+    drawModel(commandBuffer);
 
     commandBuffer.end();
 
@@ -1807,10 +1834,7 @@ void VulkanRenderer::prefilterEnvmap() const {
 }
 
 void VulkanRenderer::computeBrdfIntegrationMap() const {
-    const vk::Extent2D extent{
-        .width = brdfIntegrationMapTexture->getImage().getExtent().width,
-        .height = brdfIntegrationMapTexture->getImage().getExtent().height
-    };
+    const vk::Extent2D extent = brdfIntegrationMapTexture->getImage().getExtent2d();
 
     const auto commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
 
