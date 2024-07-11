@@ -37,6 +37,7 @@ class PipelineBuilder {
     std::optional<vk::PipelineMultisampleStateCreateInfo> multisamplingOverride;
     std::optional<vk::PipelineDepthStencilStateCreateInfo> depthStencilOverride;
 
+    std::vector<vk::Format> colorAttachmentFormats;
     vk::PipelineRenderingCreateInfo renderingInfo;
 
 public:

@@ -309,7 +309,7 @@ void VulkanRenderer::pickPhysicalDevice() {
     for (const auto &dev: devices) {
         if (isDeviceSuitable(dev)) {
             ctx.physicalDevice = make_unique<vk::raii::PhysicalDevice>(dev);
-            msaaSampleCount = getMaxUsableSampleCount();
+            // msaaSampleCount = getMaxUsableSampleCount();
             return;
         }
     }

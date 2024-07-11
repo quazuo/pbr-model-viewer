@@ -53,8 +53,9 @@ PipelineBuilder &PipelineBuilder::forViews(const uint32_t count) {
 }
 
 PipelineBuilder &PipelineBuilder::withColorFormats(const std::vector<vk::Format> &formats) {
-    renderingInfo.colorAttachmentCount = static_cast<uint32_t>(formats.size());
-    renderingInfo.pColorAttachmentFormats = formats.data();
+    colorAttachmentFormats = formats;
+    renderingInfo.colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size());
+    renderingInfo.pColorAttachmentFormats = colorAttachmentFormats.data();
     return *this;
 }
 

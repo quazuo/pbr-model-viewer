@@ -123,11 +123,11 @@ void SwapChain::transitionToPresentLayout(const vk::raii::CommandBuffer &command
 RenderInfo SwapChain::getRenderInfo() const {
     const std::vector colorAttachments{
         vk::RenderingAttachmentInfo {
-            .imageView = *colorImage->getView(),
+            .imageView = *getCurrentImageView(), // *colorImage->getView(),
             .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .resolveMode = vk::ResolveModeFlagBits::eAverage,
-            .resolveImageView = *getCurrentImageView(),
-            .resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            // .resolveMode = vk::ResolveModeFlagBits::eAverage,
+            // .resolveImageView = *getCurrentImageView(),
+            // .resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
             .loadOp = vk::AttachmentLoadOp::eClear,
             .storeOp = vk::AttachmentStoreOp::eStore,
             .clearValue = vk::ClearColorValue {0.0f, 0.0f, 0.0f, 1.0f},
