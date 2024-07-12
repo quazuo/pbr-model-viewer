@@ -168,6 +168,7 @@ class VulkanRenderer {
 
     unique_ptr<DescriptorSet> cubemapCaptureDescriptorSet;
     unique_ptr<DescriptorSet> envmapConvoluteDescriptorSet;
+    unique_ptr<DescriptorSet> debugQuadDescriptorSet;
 
     RenderInfo prepassRenderInfo;
     RenderInfo cubemapCaptureRenderInfo;
@@ -182,6 +183,7 @@ class VulkanRenderer {
     unique_ptr<PipelinePack> irradianceCapturePipeline;
     unique_ptr<PipelinePack> prefilterPipeline;
     unique_ptr<PipelinePack> brdfIntegrationPipeline;
+    unique_ptr<PipelinePack> debugQuadPipeline;
 
     unique_ptr<vk::raii::CommandPool> commandPool;
 
@@ -209,6 +211,7 @@ class VulkanRenderer {
         SecondaryCommandBuffer sceneCmdBuffer;
         SecondaryCommandBuffer prepassCmdBuffer;
         SecondaryCommandBuffer guiCmdBuffer;
+        SecondaryCommandBuffer debugCmdBuffer;
 
         unique_ptr<Buffer> graphicsUniformBuffer;
         void *graphicsUboMapped{};
@@ -356,6 +359,8 @@ private:
 
     void createEnvmapConvoluteDescriptorSet();
 
+    void createDebugQuadDescriptorSet();
+
     // ==================== render infos ====================
 
     void createPrepassRenderInfo();
@@ -383,6 +388,8 @@ private:
     void createPrefilterPipeline();
 
     void createBrdfIntegrationPipeline();
+
+    void createDebugQuadPipeline();
 
     // ==================== multisampling ====================
 
@@ -433,6 +440,8 @@ public:
     void runPrepass();
 
     void drawScene();
+
+    void drawDebugQuad();
 
 private:
     void drawModel(const vk::raii::CommandBuffer &commandBuffer) const;

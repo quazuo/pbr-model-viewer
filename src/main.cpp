@@ -24,7 +24,7 @@ enum class FileType {
 [[nodiscard]] static std::vector<std::string> getFileTypeExtensions(const FileType type) {
     switch (type) {
         case FileType::MODEL:
-            return { ".obj", ".fbx" };
+            return {".obj", ".fbx"};
         case FileType::ALBEDO_PNG:
         case FileType::NORMAL_PNG:
         case FileType::ORM_PNG:
@@ -32,9 +32,9 @@ enum class FileType {
         case FileType::AO_PNG:
         case FileType::ROUGHNESS_PNG:
         case FileType::METALLIC_PNG:
-            return { ".png" };
+            return {".png"};
         case FileType::ENVMAP_HDR:
-            return { ".hdr" };
+            return {".hdr"};
         default:
             throw std::runtime_error("unexpected filetype in getFileTypeExtensions");
     }
@@ -120,6 +120,7 @@ class Engine {
     float lastTime = 0.0f;
 
     bool isGuiEnabled = false;
+    bool showDebugQuad = false;
 
     ImGui::FileBrowser fileBrowser;
     std::optional<FileType> currentTypeBeingChosen;
@@ -163,8 +164,12 @@ private:
                 });
             }
 
-            // renderer.runPrepass();
+            renderer.runPrepass();
             renderer.drawScene();
+
+            if (showDebugQuad) {
+                renderer.drawDebugQuad();
+            }
 
             renderer.endFrame();
         }
@@ -202,7 +207,10 @@ private:
 
         if (ImGui::CollapsingHeader("Engine ", sectionFlags)) {
             ImGui::Text("FPS: %.2f", fps);
-
+#ifndef NDEBUG
+            ImGui::Checkbox("show debug quad?", &showDebugQuad);
+            ImGui::Separator();
+#endif
             renderLoadModelPopup();
             renderModelLoadErrorPopup();
         }
@@ -252,7 +260,7 @@ private:
 
             ImGui::Separator();
 
-            for (const auto& type: fileLoadSchemes[loadSchemeIdx].requirements) {
+            for (const auto &type: fileLoadSchemes[loadSchemeIdx].requirements) {
                 renderTexLoadButton(
                     getFileTypeLoadLabel(type),
                     type,
@@ -294,7 +302,7 @@ private:
     }
 
     void loadModel() {
-        const auto& reqs = fileLoadSchemes[loadSchemeIdx].requirements;
+        const auto &reqs = fileLoadSchemes[loadSchemeIdx].requirements;
 
         try {
             if (reqs.contains(FileType::MODEL)) {
@@ -320,15 +328,14 @@ private:
             if (reqs.contains(FileType::ROUGHNESS_PNG)) {
                 const auto roughnessPath = chosenPaths.at(FileType::ROUGHNESS_PNG);
                 const auto aoPath = chosenPaths.contains(FileType::AO_PNG)
-                    ? chosenPaths.at(FileType::AO_PNG)
-                    : "";
+                                        ? chosenPaths.at(FileType::AO_PNG)
+                                        : "";
                 const auto metallicPath = chosenPaths.contains(FileType::METALLIC_PNG)
-                    ? chosenPaths.at(FileType::METALLIC_PNG)
-                    : "";
+                                              ? chosenPaths.at(FileType::METALLIC_PNG)
+                                              : "";
 
                 renderer.loadOrmMap(aoPath, roughnessPath, metallicPath);
             }
-
         } catch (std::exception &e) {
             ImGui::OpenPopup("Model load error");
             currErrorMessage = e.what();

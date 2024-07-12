@@ -1,6 +1,6 @@
 #version 450
 
-#include "pbr.glsl"
+#include "utils/pbr.glsl"
 
 layout (location = 0) in vec3 localPosition;
 

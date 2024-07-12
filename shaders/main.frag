@@ -1,7 +1,7 @@
 #version 450
 
-#include "ubo.glsl"
-#include "pbr.glsl"
+#include "utils/ubo.glsl"
+#include "utils/pbr.glsl"
 
 layout (location = 0) in vec3 worldPosition;
 layout (location = 1) in vec2 fragTexCoord;
@@ -21,6 +21,8 @@ layout (binding = 3) uniform sampler2D ormSampler;
 layout (binding = 4) uniform samplerCube irradianceMapSampler;
 layout (binding = 5) uniform samplerCube prefilterMapSampler;
 layout (binding = 6) uniform sampler2D brdfLutSampler;
+layout (binding = 7) uniform sampler2D gNormalSampler;
+layout (binding = 8) uniform sampler2D gDepthSampler;
 
 void main() {
     vec3 albedo = vec3(texture(albedoSampler, fragTexCoord));

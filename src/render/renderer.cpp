@@ -86,6 +86,9 @@ VulkanRenderer::VulkanRenderer() {
     createUniformBuffers();
     updateGraphicsUniformBuffer();
 
+    createDebugQuadDescriptorSet();
+    createDebugQuadPipeline();
+
     createPrepassTextures();
     createPrepassRenderInfo();
     createPrepassDescriptorSets();
@@ -609,6 +612,18 @@ void VulkanRenderer::createPrepassTextures() {
                       | vk::ImageUsageFlagBits::eSampled
                       | vk::ImageUsageFlagBits::eDepthStencilAttachment)
             .create(ctx, *commandPool, *graphicsQueue);
+
+    if (debugQuadDescriptorSet) {
+        debugQuadDescriptorSet->updateBinding(ctx, 0, *gBufferTextures.depth);
+    }
+
+    for (auto &res: frameResources) {
+        if (res.sceneDescriptorSet) {
+            res.sceneDescriptorSet->queueUpdate(7, *gBufferTextures.normal)
+                    .queueUpdate(8, *gBufferTextures.depth)
+                    .commitUpdates(ctx);
+        }
+    }
 }
 
 void VulkanRenderer::createIblTextures() {
@@ -690,7 +705,7 @@ void VulkanRenderer::createDescriptorPool() {
 
     static constexpr vk::DescriptorPoolSize samplerPoolSize{
         .type = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 8 + 2,
+        .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 10 + 3,
     };
 
     static constexpr std::array poolSizes = {
@@ -700,7 +715,7 @@ void VulkanRenderer::createDescriptorPool() {
 
     static constexpr vk::DescriptorPoolCreateInfo poolInfo{
         .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-        .maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 3 + 2,
+        .maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 3 + 3,
         .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
         .pPoolSizes = poolSizes.data(),
     };
@@ -714,7 +729,7 @@ void VulkanRenderer::createSceneDescriptorSets() {
                 vk::DescriptorType::eUniformBuffer,
                 vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
             )
-            .addRepeatedBindings(6, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+            .addRepeatedBindings(8, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
             .create(ctx);
 
     const auto layoutPtr = make_shared<vk::raii::DescriptorSetLayout>(std::move(layout));
@@ -734,6 +749,8 @@ void VulkanRenderer::createSceneDescriptorSets() {
                 .queueUpdate(4, *irradianceMapTexture)
                 .queueUpdate(5, *prefilteredEnvmapTexture)
                 .queueUpdate(6, *brdfIntegrationMapTexture)
+                .queueUpdate(7, *gBufferTextures.normal)
+                .queueUpdate(8, *gBufferTextures.depth)
                 .commitUpdates(ctx);
     }
 }
@@ -834,6 +851,21 @@ void VulkanRenderer::createEnvmapConvoluteDescriptorSet() {
             .commitUpdates(ctx);
 }
 
+void VulkanRenderer::createDebugQuadDescriptorSet() {
+    auto layout = DescriptorLayoutBuilder()
+            .addBinding(vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+            .create(ctx);
+
+    const auto layoutPtr = make_shared<vk::raii::DescriptorSetLayout>(std::move(layout));
+    auto sets = utils::desc::createDescriptorSets(ctx, *descriptorPool, layoutPtr, 1);
+
+    debugQuadDescriptorSet = make_unique<DescriptorSet>(std::move(sets[0]));
+
+    if (gBufferTextures.depth) {
+        debugQuadDescriptorSet->updateBinding(ctx, 0, *gBufferTextures.depth);
+    }
+}
+
 // ==================== render infos ====================
 
 vk::RenderingInfo RenderInfo::get(const vk::Extent2D extent, const uint32_t views,
@@ -867,7 +899,7 @@ void VulkanRenderer::createPrepassRenderInfo() {
         .imageView = *gBufferTextures.depth->getView(),
         .imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
         .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eDontCare,
+        .storeOp = vk::AttachmentStoreOp::eStore,
         .clearValue = vk::ClearDepthStencilValue{
             .depth = 1.0f,
             .stencil = 0,
@@ -1126,6 +1158,31 @@ void VulkanRenderer::createBrdfIntegrationPipeline() {
     brdfIntegrationPipeline = make_unique<PipelinePack>(std::move(pipeline));
 }
 
+void VulkanRenderer::createDebugQuadPipeline() {
+    PipelinePack pipeline = PipelineBuilder()
+            .withVertexShader("../shaders/obj/ss-quad-vert.spv")
+            .withFragmentShader("../shaders/obj/ss-quad-frag.spv")
+            .withVertices<ScreenSpaceQuadVertex>()
+            .withRasterizer({
+                .polygonMode = vk::PolygonMode::eFill,
+                .cullMode = vk::CullModeFlagBits::eNone,
+                .frontFace = vk::FrontFace::eCounterClockwise,
+                .lineWidth = 1.0f,
+            })
+            .withDepthStencil({
+                .depthTestEnable = vk::False,
+                .depthWriteEnable = vk::False,
+            })
+            .withDescriptorLayouts({
+                *debugQuadDescriptorSet->getLayout(),
+            })
+            .withColorFormats({swapChain->getImageFormat()})
+            .withDepthFormat(swapChain->getDepthFormat())
+            .create(ctx);
+
+    debugQuadPipeline = make_unique<PipelinePack>(std::move(pipeline));
+}
+
 // ==================== multisampling ====================
 
 vk::SampleCountFlagBits VulkanRenderer::getMaxUsableSampleCount() const {
@@ -1234,9 +1291,11 @@ void VulkanRenderer::createCommandBuffers() {
     };
 
     vk::raii::CommandBuffers graphicsCommandBuffers{*ctx.device, primaryAllocInfo};
+
     vk::raii::CommandBuffers sceneCommandBuffers{*ctx.device, secondaryAllocInfo};
     vk::raii::CommandBuffers guiCommandBuffers{*ctx.device, secondaryAllocInfo};
     vk::raii::CommandBuffers prepassCommandBuffers{*ctx.device, secondaryAllocInfo};
+    vk::raii::CommandBuffers debugCommandBuffers{*ctx.device, secondaryAllocInfo};
 
     for (size_t i = 0; i < graphicsCommandBuffers.size(); i++) {
         frameResources[i].graphicsCmdBuffer =
@@ -1247,6 +1306,8 @@ void VulkanRenderer::createCommandBuffers() {
                 {make_unique<vk::raii::CommandBuffer>(std::move(guiCommandBuffers[i]))};
         frameResources[i].prepassCmdBuffer =
                 {make_unique<vk::raii::CommandBuffer>(std::move(prepassCommandBuffers[i]))};
+        frameResources[i].debugCmdBuffer =
+                {make_unique<vk::raii::CommandBuffer>(std::move(debugCommandBuffers[i]))};
     }
 }
 
@@ -1273,6 +1334,14 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
     if (frameResources[currentFrameIdx].sceneCmdBuffer.wasRecordedThisFrame) {
         commandBuffer.beginRendering(swapChain->getRenderInfo().get(swapChain->getExtent(), 1, renderingFlags));
         commandBuffer.executeCommands(**frameResources[currentFrameIdx].sceneCmdBuffer);
+        commandBuffer.endRendering();
+    }
+
+    // debug quad pass
+
+    if (frameResources[currentFrameIdx].debugCmdBuffer.wasRecordedThisFrame) {
+        commandBuffer.beginRendering(swapChain->getRenderInfo().get(swapChain->getExtent(), 1, renderingFlags));
+        commandBuffer.executeCommands(**frameResources[currentFrameIdx].debugCmdBuffer);
         commandBuffer.endRendering();
     }
 
@@ -1476,6 +1545,7 @@ bool VulkanRenderer::startFrame() {
     frameResources[currentFrameIdx].sceneCmdBuffer.wasRecordedThisFrame = false;
     frameResources[currentFrameIdx].prepassCmdBuffer.wasRecordedThisFrame = false;
     frameResources[currentFrameIdx].guiCmdBuffer.wasRecordedThisFrame = false;
+    frameResources[currentFrameIdx].debugCmdBuffer.wasRecordedThisFrame = false;
 
     return true;
 }
@@ -1529,7 +1599,7 @@ void VulkanRenderer::endFrame() {
 
     try {
         graphicsQueue->submit(graphicsSubmitInfo);
-    } catch (std::exception& e) {
+    } catch (std::exception &e) {
         std::cerr << e.what() << std::endl;
         throw e;
     }
@@ -1684,6 +1754,52 @@ void VulkanRenderer::drawScene() {
     commandBuffer.end();
 
     frameResources[currentFrameIdx].sceneCmdBuffer.wasRecordedThisFrame = true;
+}
+
+void VulkanRenderer::drawDebugQuad() {
+    const auto &commandBuffer = *frameResources[currentFrameIdx].debugCmdBuffer.buffer;
+
+    const vk::Extent2D swapChainExtent = swapChain->getExtent();
+
+    const std::vector colorAttachmentFormats{swapChain->getImageFormat()};
+
+    const vk::CommandBufferInheritanceRenderingInfo inheritanceRenderingInfo{
+        .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
+        .pColorAttachmentFormats = colorAttachmentFormats.data(),
+        .depthAttachmentFormat = swapChain->getDepthFormat(),
+        .rasterizationSamples = msaaSampleCount,
+    };
+
+    const vk::CommandBufferInheritanceInfo inheritanceInfo{
+        .pNext = &inheritanceRenderingInfo
+    };
+
+    const vk::CommandBufferBeginInfo beginInfo{
+        .flags = vk::CommandBufferUsageFlagBits::eRenderPassContinue,
+        .pInheritanceInfo = &inheritanceInfo,
+    };
+
+    commandBuffer.begin(beginInfo);
+
+    utils::cmd::setDynamicStates(commandBuffer, swapChainExtent);
+
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***debugQuadPipeline);
+
+    commandBuffer.bindVertexBuffers(0, **screenSpaceQuadVertexBuffer, {0});
+
+    commandBuffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        *debugQuadPipeline->getLayout(),
+        0,
+        ***debugQuadDescriptorSet,
+        nullptr
+    );
+
+    commandBuffer.draw(screenSpaceQuadVertices.size(), 1, 0, 0);
+
+    commandBuffer.end();
+
+    frameResources[currentFrameIdx].debugCmdBuffer.wasRecordedThisFrame = true;
 }
 
 void VulkanRenderer::drawModel(const vk::raii::CommandBuffer &commandBuffer) const {

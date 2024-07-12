@@ -1,6 +1,6 @@
 #version 450
 
-#include "ubo.glsl"
+#include "utils/ubo.glsl"
 
 layout(location = 0) in vec3 inPosition;
 

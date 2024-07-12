@@ -1,7 +1,6 @@
 #version 450
 
-#include "ubo.glsl"
-#include "pbr.glsl"
+#include "utils/ubo.glsl"
 
 layout (location = 0) in vec2 fragTexCoord;
 layout (location = 1) in mat3 TBN;
