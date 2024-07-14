@@ -92,46 +92,53 @@ float linearize_depth(float d, float z_near, float z_far) {
     return z_near * z_far / (z_far + d * (z_near - z_far));
 }
 
-void main() {
-    vec3 normal = normalize(texture(gNormalSampler, texCoords).rgb);
-    normal = normal * 2.0 - 1.0;
+vec3 calc_view_pos(vec2 coords) {
+    float depth = texture(gDepthSampler, coords).r;
 
-    outColor = vec4(normal, 1.0);
-    return;
-
-    float depth = texture(gDepthSampler, texCoords).r;
-    // depth = linearize_depth(depth, ubo.misc.z_near, ubo.misc.z_far);
-
-    vec4 clip_pos = vec4(texCoords, depth, 1.0);
-    vec4 view_pos = inverse(ubo.matrices.proj) * clip_pos;
-    view_pos.xyz /= view_pos.w;
-
-    vec3 random_vec = vec3(
-        rand(gl_FragCoord.xy),
-        rand(gl_FragCoord.xy + vec2(1)),
-        rand(gl_FragCoord.xy + vec2(2))
+    vec4 ndc = vec4(
+        coords.x * 2.0 - 1.0,
+        coords.y * 2.0 - 1.0,
+        depth * 2.0 - 1.0,
+        1.0
     );
 
-    random_vec = normalize(random_vec);
+    vec4 view_pos = inverse(ubo.matrices.proj) * ndc;
+    view_pos.xyz /= view_pos.w;
 
-    random_vec = vec3(0);
+    return view_pos.xyz;
+}
+
+void main() {
+    vec3 normal = texture(gNormalSampler, texCoords).rgb;
+    normal = normalize(normal * 2.0 - 1.0);
+
+    vec3 view_pos = calc_view_pos(texCoords);
+
+    vec3 random_vec = vec3(
+        rand(gl_FragCoord.xy) * 2.0 - 1.0,
+        rand(gl_FragCoord.xy + vec2(1)) * 2.0 - 1.0,
+        rand(gl_FragCoord.xy + vec2(2)) * 2.0 - 1.0
+    );
+    random_vec = normalize(random_vec);
 
     vec3 tangent = normalize(random_vec - normal * dot(random_vec, normal)); // gramm-schmidt
     vec3 bitangent = cross(normal, tangent);
     mat3 tbn = mat3(tangent, bitangent, normal);
 
     float occlusion = 0.0;
-    for(int i = 0; i < KERNEL_SIZE; ++i) {
+    for(int i = 0; i < KERNEL_SIZE; i++) {
         vec3 sample_vec = tbn * ssao_kernel[i];
-        vec4 sample_view_pos = view_pos + vec4(sample_vec, 0.0);
-        vec4 sample_clip_pos = ubo.matrices.proj * sample_view_pos;
+        vec3 sample_view_pos = view_pos + sample_vec;
+        vec4 sample_clip_pos = ubo.matrices.proj * vec4(sample_view_pos, 1.0);
         sample_clip_pos.xyz /= sample_clip_pos.w;
         sample_clip_pos.xyz = sample_clip_pos.xyz * 0.5 + 0.5;
 
         float sample_depth = texture(gDepthSampler, sample_clip_pos.xy).r;
 
-        const float bias = 0.025;
-        occlusion += (sample_depth >= sample_clip_pos.z + bias) ? 1.0 : 0.0;
+        float rangeCheck = smoothstep(0.0, 1.0, 1.0 / abs(view_pos.z - sample_depth));
+
+        const float bias = 0.0001;
+        occlusion += (sample_depth >= sample_clip_pos.z + bias) ? rangeCheck : 0.0;
     }
 
     occlusion /= KERNEL_SIZE;

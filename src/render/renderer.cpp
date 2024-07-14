@@ -1273,6 +1273,10 @@ void VulkanRenderer::createDebugQuadPipeline() {
                 .frontFace = vk::FrontFace::eCounterClockwise,
                 .lineWidth = 1.0f,
             })
+            .withMultisampling({
+                .rasterizationSamples = msaaSampleCount,
+                .minSampleShading = 1.0f,
+            })
             .withDepthStencil({
                 .depthTestEnable = vk::False,
                 .depthWriteEnable = vk::False,
