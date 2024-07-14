@@ -94,6 +94,11 @@ VulkanRenderer::VulkanRenderer() {
     createPrepassDescriptorSets();
     createPrepassPipeline();
 
+    createSsaoTexture();
+    createSsaoRenderInfo();
+    createSsaoDescriptorSets();
+    createSsaoPipeline();
+
     createIblTextures();
 
     createSkyboxVertexBuffer();
@@ -613,15 +618,46 @@ void VulkanRenderer::createPrepassTextures() {
                       | vk::ImageUsageFlagBits::eDepthStencilAttachment)
             .create(ctx, *commandPool, *graphicsQueue);
 
-    if (debugQuadDescriptorSet) {
-        debugQuadDescriptorSet->updateBinding(ctx, 0, *gBufferTextures.depth);
-    }
-
     for (auto &res: frameResources) {
         if (res.sceneDescriptorSet) {
             res.sceneDescriptorSet->queueUpdate(7, *gBufferTextures.normal)
                     .queueUpdate(8, *gBufferTextures.depth)
                     .commitUpdates(ctx);
+        }
+
+        if (res.ssaoDescriptorSet) {
+            res.ssaoDescriptorSet->queueUpdate(1, *gBufferTextures.normal)
+                    .queueUpdate(2, *gBufferTextures.depth)
+                    .commitUpdates(ctx);
+        }
+    }
+}
+
+void VulkanRenderer::createSsaoTexture() {
+    const auto &[width, height] = swapChain->getExtent();
+
+    const vk::Extent3D extent{
+        .width = width,
+        .height = height,
+        .depth = 1
+    };
+
+    ssaoTexture = TextureBuilder()
+            .asUninitialized(extent)
+            .useFormat(vk::Format::eR8G8B8A8Unorm)
+            .useUsage(vk::ImageUsageFlagBits::eTransferSrc
+                      | vk::ImageUsageFlagBits::eTransferDst
+                      | vk::ImageUsageFlagBits::eSampled
+                      | vk::ImageUsageFlagBits::eColorAttachment)
+            .create(ctx, *commandPool, *graphicsQueue);
+
+    if (debugQuadDescriptorSet) {
+        debugQuadDescriptorSet->updateBinding(ctx, 0, *ssaoTexture);
+    }
+
+    for (auto &res: frameResources) {
+        if (res.sceneDescriptorSet) {
+            res.sceneDescriptorSet->updateBinding(ctx, 9, *ssaoTexture);
         }
     }
 }
@@ -693,6 +729,8 @@ void VulkanRenderer::recreateSwapChain() {
 
     createPrepassTextures();
     createPrepassRenderInfo();
+    createSsaoTexture();
+    createSsaoRenderInfo();
 }
 
 // ==================== descriptors ====================
@@ -700,12 +738,12 @@ void VulkanRenderer::recreateSwapChain() {
 void VulkanRenderer::createDescriptorPool() {
     static constexpr vk::DescriptorPoolSize uboPoolSize{
         .type = vk::DescriptorType::eUniformBuffer,
-        .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 3 + 2,
+        .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 4 + 2,
     };
 
     static constexpr vk::DescriptorPoolSize samplerPoolSize{
         .type = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 10 + 3,
+        .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 13 + 3,
     };
 
     static constexpr std::array poolSizes = {
@@ -715,7 +753,7 @@ void VulkanRenderer::createDescriptorPool() {
 
     static constexpr vk::DescriptorPoolCreateInfo poolInfo{
         .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-        .maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 3 + 3,
+        .maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 4 + 3,
         .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
         .pPoolSizes = poolSizes.data(),
     };
@@ -729,7 +767,7 @@ void VulkanRenderer::createSceneDescriptorSets() {
                 vk::DescriptorType::eUniformBuffer,
                 vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
             )
-            .addRepeatedBindings(8, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+            .addRepeatedBindings(9, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
             .create(ctx);
 
     const auto layoutPtr = make_shared<vk::raii::DescriptorSetLayout>(std::move(layout));
@@ -751,6 +789,7 @@ void VulkanRenderer::createSceneDescriptorSets() {
                 .queueUpdate(6, *brdfIntegrationMapTexture)
                 .queueUpdate(7, *gBufferTextures.normal)
                 .queueUpdate(8, *gBufferTextures.depth)
+                .queueUpdate(9, *ssaoTexture)
                 .commitUpdates(ctx);
     }
 }
@@ -810,6 +849,35 @@ void VulkanRenderer::createPrepassDescriptorSets() {
     }
 }
 
+void VulkanRenderer::createSsaoDescriptorSets() {
+    auto layout = DescriptorLayoutBuilder()
+            .addBinding(
+                vk::DescriptorType::eUniformBuffer,
+                vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+            )
+            .addRepeatedBindings(2, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+            .create(ctx);
+
+    const auto layoutPtr = make_shared<vk::raii::DescriptorSetLayout>(std::move(layout));
+    auto sets = utils::desc::createDescriptorSets(ctx, *descriptorPool, layoutPtr, MAX_FRAMES_IN_FLIGHT);
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        frameResources[i].ssaoDescriptorSet = make_unique<DescriptorSet>(std::move(sets[i]));
+    }
+
+    for (auto &res: frameResources) {
+        res.ssaoDescriptorSet->queueUpdate(
+                    0,
+                    *res.graphicsUniformBuffer,
+                    vk::DescriptorType::eUniformBuffer,
+                    sizeof(GraphicsUBO)
+                )
+                .queueUpdate(1, *gBufferTextures.normal)
+                .queueUpdate(2, *gBufferTextures.depth)
+                .commitUpdates(ctx);
+    }
+}
+
 void VulkanRenderer::createCubemapCaptureDescriptorSet() {
     auto layout = DescriptorLayoutBuilder()
             .addBinding(vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex)
@@ -861,8 +929,8 @@ void VulkanRenderer::createDebugQuadDescriptorSet() {
 
     debugQuadDescriptorSet = make_unique<DescriptorSet>(std::move(sets[0]));
 
-    if (gBufferTextures.depth) {
-        debugQuadDescriptorSet->updateBinding(ctx, 0, *gBufferTextures.depth);
+    if (ssaoTexture) {
+        debugQuadDescriptorSet->updateBinding(ctx, 0, *ssaoTexture);
     }
 }
 
@@ -909,6 +977,22 @@ void VulkanRenderer::createPrepassRenderInfo() {
     prepassRenderInfo = {
         .colorAttachments = colorAttachments,
         .depthAttachment = depthAttachment
+    };
+}
+
+void VulkanRenderer::createSsaoRenderInfo() {
+    const std::vector colorAttachments{
+        vk::RenderingAttachmentInfo{
+            .imageView = *ssaoTexture->getView(),
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .clearValue = vk::ClearColorValue{1.0f, 1.0f, 1.0f, 1.0f},
+        }
+    };
+
+    ssaoRenderInfo = {
+        .colorAttachments = colorAttachments,
     };
 }
 
@@ -1053,6 +1137,26 @@ void VulkanRenderer::createPrepassPipeline() {
             .create(ctx);
 
     prepassPipeline = make_unique<PipelinePack>(std::move(pipeline));
+}
+
+void VulkanRenderer::createSsaoPipeline() {
+    PipelinePack pipeline = PipelineBuilder()
+            .withVertexShader("../shaders/obj/ssao-vert.spv")
+            .withFragmentShader("../shaders/obj/ssao-frag.spv")
+            .withVertices<ScreenSpaceQuadVertex>()
+            .withRasterizer({
+                .polygonMode = vk::PolygonMode::eFill,
+                .cullMode = vk::CullModeFlagBits::eNone,
+                .frontFace = vk::FrontFace::eCounterClockwise,
+                .lineWidth = 1.0f,
+            })
+            .withDescriptorLayouts({
+                *frameResources[0].ssaoDescriptorSet->getLayout(),
+            })
+            .withColorFormats({ssaoTexture->getFormat()})
+            .create(ctx);
+
+    ssaoPipeline = make_unique<PipelinePack>(std::move(pipeline));
 }
 
 void VulkanRenderer::createCubemapCapturePipeline() {
@@ -1296,6 +1400,7 @@ void VulkanRenderer::createCommandBuffers() {
     vk::raii::CommandBuffers guiCommandBuffers{*ctx.device, secondaryAllocInfo};
     vk::raii::CommandBuffers prepassCommandBuffers{*ctx.device, secondaryAllocInfo};
     vk::raii::CommandBuffers debugCommandBuffers{*ctx.device, secondaryAllocInfo};
+    vk::raii::CommandBuffers ssaoCommandBuffers{*ctx.device, secondaryAllocInfo};
 
     for (size_t i = 0; i < graphicsCommandBuffers.size(); i++) {
         frameResources[i].graphicsCmdBuffer =
@@ -1308,6 +1413,8 @@ void VulkanRenderer::createCommandBuffers() {
                 {make_unique<vk::raii::CommandBuffer>(std::move(prepassCommandBuffers[i]))};
         frameResources[i].debugCmdBuffer =
                 {make_unique<vk::raii::CommandBuffer>(std::move(debugCommandBuffers[i]))};
+        frameResources[i].ssaoCmdBuffer =
+                {make_unique<vk::raii::CommandBuffer>(std::move(ssaoCommandBuffers[i]))};
     }
 }
 
@@ -1326,6 +1433,14 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
     if (frameResources[currentFrameIdx].prepassCmdBuffer.wasRecordedThisFrame) {
         commandBuffer.beginRendering(prepassRenderInfo.get(swapChain->getExtent(), 1, renderingFlags));
         commandBuffer.executeCommands(**frameResources[currentFrameIdx].prepassCmdBuffer);
+        commandBuffer.endRendering();
+    }
+
+    // ssao pass
+
+    if (frameResources[currentFrameIdx].ssaoCmdBuffer.wasRecordedThisFrame) {
+        commandBuffer.beginRendering(ssaoRenderInfo.get(swapChain->getExtent(), 1, renderingFlags));
+        commandBuffer.executeCommands(**frameResources[currentFrameIdx].ssaoCmdBuffer);
         commandBuffer.endRendering();
     }
 
@@ -1444,9 +1559,10 @@ void VulkanRenderer::renderGuiSection() {
         if (ImGui::Button("Reset rotation")) { modelRotation = {1, 0, 0, 0}; }
         ImGui::SameLine();
         if (ImGui::Button("Reset position")) { modelTranslate = {0, 0, 0}; }
+    }
 
-        ImGui::Separator();
-
+    if (ImGui::CollapsingHeader("Renderer ", sectionFlags)) {
+        // todo - convert these 2 to dynamic states
         if (ImGui::Checkbox("Cull backfaces", &cullBackFaces)) {
             waitIdle();
             createScenePipeline();
@@ -1457,7 +1573,12 @@ void VulkanRenderer::renderGuiSection() {
             createScenePipeline();
         }
 
-        // ImGui::DragFloat("debug number", &debugNumber, 0.01, 0, std::numeric_limits<float>::max());
+        ImGui::Checkbox("SSAO", &useSsao);
+
+#ifndef NDEBUG
+        ImGui::Separator();
+        ImGui::DragFloat("Debug number", &debugNumber, 0.01, 0, std::numeric_limits<float>::max());
+#endif
     }
 
     camera->renderGuiSection();
@@ -1544,6 +1665,7 @@ bool VulkanRenderer::startFrame() {
 
     frameResources[currentFrameIdx].sceneCmdBuffer.wasRecordedThisFrame = false;
     frameResources[currentFrameIdx].prepassCmdBuffer.wasRecordedThisFrame = false;
+    frameResources[currentFrameIdx].ssaoCmdBuffer.wasRecordedThisFrame = false;
     frameResources[currentFrameIdx].guiCmdBuffer.wasRecordedThisFrame = false;
     frameResources[currentFrameIdx].debugCmdBuffer.wasRecordedThisFrame = false;
 
@@ -1684,6 +1806,53 @@ void VulkanRenderer::runPrepass() {
     commandBuffer.end();
 
     frameResources[currentFrameIdx].prepassCmdBuffer.wasRecordedThisFrame = true;
+}
+
+void VulkanRenderer::runSsaoPass() {
+    if (!model || !useSsao) {
+        return;
+    }
+
+    const auto &commandBuffer = *frameResources[currentFrameIdx].ssaoCmdBuffer.buffer;
+
+    const std::vector colorAttachmentFormats{ssaoTexture->getFormat()};
+
+    const vk::CommandBufferInheritanceRenderingInfo inheritanceRenderingInfo{
+        .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
+        .pColorAttachmentFormats = colorAttachmentFormats.data(),
+        .rasterizationSamples = vk::SampleCountFlagBits::e1,
+    };
+
+    const vk::CommandBufferInheritanceInfo inheritanceInfo{
+        .pNext = &inheritanceRenderingInfo
+    };
+
+    const vk::CommandBufferBeginInfo beginInfo{
+        .flags = vk::CommandBufferUsageFlagBits::eRenderPassContinue,
+        .pInheritanceInfo = &inheritanceInfo,
+    };
+
+    commandBuffer.begin(beginInfo);
+
+    utils::cmd::setDynamicStates(commandBuffer, swapChain->getExtent());
+
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***ssaoPipeline);
+
+    commandBuffer.bindVertexBuffers(0, **screenSpaceQuadVertexBuffer, {0});
+
+    commandBuffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        *ssaoPipeline->getLayout(),
+        0,
+        ***frameResources[currentFrameIdx].ssaoDescriptorSet,
+        nullptr
+    );
+
+    commandBuffer.draw(screenSpaceQuadVertices.size(), 1, 0, 0);
+
+    commandBuffer.end();
+
+    frameResources[currentFrameIdx].ssaoCmdBuffer.wasRecordedThisFrame = true;
 }
 
 void VulkanRenderer::drawScene() {
@@ -1990,6 +2159,8 @@ void VulkanRenderer::updateGraphicsUniformBuffer() const {
     glm::ivec2 windowSize{};
     glfwGetWindowSize(window, &windowSize.x, &windowSize.y);
 
+    const auto &[zNear, zFar] = camera->getClippingPlanes();
+
     GraphicsUBO graphicsUbo{
         .window = {
             .windowWidth = static_cast<uint32_t>(windowSize.x),
@@ -2005,6 +2176,9 @@ void VulkanRenderer::updateGraphicsUniformBuffer() const {
         },
         .misc = {
             .debugNumber = debugNumber,
+            .zNear = zNear,
+            .zFar = zFar,
+            .useSsao = useSsao ? 1u : 0,
             .cameraPos = camera->getPos(),
             .lightDir = glm::normalize(glm::vec3(1, 1.5, -2)),
         }

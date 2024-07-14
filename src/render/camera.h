@@ -59,6 +59,8 @@ public:
 
     [[nodiscard]] Rotator::ViewVectors getViewVectors() const { return rotator.getViewVectors(); }
 
+    [[nodiscard]] std::pair<float, float> getClippingPlanes() const { return {zNear, zFar}; }
+
     void renderGuiSection();
 
 private:

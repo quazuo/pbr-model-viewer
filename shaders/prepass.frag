@@ -19,5 +19,6 @@ void main() {
     vec3 normal = texture(normalSampler, fragTexCoord).rgb;
     normal = normalize(normal * 2.0 - 1.0);
     normal = normalize(TBN * normal);
+    normal = normal * 0.5 + 0.5;
     outNormal = vec4(normal, 1);
 }

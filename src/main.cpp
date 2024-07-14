@@ -3,6 +3,8 @@
 
 #define GLFW_EXPOSE_NATIVE_WIN32
 #define NOMINMAX 1
+#include <iostream>
+#include <random>
 #include <GLFW/glfw3native.h>
 
 #include "render/renderer.h"
@@ -165,6 +167,7 @@ private:
             }
 
             renderer.runPrepass();
+            renderer.runSsaoPass();
             renderer.drawScene();
 
             if (showDebugQuad) {
@@ -365,6 +368,31 @@ static void showErrorBox(const std::string &message) {
         static_cast<LPCSTR>("Error"),
         MB_OK
     );
+}
+
+void generateSsaoKernelSamples() {
+    std::uniform_real_distribution<float> randomFloats(0.0, 1.0);
+    std::default_random_engine generator;
+    std::vector<glm::vec3> ssaoKernel;
+    for (int i = 0; i < 64; ++i) {
+        glm::vec3 sample(
+            randomFloats(generator) * 2.0 - 1.0,
+            randomFloats(generator) * 2.0 - 1.0,
+            randomFloats(generator)
+        );
+        sample = glm::normalize(sample);
+        sample *= randomFloats(generator);
+
+        float scale = (float)i / 64.0;
+        scale = glm::mix(0.1f, 1.0f, scale * scale);
+        sample *= scale;
+
+        ssaoKernel.push_back(sample);
+    }
+
+    for (auto &v : ssaoKernel) {
+        std::cout << "vec3(" << v.x << ", " << v.y << ", " << v.z << "),\n";
+    }
 }
 
 int main() {

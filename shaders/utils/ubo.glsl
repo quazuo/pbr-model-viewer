@@ -15,6 +15,9 @@ struct Matrices {
 
 struct MiscData {
     float debug_number;
+    float z_near;
+    float z_far;
+    uint use_ssao;
     vec3 camera_pos;
     vec3 light_direction;
 };

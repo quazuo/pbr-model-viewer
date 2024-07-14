@@ -23,6 +23,7 @@ layout (binding = 5) uniform samplerCube prefilterMapSampler;
 layout (binding = 6) uniform sampler2D brdfLutSampler;
 layout (binding = 7) uniform sampler2D gNormalSampler;
 layout (binding = 8) uniform sampler2D gDepthSampler;
+layout (binding = 9) uniform sampler2D ssaoSampler;
 
 void main() {
     vec3 albedo = vec3(texture(albedoSampler, fragTexCoord));

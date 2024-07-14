@@ -72,6 +72,9 @@ struct GraphicsUBO {
 
     struct MiscData {
         float debugNumber;
+        float zNear;
+        float zFar;
+        uint32_t useSsao;
         glm::vec3 cameraPos;
         glm::vec3 lightDir;
     };
@@ -152,6 +155,7 @@ class VulkanRenderer {
     unique_ptr<Texture> albedoTexture;
     unique_ptr<Texture> normalTexture;
     unique_ptr<Texture> ormTexture;
+    unique_ptr<Texture> ssaoTexture;
 
     struct {
         unique_ptr<Texture> depth;
@@ -171,6 +175,7 @@ class VulkanRenderer {
     unique_ptr<DescriptorSet> debugQuadDescriptorSet;
 
     RenderInfo prepassRenderInfo;
+    RenderInfo ssaoRenderInfo;
     RenderInfo cubemapCaptureRenderInfo;
     RenderInfo irradianceCaptureRenderInfo;
     std::vector<RenderInfo> prefilterRenderInfos;
@@ -179,6 +184,7 @@ class VulkanRenderer {
     unique_ptr<PipelinePack> scenePipeline;
     unique_ptr<PipelinePack> skyboxPipeline;
     unique_ptr<PipelinePack> prepassPipeline;
+    unique_ptr<PipelinePack> ssaoPipeline;
     unique_ptr<PipelinePack> cubemapCapturePipeline;
     unique_ptr<PipelinePack> irradianceCapturePipeline;
     unique_ptr<PipelinePack> prefilterPipeline;
@@ -210,6 +216,7 @@ class VulkanRenderer {
 
         SecondaryCommandBuffer sceneCmdBuffer;
         SecondaryCommandBuffer prepassCmdBuffer;
+        SecondaryCommandBuffer ssaoCmdBuffer;
         SecondaryCommandBuffer guiCmdBuffer;
         SecondaryCommandBuffer debugCmdBuffer;
 
@@ -219,6 +226,7 @@ class VulkanRenderer {
         unique_ptr<DescriptorSet> sceneDescriptorSet;
         unique_ptr<DescriptorSet> skyboxDescriptorSet;
         unique_ptr<DescriptorSet> prepassDescriptorSet;
+        unique_ptr<DescriptorSet> ssaoDescriptorSet;
     };
 
     static constexpr size_t MAX_FRAMES_IN_FLIGHT = 3;
@@ -251,6 +259,7 @@ class VulkanRenderer {
 
     bool cullBackFaces = false;
     bool wireframeMode = false;
+    bool useSsao = false;
 
 public:
     explicit VulkanRenderer();
@@ -339,6 +348,8 @@ private:
 
     void createPrepassTextures();
 
+    void createSsaoTexture();
+
     void createIblTextures();
 
     // ==================== swap chain ====================
@@ -355,6 +366,8 @@ private:
 
     void createPrepassDescriptorSets();
 
+    void createSsaoDescriptorSets();
+
     void createCubemapCaptureDescriptorSet();
 
     void createEnvmapConvoluteDescriptorSet();
@@ -364,6 +377,8 @@ private:
     // ==================== render infos ====================
 
     void createPrepassRenderInfo();
+
+    void createSsaoRenderInfo();
 
     void createCubemapCaptureRenderInfo();
 
@@ -380,6 +395,8 @@ private:
     void createSkyboxPipeline();
 
     void createPrepassPipeline();
+
+    void createSsaoPipeline();
 
     void createCubemapCapturePipeline();
 
@@ -438,6 +455,8 @@ public:
     void renderGui(const std::function<void()> &renderCommands);
 
     void runPrepass();
+
+    void runSsaoPass();
 
     void drawScene();
 
