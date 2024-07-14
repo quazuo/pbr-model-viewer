@@ -32,7 +32,9 @@ void main() {
     normal = normalize(normal * 2.0 - 1.0);
     normal = normalize(TBN * normal);
 
-    float ao = texture(ormSampler, fragTexCoord).r;
+    float ao = ubo.misc.use_ssao == 1u
+        ? texture(ssaoSampler, gl_FragCoord.xy).r
+        : texture(ormSampler, fragTexCoord).r;
     float roughness = texture(ormSampler, fragTexCoord).g;
     float metallic = texture(ormSampler, fragTexCoord).b;
 
