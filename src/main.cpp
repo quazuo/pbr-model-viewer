@@ -213,6 +213,11 @@ private:
 #ifndef NDEBUG
             ImGui::Checkbox("show debug quad?", &showDebugQuad);
             ImGui::Separator();
+
+            if (ImGui::Button("Reload shaders")) {
+                renderer.reloadShaders();
+            }
+            ImGui::Separator();
 #endif
             renderLoadModelPopup();
             renderModelLoadErrorPopup();

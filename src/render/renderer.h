@@ -300,6 +300,8 @@ public:
 
     void loadEnvironmentMap(const std::filesystem::path &path);
 
+    void reloadShaders();
+
 private:
     static void framebufferResizeCallback(GLFWwindow *window, int width, int height);
 

@@ -76,7 +76,7 @@ void main() {
     vec3 reflection = reflect(-view, normal);
     vec3 prefiltered_color = textureLod(prefilterMapSampler, reflection, roughness * MAX_REFLECTION_LOD).rgb;
 
-    vec2 env_brdf = texture(brdfLutSampler, vec2(n_dot_v - 0.001, roughness)).rg;
+    vec2 env_brdf = texture(brdfLutSampler, vec2(n_dot_v, 1 - roughness)).rg;
     specular = prefiltered_color * (k_specular * env_brdf.x + env_brdf.y);
 
     // no need to multiply `specular` by `k_specular` as it's done implicitly by including fresnel

@@ -1281,6 +1281,20 @@ void VulkanRenderer::createDebugQuadPipeline() {
     debugQuadPipeline = make_unique<PipelinePack>(std::move(pipeline));
 }
 
+void VulkanRenderer::reloadShaders() {
+    waitIdle();
+
+    createScenePipeline();
+    createSkyboxPipeline();
+    createPrepassPipeline();
+    createSsaoPipeline();
+    createCubemapCapturePipeline();
+    createIrradianceCapturePipeline();
+    createPrefilterPipeline();
+    createBrdfIntegrationPipeline();
+    createDebugQuadPipeline();
+}
+
 // ==================== multisampling ====================
 
 vk::SampleCountFlagBits VulkanRenderer::getMaxUsableSampleCount() const {
