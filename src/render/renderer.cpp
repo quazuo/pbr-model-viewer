@@ -125,20 +125,10 @@ VulkanRenderer::VulkanRenderer() {
     createSceneDescriptorSets();
     createScenePipeline();
 
-    // loadModel("../assets/t-60-helmet/helmet.fbx");
-    // loadAlbedoTexture("../assets/t-60-helmet/albedo.png");
-    // loadNormalMap("../assets/t-60-helmet/normal.png");
-    // //loadOrmMap("../assets/t-60-helmet/orm.png");
-    // loadOrmMap(
-    //     "",
-    //     "../assets/t-60-helmet/roughness.png",
-    //     "../assets/t-60-helmet/metallic.png"
-    // );
-
-    loadModel("../assets/czajnik/czajnik.obj");
-    loadAlbedoTexture("../assets/czajnik/czajnik-albedo.png");
-    loadNormalMap("../assets/czajnik/czajnik-normal.png");
-    loadOrmMap("../assets/czajnik/czajnik-orm.png");
+    loadModel("../assets/example models/kettle/kettle.obj");
+    loadAlbedoTexture("../assets/example models/kettle/kettle-albedo.png");
+    loadNormalMap("../assets/example models/kettle/kettle-normal.png");
+    loadOrmMap("../assets/example models/kettle/kettle-orm.png");
 
     loadEnvironmentMap("../assets/envmaps/gallery.hdr");
 
