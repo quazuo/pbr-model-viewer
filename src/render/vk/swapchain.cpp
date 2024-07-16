@@ -80,7 +80,7 @@ void SwapChain::transitionToAttachmentLayout(const vk::raii::CommandBuffer &comm
             .levelCount = 1,
             .baseArrayLayer = 0,
             .layerCount = 1,
-          }
+        }
     };
 
     commandBuffer.pipelineBarrier(
@@ -107,7 +107,7 @@ void SwapChain::transitionToPresentLayout(const vk::raii::CommandBuffer &command
             .levelCount = 1,
             .baseArrayLayer = 0,
             .layerCount = 1,
-          }
+        }
     };
 
     commandBuffer.pipelineBarrier(
@@ -121,20 +121,28 @@ void SwapChain::transitionToPresentLayout(const vk::raii::CommandBuffer &command
 }
 
 RenderInfo SwapChain::getRenderInfo() const {
+    const bool isMsaa = msaaSampleCount != vk::SampleCountFlagBits::e1;
+
     const std::vector colorAttachments{
-        vk::RenderingAttachmentInfo {
-            .imageView = *colorImage->getView(),
+        vk::RenderingAttachmentInfo{
+            .imageView = isMsaa
+                             ? *colorImage->getView()
+                             : *getCurrentImageView(),
             .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .resolveMode = vk::ResolveModeFlagBits::eAverage,
-            .resolveImageView = *getCurrentImageView(),
+            .resolveMode = isMsaa
+                               ? vk::ResolveModeFlagBits::eAverage
+                               : vk::ResolveModeFlagBits::eNone,
+            .resolveImageView = isMsaa
+                                    ? *getCurrentImageView()
+                                    : nullptr,
             .resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
             .loadOp = vk::AttachmentLoadOp::eClear,
             .storeOp = vk::AttachmentStoreOp::eStore,
-            .clearValue = vk::ClearColorValue {0.0f, 0.0f, 0.0f, 1.0f},
+            .clearValue = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f},
         }
     };
 
-    const vk::RenderingAttachmentInfo depthAttachment {
+    const vk::RenderingAttachmentInfo depthAttachment{
         .imageView = *depthImage->getView(),
         .imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
         .loadOp = vk::AttachmentLoadOp::eClear,
@@ -164,7 +172,6 @@ std::pair<vk::Result, uint32_t> SwapChain::acquireNextImage(const vk::raii::Sema
         const auto &[result, imageIndex] = swapChain->acquireNextImage(UINT64_MAX, *semaphore);
         currentImageIndex = imageIndex;
         return {result, imageIndex};
-
     } catch (...) {
         return {vk::Result::eErrorOutOfDateKHR, 0};
     }

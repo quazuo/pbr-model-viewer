@@ -18,6 +18,9 @@ struct MiscData {
     float z_near;
     float z_far;
     uint use_ssao;
-    vec3 camera_pos;
+    uint use_ibl;
+    float light_intensity;
     vec3 light_direction;
+    vec3 light_color;
+    vec3 camera_pos;
 };

@@ -4,6 +4,7 @@
 #include <vector>
 #include <filesystem>
 #include <array>
+#include <queue>
 
 #include "deps/vma/vk_mem_alloc.h"
 
@@ -75,8 +76,11 @@ struct GraphicsUBO {
         float zNear;
         float zFar;
         uint32_t useSsao;
-        glm::vec3 cameraPos;
+        uint32_t useIbl;
+        float lightIntensity;
         glm::vec3 lightDir;
+        glm::vec3 lightColor;
+        glm::vec3 cameraPos;
     };
 
     alignas(16) WindowRes window{};
@@ -232,6 +236,9 @@ class VulkanRenderer {
     static constexpr size_t MAX_FRAMES_IN_FLIGHT = 3;
     std::array<FrameResources, MAX_FRAMES_IN_FLIGHT> frameResources;
 
+    using FrameBeginCallback = std::function<void()>;
+    std::queue<FrameBeginCallback> queuedFrameBeginActions;
+
     vk::SampleCountFlagBits msaaSampleCount = vk::SampleCountFlagBits::e1;
 
     static constexpr auto prepassNormalFormat = vk::Format::eR8G8B8A8Unorm;
@@ -255,11 +262,17 @@ class VulkanRenderer {
     glm::vec3 modelTranslate{};
     glm::quat modelRotation{1, 0, 0, 0};
 
+    glm::quat lightDirection = glm::normalize(glm::vec3(1, 1.5, -2));
+    glm::vec3 lightColor = glm::normalize(glm::vec3(23.47, 21.31, 20.79));
+    float lightIntensity = 20.0f;
+
     float debugNumber = 0;
 
     bool cullBackFaces = false;
     bool wireframeMode = false;
     bool useSsao = false;
+    bool useIbl = true;
+    bool useMsaa = false;
 
 public:
     explicit VulkanRenderer();
@@ -277,6 +290,10 @@ public:
     [[nodiscard]] GLFWwindow *getWindow() const { return window; }
 
     [[nodiscard]] GuiRenderer &getGuiRenderer() const { return *guiRenderer; }
+
+    [[nodiscard]] vk::SampleCountFlagBits getMsaaSampleCount() const {
+        return useMsaa ? msaaSampleCount : vk::SampleCountFlagBits::e1;
+    }
 
     void tick(float deltaTime);
 

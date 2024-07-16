@@ -75,7 +75,7 @@ VulkanRenderer::VulkanRenderer() {
         *surface,
         findQueueFamilies(*ctx.physicalDevice),
         window,
-        msaaSampleCount
+        getMsaaSampleCount()
     );
 
     createCommandPool();
@@ -714,7 +714,7 @@ void VulkanRenderer::recreateSwapChain() {
         *surface,
         findQueueFamilies(*ctx.physicalDevice),
         window,
-        msaaSampleCount
+        getMsaaSampleCount()
     );
 
     createPrepassTextures();
@@ -1066,7 +1066,7 @@ void VulkanRenderer::createScenePipeline() {
                 .lineWidth = 1.0f,
             })
             .withMultisampling({
-                .rasterizationSamples = msaaSampleCount,
+                .rasterizationSamples = getMsaaSampleCount(),
                 .minSampleShading = 1.0f,
             })
             .withDescriptorLayouts({
@@ -1091,7 +1091,7 @@ void VulkanRenderer::createSkyboxPipeline() {
                 .lineWidth = 1.0f,
             })
             .withMultisampling({
-                .rasterizationSamples = msaaSampleCount,
+                .rasterizationSamples = getMsaaSampleCount(),
                 .minSampleShading = 1.0f,
             })
             .withDepthStencil({
@@ -1264,7 +1264,7 @@ void VulkanRenderer::createDebugQuadPipeline() {
                 .lineWidth = 1.0f,
             })
             .withMultisampling({
-                .rasterizationSamples = msaaSampleCount,
+                .rasterizationSamples = getMsaaSampleCount(),
                 .minSampleShading = 1.0f,
             })
             .withDepthStencil({
@@ -1540,7 +1540,7 @@ void VulkanRenderer::initImgui() {
         .DescriptorPool = static_cast<VkDescriptorPool>(**imguiDescriptorPool),
         .MinImageCount = imageCount,
         .ImageCount = imageCount,
-        .MSAASamples = static_cast<VkSampleCountFlagBits>(msaaSampleCount),
+        .MSAASamples = static_cast<VkSampleCountFlagBits>(getMsaaSampleCount()),
         .UseDynamicRendering = true,
         .ColorAttachmentFormat = static_cast<VkFormat>(swapChain->getImageFormat()),
     };
@@ -1572,21 +1572,49 @@ void VulkanRenderer::renderGuiSection() {
     if (ImGui::CollapsingHeader("Renderer ", sectionFlags)) {
         // todo - convert these 2 to dynamic states
         if (ImGui::Checkbox("Cull backfaces", &cullBackFaces)) {
-            waitIdle();
-            createScenePipeline();
+            queuedFrameBeginActions.emplace([&] {
+                waitIdle();
+                createScenePipeline();
+            });
         }
 
         if (ImGui::Checkbox("Wireframe mode", &wireframeMode)) {
-            waitIdle();
-            createScenePipeline();
+            queuedFrameBeginActions.emplace([&] {
+                waitIdle();
+                createScenePipeline();
+            });
         }
 
         ImGui::Checkbox("SSAO", &useSsao);
+
+        ImGui::Checkbox("IBL", &useIbl);
+
+        static bool useMsaaDummy = useMsaa;
+        if (ImGui::Checkbox("MSAA", &useMsaaDummy)) {
+            queuedFrameBeginActions.emplace([this] {
+                useMsaa = useMsaaDummy;
+
+                waitIdle();
+                recreateSwapChain();
+                createScenePipeline();
+                createSkyboxPipeline();
+                createDebugQuadPipeline();
+
+                guiRenderer.reset();
+                initImgui();
+            });
+        }
 
 #ifndef NDEBUG
         ImGui::Separator();
         ImGui::DragFloat("Debug number", &debugNumber, 0.01, 0, std::numeric_limits<float>::max());
 #endif
+    }
+
+    if (ImGui::CollapsingHeader("Lighting ", sectionFlags)) {
+        ImGui::SliderFloat("Light intensity", &lightIntensity, 0.0f, 100.0f, "%.2f");
+        ImGui::ColorEdit3("Light color", &lightColor.x);
+        ImGui::gizmo3D("Light direction", lightDirection, 160, imguiGizmo::modeDirection);
     }
 
     camera->renderGuiSection();
@@ -1615,7 +1643,7 @@ void VulkanRenderer::renderGui(const std::function<void()> &renderCommands) {
     const vk::CommandBufferInheritanceRenderingInfo inheritanceRenderingInfo{
         .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
         .pColorAttachmentFormats = colorAttachmentFormats.data(),
-        .rasterizationSamples = msaaSampleCount,
+        .rasterizationSamples = getMsaaSampleCount(),
     };
 
     const vk::CommandBufferInheritanceInfo inheritanceInfo{
@@ -1639,6 +1667,11 @@ void VulkanRenderer::renderGui(const std::function<void()> &renderCommands) {
 }
 
 bool VulkanRenderer::startFrame() {
+    while (!queuedFrameBeginActions.empty()) {
+        queuedFrameBeginActions.front()();
+        queuedFrameBeginActions.pop();
+    }
+
     const auto &sync = frameResources[currentFrameIdx].sync;
 
     const std::vector waitSemaphores = {
@@ -1878,7 +1911,7 @@ void VulkanRenderer::drawScene() {
         .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
         .pColorAttachmentFormats = colorAttachmentFormats.data(),
         .depthAttachmentFormat = swapChain->getDepthFormat(),
-        .rasterizationSamples = msaaSampleCount,
+        .rasterizationSamples = getMsaaSampleCount(),
     };
 
     const vk::CommandBufferInheritanceInfo inheritanceInfo{
@@ -1944,7 +1977,7 @@ void VulkanRenderer::drawDebugQuad() {
         .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
         .pColorAttachmentFormats = colorAttachmentFormats.data(),
         .depthAttachmentFormat = swapChain->getDepthFormat(),
-        .rasterizationSamples = msaaSampleCount,
+        .rasterizationSamples = getMsaaSampleCount(),
     };
 
     const vk::CommandBufferInheritanceInfo inheritanceInfo{
@@ -2187,8 +2220,11 @@ void VulkanRenderer::updateGraphicsUniformBuffer() const {
             .zNear = zNear,
             .zFar = zFar,
             .useSsao = useSsao ? 1u : 0,
+            .useIbl = useIbl ? 1u : 0,
+            .lightIntensity = lightIntensity,
+            .lightDir = glm::vec3(mat4_cast(lightDirection) * glm::vec4(-1, 0, 0, 0)),
+            .lightColor = lightColor,
             .cameraPos = camera->getPos(),
-            .lightDir = glm::normalize(glm::vec3(1, 1.5, -2)),
         }
     };
 

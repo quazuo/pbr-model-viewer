@@ -40,8 +40,8 @@ void main() {
 
     // light related values
     vec3 light_dir = normalize(ubo.misc.light_direction);
-    vec3 light_color = vec3(23.47, 21.31, 20.79);
-    vec3 radiance = vec3(0); // light_color; // temporarily disable the directional light
+    vec3 light_color = ubo.misc.light_color;
+    vec3 radiance = light_color * ubo.misc.light_intensity;
 
     // utility vectors
     vec3 view = normalize(ubo.misc.camera_pos - worldPosition);
@@ -69,18 +69,25 @@ void main() {
 
     vec3 out_radiance = (k_diffuse * albedo / PI + specular) * radiance * n_dot_l;
 
-    vec3 irradiance = texture(irradianceMapSampler, normal).rgb;
-    vec3 diffuse = irradiance * albedo;
+    vec3 ambient;
 
-    const float MAX_REFLECTION_LOD = 4.0;
-    vec3 reflection = reflect(-view, normal);
-    vec3 prefiltered_color = textureLod(prefilterMapSampler, reflection, roughness * MAX_REFLECTION_LOD).rgb;
+    if (ubo.misc.use_ibl == 1u) {
+        vec3 irradiance = texture(irradianceMapSampler, normal).rgb;
+        vec3 diffuse = irradiance * albedo;
 
-    vec2 env_brdf = texture(brdfLutSampler, vec2(n_dot_v, 1 - roughness)).rg;
-    specular = prefiltered_color * (k_specular * env_brdf.x + env_brdf.y);
+        const float MAX_REFLECTION_LOD = 4.0;
+        vec3 reflection = reflect(-view, normal);
+        vec3 prefiltered_color = textureLod(prefilterMapSampler, reflection, roughness * MAX_REFLECTION_LOD).rgb;
 
-    // no need to multiply `specular` by `k_specular` as it's done implicitly by including fresnel
-    vec3 ambient = (k_diffuse * diffuse + specular) * ao;
+        vec2 env_brdf = texture(brdfLutSampler, vec2(n_dot_v, 1 - roughness)).rg;
+        specular = prefiltered_color * (k_specular * env_brdf.x + env_brdf.y);
+
+        // no need to multiply `specular` by `k_specular` as it's done implicitly by including fresnel
+        ambient = (k_diffuse * diffuse + specular) * ao;
+
+    } else {
+        ambient = vec3(0.03) * albedo * ao;
+    }
 
     vec3 color = ambient + out_radiance;
 
