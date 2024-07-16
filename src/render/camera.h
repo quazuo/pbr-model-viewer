@@ -35,7 +35,8 @@ class Camera {
     Rotator rotator;
     glm::vec3 front{}, right{}, up{};
 
-    bool isLocked = true;
+    bool isLockedCursor = false;
+    bool isLockedCam = true;
     float lockedRadius = 1.5f;
     Rotator lockedRotator;
 
@@ -65,6 +66,8 @@ public:
 
 private:
     static void scrollCallback(GLFWwindow *window, double dx, double dy);
+
+    void bindCameraLockKey();
 
     /**
      * Binds keys used to rotate the camera.

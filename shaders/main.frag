@@ -25,6 +25,23 @@ layout (binding = 7) uniform sampler2D gNormalSampler;
 layout (binding = 8) uniform sampler2D gDepthSampler;
 layout (binding = 9) uniform sampler2D ssaoSampler;
 
+float getBlurredSsao() {
+    vec2 texCoord = gl_FragCoord.xy / vec2(ubo.window.width, ubo.window.height);
+    texCoord.y = 1 - texCoord.y;
+
+    vec2 texelSize = vec2(1.0) / vec2(textureSize(ssaoSampler, 0));
+    float result = 0.0;
+
+    for (int x = -1; x < 2; x++) {
+        for (int y = -1; y < 2; y++) {
+            vec2 offset = vec2(x, y) * texelSize;
+            result += texture(ssaoSampler, texCoord + offset).r;
+        }
+    }
+
+    return result / (3.0 * 3.0);
+}
+
 void main() {
     vec3 albedo = vec3(texture(albedoSampler, fragTexCoord));
 
@@ -33,7 +50,7 @@ void main() {
     normal = normalize(TBN * normal);
 
     float ao = ubo.misc.use_ssao == 1u
-        ? texture(ssaoSampler, gl_FragCoord.xy).r
+        ? getBlurredSsao()
         : texture(ormSampler, fragTexCoord).r;
     float roughness = texture(ormSampler, fragTexCoord).g;
     float metallic = texture(ormSampler, fragTexCoord).b;

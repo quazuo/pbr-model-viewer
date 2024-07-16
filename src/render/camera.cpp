@@ -1,6 +1,7 @@
 #include "camera.h"
 
 #define GLFW_INCLUDE_VULKAN
+#include <iostream>
 #include <GLFW/glfw3.h>
 
 #include "gui/gui.h"
@@ -50,6 +51,9 @@ Rotator::ViewVectors Rotator::getViewVectors() const {
 }
 
 Camera::Camera(GLFWwindow *w) : window(w), inputManager(make_unique<InputManager>(w)) {
+    bindCameraLockKey();
+    bindFreecamMovementKeys();
+    bindFreecamRotationKeys();
     bindMouseDragCallback();
 
     initGlfwUserPointer(window);
@@ -69,9 +73,9 @@ void Camera::tick(const float deltaTime) {
         inputManager->tick(deltaTime);
     }
 
-    if (isLocked) {
+    if (isLockedCam) {
         tickLockedMode();
-    } else {
+    } else if (isLockedCursor) {
         tickMouseMovement(deltaTime);
     }
 
@@ -133,18 +137,29 @@ void Camera::renderGuiSection() {
         }
         ImGui::EndChild();
 
-        // todo - implement freecam
-        // ImGui::Separator();
-        //
-        // ImGui::Checkbox("Lock camera?", &isLocked);
+        ImGui::Separator();
+
+        if (ImGui::RadioButton("Free camera", !isLockedCam)) {
+            isLockedCam = false;
+        }
+
+        ImGui::SameLine();
+
+        if (ImGui::RadioButton("Locked camera", isLockedCam)) {
+            isLockedCam = true;
+
+            if (isLockedCursor) {
+                centerCursor();
+            }
+        }
 
         ImGui::Separator();
 
         ImGui::SliderFloat("Field of view", &fieldOfView, 20.0f, 160.0f, "%.0f");
 
-        if (!isLocked) {
-            ImGui::DragFloat("Rotation speed", &rotationSpeed, 0.1f, 0.0f, FLT_MAX, "%.1f");
-            ImGui::DragFloat("Movement speed", &movementSpeed, 0.1f, 0.0f, FLT_MAX, "%.1f");
+        if (!isLockedCam) {
+            ImGui::DragFloat("Rotation speed", &rotationSpeed, 0.01f, 0.0f, FLT_MAX, "%.2f");
+            ImGui::DragFloat("Movement speed", &movementSpeed, 0.01f, 0.0f, FLT_MAX, "%.2f");
         }
     }
 }
@@ -152,12 +167,34 @@ void Camera::renderGuiSection() {
 void Camera::scrollCallback(GLFWwindow *window, const double dx, const double dy) {
     const auto userData = static_cast<GlfwStaticUserData *>(glfwGetWindowUserPointer(window));
     if (!userData) throw std::runtime_error("unexpected null window user pointer");
-    userData->camera->lockedRadius /= static_cast<float>(1 + dy * 0.05);
+
+    if (
+        !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow)
+        && !ImGui::IsAnyItemActive()
+        && !ImGui::IsAnyItemFocused()
+    ) {
+        userData->camera->lockedRadius /= static_cast<float>(1 + dy * 0.05);
+    }
+}
+
+void Camera::bindCameraLockKey() {
+    inputManager->bindCallback(GLFW_KEY_F1, EActivationType::PRESS_ONCE, [&](const float deltaTime) {
+        (void) deltaTime;
+        if (isLockedCam) {
+            return;
+        }
+
+        isLockedCursor = !isLockedCursor;
+
+        if (isLockedCursor) {
+            centerCursor();
+        }
+    });
 }
 
 void Camera::bindMouseDragCallback() {
     inputManager->bindMouseDragCallback(GLFW_MOUSE_BUTTON_LEFT, [&](const double dx, const double dy) {
-        if (isLocked) {
+        if (isLockedCam) {
             static constexpr float speed = 0.003;
 
             lockedRotator += {
@@ -170,25 +207,25 @@ void Camera::bindMouseDragCallback() {
 
 void Camera::bindFreecamRotationKeys() {
     inputManager->bindCallback(GLFW_KEY_UP, EActivationType::PRESS_ANY, [&](const float deltaTime) {
-        if (!isLocked) {
+        if (!isLockedCam) {
             rotator += glm::vec2(0, deltaTime * rotationSpeed);
         }
     });
 
     inputManager->bindCallback(GLFW_KEY_DOWN, EActivationType::PRESS_ANY, [&](const float deltaTime) {
-        if (!isLocked) {
+        if (!isLockedCam) {
             rotator -= glm::vec2(0, deltaTime * rotationSpeed);
         }
     });
 
     inputManager->bindCallback(GLFW_KEY_RIGHT, EActivationType::PRESS_ANY, [&](const float deltaTime) {
-        if (!isLocked) {
+        if (!isLockedCam) {
             rotator -= glm::vec2(deltaTime * rotationSpeed, 0);
         }
     });
 
     inputManager->bindCallback(GLFW_KEY_LEFT, EActivationType::PRESS_ANY, [&](const float deltaTime) {
-        if (!isLocked) {
+        if (!isLockedCam) {
             rotator += glm::vec2(deltaTime * rotationSpeed, 0);
         }
     });
@@ -196,37 +233,37 @@ void Camera::bindFreecamRotationKeys() {
 
 void Camera::bindFreecamMovementKeys() {
     inputManager->bindCallback(GLFW_KEY_W, EActivationType::PRESS_ANY, [&](const float deltaTime) {
-        if (!isLocked) {
+        if (!isLockedCam) {
             pos += front * deltaTime * movementSpeed; // Move forward
         }
     });
 
     inputManager->bindCallback(GLFW_KEY_S, EActivationType::PRESS_ANY, [&](const float deltaTime) {
-        if (!isLocked) {
+        if (!isLockedCam) {
             pos -= front * deltaTime * movementSpeed; // Move backward
         }
     });
 
     inputManager->bindCallback(GLFW_KEY_D, EActivationType::PRESS_ANY, [&](const float deltaTime) {
-        if (!isLocked) {
+        if (!isLockedCam) {
             pos += right * deltaTime * movementSpeed; // Strafe right
         }
     });
 
     inputManager->bindCallback(GLFW_KEY_A, EActivationType::PRESS_ANY, [&](const float deltaTime) {
-        if (!isLocked) {
+        if (!isLockedCam) {
             pos -= right * deltaTime * movementSpeed; // Strafe left
         }
     });
 
     inputManager->bindCallback(GLFW_KEY_SPACE, EActivationType::PRESS_ANY, [&](const float deltaTime) {
-        if (!isLocked) {
+        if (!isLockedCam) {
             pos += glm::vec3(0, 1, 0) * deltaTime * movementSpeed; // Fly upwards
         }
     });
 
     inputManager->bindCallback(GLFW_KEY_LEFT_SHIFT, EActivationType::PRESS_ANY, [&](const float deltaTime) {
-        if (!isLocked) {
+        if (!isLockedCam) {
             pos -= glm::vec3(0, 1, 0) * deltaTime * movementSpeed; // Fly downwards
         }
     });
@@ -244,9 +281,11 @@ void Camera::tickMouseMovement(const float deltaTime) {
     const float mouseSpeed = 0.002f * rotationSpeed;
 
     rotator += {
-        mouseSpeed * (static_cast<float>(windowSize.x) / 2 - static_cast<float>(cursorPos.x)),
-        mouseSpeed * (static_cast<float>(windowSize.y) / 2 - static_cast<float>(cursorPos.y))
+        mouseSpeed * (static_cast<float>(windowSize.x / 2) - static_cast<float>(std::floor(cursorPos.x))),
+        mouseSpeed * (static_cast<float>(windowSize.y / 2) - static_cast<float>(std::floor(cursorPos.y)))
     };
+
+    centerCursor();
 }
 
 void Camera::tickLockedMode() {
@@ -289,7 +328,7 @@ void Camera::centerCursor() const {
 
     glfwSetCursorPos(
         window,
-        static_cast<double>(windowSize.x) / 2,
-        static_cast<double>(windowSize.y) / 2
+        windowSize.x / 2,
+        windowSize.y / 2
     );
 }
