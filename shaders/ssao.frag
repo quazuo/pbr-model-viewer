@@ -86,26 +86,6 @@ const vec3 ssao_kernel[KERNEL_SIZE] = vec3[KERNEL_SIZE](
     vec3(-0.442722, -0.679282, 0.186503)
 );
 
-float linearize_depth(float d, float z_near, float z_far) {
-    return z_near * z_far / (z_far + d * (z_near - z_far));
-}
-
-vec3 calc_view_pos(vec2 coords) {
-    float depth = texture(gDepthSampler, coords).r;
-
-    vec4 ndc = vec4(
-        coords.x * 2.0 - 1.0,
-        coords.y * 2.0 - 1.0,
-        depth, // depth * 2.0 - 1.0,
-        1.0
-    );
-
-    vec4 view_pos = inverse(ubo.matrices.proj) * ndc;
-    view_pos.xyz /= view_pos.w;
-
-    return view_pos.xyz;
-}
-
 void main() {
     const float radius = 0.2;
 
