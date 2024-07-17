@@ -159,11 +159,14 @@ class VulkanRenderer {
     unique_ptr<Texture> albedoTexture;
     unique_ptr<Texture> normalTexture;
     unique_ptr<Texture> ormTexture;
+
     unique_ptr<Texture> ssaoTexture;
+    unique_ptr<Texture> ssaoNoiseTexture;
 
     struct {
         unique_ptr<Texture> depth;
         unique_ptr<Texture> normal;
+        unique_ptr<Texture> pos;
     } gBufferTextures;
 
     unique_ptr<Texture> skyboxTexture;
@@ -241,7 +244,7 @@ class VulkanRenderer {
 
     vk::SampleCountFlagBits msaaSampleCount = vk::SampleCountFlagBits::e1;
 
-    static constexpr auto prepassNormalFormat = vk::Format::eR8G8B8A8Unorm;
+    static constexpr auto prepassColorFormat = vk::Format::eR8G8B8A8Unorm;
     static constexpr auto hdrEnvmapFormat = vk::Format::eR32G32B32A32Sfloat;
     static constexpr auto brdfIntegrationMapFormat = vk::Format::eR8G8B8A8Unorm;
 
@@ -367,7 +370,7 @@ private:
 
     void createPrepassTextures();
 
-    void createSsaoTexture();
+    void createSsaoTextures();
 
     void createIblTextures();
 

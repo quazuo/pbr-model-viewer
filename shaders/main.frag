@@ -21,9 +21,7 @@ layout (binding = 3) uniform sampler2D ormSampler;
 layout (binding = 4) uniform samplerCube irradianceMapSampler;
 layout (binding = 5) uniform samplerCube prefilterMapSampler;
 layout (binding = 6) uniform sampler2D brdfLutSampler;
-layout (binding = 7) uniform sampler2D gNormalSampler;
-layout (binding = 8) uniform sampler2D gDepthSampler;
-layout (binding = 9) uniform sampler2D ssaoSampler;
+layout (binding = 7) uniform sampler2D ssaoSampler;
 
 float getBlurredSsao() {
     vec2 texCoord = gl_FragCoord.xy / vec2(ubo.window.width, ubo.window.height);
@@ -54,6 +52,8 @@ void main() {
         : texture(ormSampler, fragTexCoord).r;
     float roughness = texture(ormSampler, fragTexCoord).g;
     float metallic = texture(ormSampler, fragTexCoord).b;
+
+    outColor = vec4(ao); return;
 
     // light related values
     vec3 light_dir = normalize(ubo.misc.light_direction);

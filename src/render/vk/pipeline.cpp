@@ -129,18 +129,21 @@ PipelinePack PipelineBuilder::create(const RendererContext &ctx) const {
                                        .minSampleShading = 1.0f,
                                    };
 
-    static constexpr vk::PipelineColorBlendAttachmentState colorBlendAttachment{
-        .blendEnable = vk::False,
-        .colorWriteMask = vk::ColorComponentFlagBits::eR
-                          | vk::ColorComponentFlagBits::eG
-                          | vk::ColorComponentFlagBits::eB
-                          | vk::ColorComponentFlagBits::eA,
-    };
+    const std::vector<vk::PipelineColorBlendAttachmentState> colorBlendAttachments(
+        colorAttachmentFormats.size(),
+        {
+            .blendEnable = vk::False,
+            .colorWriteMask = vk::ColorComponentFlagBits::eR
+                              | vk::ColorComponentFlagBits::eG
+                              | vk::ColorComponentFlagBits::eB
+                              | vk::ColorComponentFlagBits::eA,
+        }
+    );
 
-    static constexpr vk::PipelineColorBlendStateCreateInfo colorBlending{
+    const vk::PipelineColorBlendStateCreateInfo colorBlending{
         .logicOpEnable = vk::False,
-        .attachmentCount = 1u,
-        .pAttachments = &colorBlendAttachment,
+        .attachmentCount = static_cast<uint32_t>(colorBlendAttachments.size()),
+        .pAttachments = colorBlendAttachments.data(),
     };
 
     const auto depthStencil = depthStencilOverride

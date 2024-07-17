@@ -316,7 +316,7 @@ void CubeImage::createViews(const RendererContext &ctx) {
     }
 }
 
-void CubeImage::copyFromBuffer(const vk::Buffer buffer, const vk::raii::CommandBuffer& commandBuffer) {
+void CubeImage::copyFromBuffer(const vk::Buffer buffer, const vk::raii::CommandBuffer &commandBuffer) {
     const vk::BufferImageCopy region{
         .bufferOffset = 0U,
         .bufferRowLength = 0U,
@@ -502,16 +502,16 @@ void Texture::generateMipmaps(const RendererContext &ctx, const vk::raii::Comman
     utils::cmd::endSingleTimeCommands(commandBuffer, queue);
 }
 
-void Texture::createSampler(const RendererContext &ctx) {
+void Texture::createSampler(const RendererContext &ctx, const vk::SamplerAddressMode addressMode) {
     const vk::PhysicalDeviceProperties properties = ctx.physicalDevice->getProperties();
 
     const vk::SamplerCreateInfo samplerInfo{
         .magFilter = vk::Filter::eLinear,
         .minFilter = vk::Filter::eLinear,
         .mipmapMode = vk::SamplerMipmapMode::eLinear,
-        .addressModeU = vk::SamplerAddressMode::eClampToEdge,
-        .addressModeV = vk::SamplerAddressMode::eClampToEdge,
-        .addressModeW = vk::SamplerAddressMode::eClampToEdge,
+        .addressModeU = addressMode,
+        .addressModeV = addressMode,
+        .addressModeW = addressMode,
         .mipLodBias = 0.0f,
         .anisotropyEnable = vk::True,
         .maxAnisotropy = properties.limits.maxSamplerAnisotropy,
@@ -563,7 +563,12 @@ TextureBuilder &TextureBuilder::makeMipmaps() {
     return *this;
 }
 
-TextureBuilder &TextureBuilder::asUninitialized(vk::Extent3D extent) {
+TextureBuilder &TextureBuilder::withSamplerAddressMode(const vk::SamplerAddressMode mode) {
+    addressMode = mode;
+    return *this;
+}
+
+TextureBuilder &TextureBuilder::asUninitialized(const vk::Extent3D extent) {
     isUninitialized = true;
     desiredExtent = extent;
     return *this;
@@ -576,6 +581,12 @@ TextureBuilder &TextureBuilder::withSwizzle(const std::array<SwizzleComp, 4> sw)
 
 TextureBuilder &TextureBuilder::fromPaths(const std::vector<std::filesystem::path> &sources) {
     paths = sources;
+    return *this;
+}
+
+TextureBuilder &TextureBuilder::fromMemory(void *ptr, const vk::Extent3D extent) {
+    memorySource = ptr;
+    desiredExtent = extent;
     return *this;
 }
 
@@ -630,7 +641,7 @@ unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx, const vk:
     }
 
     texture->image->createViews(ctx);
-    texture->createSampler(ctx);
+    texture->createSampler(ctx, addressMode);
 
     utils::cmd::doSingleTimeCommands(*ctx.device, cmdPool, queue, [&](const auto &cmdBuffer) {
         texture->image->transitionLayout(
@@ -660,15 +671,27 @@ unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx, const vk:
 }
 
 void TextureBuilder::checkParams() const {
-    if (paths.empty() && !isUninitialized) {
+    if (paths.empty() && !memorySource && !isUninitialized) {
         throw std::runtime_error("no specified data source for texture!");
     }
 
+    if (!paths.empty() && memorySource) {
+        throw std::runtime_error("cannot specify two different kinds of texture sources!");
+    }
+
     if (!paths.empty() && isUninitialized) {
-        throw std::runtime_error("cannot simultaneously specify texture as uninitialized and specify path sources!");
+        throw std::runtime_error("cannot simultaneously set texture as uninitialized and specify path sources!");
+    }
+
+    if (memorySource && isUninitialized) {
+        throw std::runtime_error("cannot simultaneously set texture as uninitialized and specify a memory source!");
     }
 
     if (isCubemap) {
+        if (memorySource) {
+            throw std::runtime_error("cubemaps from a memory source are currently not supported!");
+        }
+
         if (isSeparateChannels) {
             throw std::runtime_error("cubemaps from separated channels are currently not supported!");
         }
@@ -686,7 +709,7 @@ void TextureBuilder::checkParams() const {
             if (paths.size() != 3) {
                 throw std::runtime_error("unsupported channel count for separate-channelled non-cubemap texture!");
             }
-        } else if (paths.size() != 1 && !isUninitialized) {
+        } else if (!memorySource && paths.size() != 1 && !isUninitialized) {
             throw std::runtime_error("invalid layer count for non-cubemap texture!");
         }
     }
@@ -694,6 +717,10 @@ void TextureBuilder::checkParams() const {
     if (isSeparateChannels) {
         if (isUninitialized) {
             throw std::runtime_error("cannot specify texture as uninitialized and derived from separate channels!");
+        }
+
+        if (memorySource) {
+            throw std::runtime_error("separate-channeled textures from a memory source are currently not supported!");
         }
 
         if (utils::img::getFormatSizeInBytes(format) != 4) {
@@ -718,35 +745,56 @@ void TextureBuilder::checkParams() const {
 }
 
 uint32_t TextureBuilder::getLayerCount() const {
-    const uint32_t sourcesCount = isUninitialized ? (isCubemap ? 6 : 1) : paths.size();
+    if (memorySource) return 1;
+
+    const uint32_t sourcesCount = isUninitialized
+        ? (isCubemap ? 6 : 1)
+        : paths.size();
     return isSeparateChannels ? sourcesCount / 3 : sourcesCount;
 }
 
 TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererContext &ctx) const {
     std::vector<void *> dataSources;
-    int texWidth, texHeight, texChannels;
+    int texWidth = 0, texHeight = 0, texChannels;
 
-    for (const auto &path: paths) {
-        if (path.empty()) {
-            dataSources.push_back(nullptr);
-            continue;
+    if (memorySource) {
+        dataSources.emplace_back(memorySource);
+        texWidth = desiredExtent->width;
+        texHeight = desiredExtent->height;
+    } else {
+        for (size_t i = 0; i < paths.size(); i++) {
+            const auto &path = paths[i];
+
+            if (path.empty()) {
+                dataSources.push_back(nullptr);
+                continue;
+            }
+
+            stbi_set_flip_vertically_on_load(isHdr);
+            const int desiredChannels = isSeparateChannels ? STBI_grey : STBI_rgb_alpha;
+            void *src;
+
+            int currTexWidth, currTexHeight;
+
+            if (isHdr) {
+                src = stbi_loadf(path.string().c_str(), &currTexWidth, &currTexHeight, &texChannels, desiredChannels);
+            } else {
+                src = stbi_load(path.string().c_str(), &currTexWidth, &currTexHeight, &texChannels, desiredChannels);
+            }
+
+            if (!src) {
+                throw std::runtime_error("failed to load texture image!");
+            }
+
+            if (i == 0) {
+                texWidth = currTexWidth;
+                texHeight = currTexHeight;
+            } else if (texWidth != currTexWidth || texHeight != currTexHeight) {
+                throw std::runtime_error("size mismatch while loading a texture from paths!");
+            }
+
+            dataSources.push_back(src);
         }
-
-        stbi_set_flip_vertically_on_load(isHdr);
-        const int desiredChannels = isSeparateChannels ? STBI_grey : STBI_rgb_alpha;
-        void *src;
-
-        if (isHdr) {
-            src = stbi_loadf(path.string().c_str(), &texWidth, &texHeight, &texChannels, desiredChannels);
-        } else {
-            src = stbi_load(path.string().c_str(), &texWidth, &texHeight, &texChannels, desiredChannels);
-        }
-
-        if (!src) {
-            throw std::runtime_error("failed to load texture image!");
-        }
-
-        dataSources.push_back(src);
     }
 
     const uint32_t layerCount = getLayerCount();
@@ -760,20 +808,7 @@ TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererCo
     }
 
     if (isSeparateChannels) {
-        auto *merged = static_cast<uint8_t *>(malloc(textureSize));
-        if (!merged) {
-            throw std::runtime_error("malloc failed");
-        }
-
-        for (size_t i = 0; i < textureSize; i++) {
-            if (i % componentCount == componentCount - 1 || dataSources[i % componentCount] == nullptr) {
-                merged[i] = 0; // todo - utilize alpha
-            } else {
-                merged[i] = static_cast<uint8_t *>(dataSources[i % componentCount])[i / componentCount];
-            }
-        }
-
-        dataSources = {merged};
+        dataSources = {mergeChannels(dataSources, textureSize, componentCount)};
     }
 
     for (const auto &source: dataSources) {
@@ -795,7 +830,7 @@ TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererCo
 
         if (isSeparateChannels) {
             free(dataSources[i]);
-        } else {
+        } else if (!memorySource) {
             stbi_image_free(dataSources[i]);
         }
     }
@@ -811,6 +846,24 @@ TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererCo
         },
         .layerCount = layerCount
     };
+}
+
+void *TextureBuilder::mergeChannels(const std::vector<void *> &channelsData, const size_t textureSize,
+                                    const size_t componentCount) {
+    auto *merged = static_cast<uint8_t *>(malloc(textureSize));
+    if (!merged) {
+        throw std::runtime_error("malloc failed");
+    }
+
+    for (size_t i = 0; i < textureSize; i++) {
+        if (i % componentCount == componentCount - 1 || channelsData[i % componentCount] == nullptr) {
+            merged[i] = 0; // todo - utilize alpha
+        } else {
+            merged[i] = static_cast<uint8_t *>(channelsData[i % componentCount])[i / componentCount];
+        }
+    }
+
+    return merged;
 }
 
 void TextureBuilder::performSwizzle(uint8_t *data, const size_t size) const {

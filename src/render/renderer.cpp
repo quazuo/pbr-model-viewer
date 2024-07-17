@@ -10,6 +10,7 @@
 #include <vector>
 #include <filesystem>
 #include <array>
+#include <random>
 
 #include "gui/gui.h"
 #include "mesh/model.h"
@@ -94,7 +95,7 @@ VulkanRenderer::VulkanRenderer() {
     createPrepassDescriptorSets();
     createPrepassPipeline();
 
-    createSsaoTexture();
+    createSsaoTextures();
     createSsaoRenderInfo();
     createSsaoDescriptorSets();
     createSsaoPipeline();
@@ -590,9 +591,18 @@ void VulkanRenderer::createPrepassTextures() {
         .depth = 1
     };
 
+    gBufferTextures.pos = TextureBuilder()
+            .asUninitialized(extent)
+            .useFormat(prepassColorFormat)
+            .useUsage(vk::ImageUsageFlagBits::eTransferSrc
+                      | vk::ImageUsageFlagBits::eTransferDst
+                      | vk::ImageUsageFlagBits::eSampled
+                      | vk::ImageUsageFlagBits::eColorAttachment)
+            .create(ctx, *commandPool, *graphicsQueue);
+
     gBufferTextures.normal = TextureBuilder()
             .asUninitialized(extent)
-            .useFormat(prepassNormalFormat)
+            .useFormat(prepassColorFormat)
             .useUsage(vk::ImageUsageFlagBits::eTransferSrc
                       | vk::ImageUsageFlagBits::eTransferDst
                       | vk::ImageUsageFlagBits::eSampled
@@ -609,21 +619,34 @@ void VulkanRenderer::createPrepassTextures() {
             .create(ctx, *commandPool, *graphicsQueue);
 
     for (auto &res: frameResources) {
-        if (res.sceneDescriptorSet) {
-            res.sceneDescriptorSet->queueUpdate(7, *gBufferTextures.normal)
-                    .queueUpdate(8, *gBufferTextures.depth)
-                    .commitUpdates(ctx);
-        }
-
         if (res.ssaoDescriptorSet) {
-            res.ssaoDescriptorSet->queueUpdate(1, *gBufferTextures.normal)
-                    .queueUpdate(2, *gBufferTextures.depth)
+            res.ssaoDescriptorSet->queueUpdate(1, *gBufferTextures.depth)
+                    .queueUpdate(2, *gBufferTextures.normal)
+                    .queueUpdate(3, *gBufferTextures.pos)
                     .commitUpdates(ctx);
         }
     }
 }
 
-void VulkanRenderer::createSsaoTexture() {
+static std::vector<glm::vec4> makeSsaoNoise() {
+    std::uniform_real_distribution<float> randomFloats(0.0, 1.0); // random floats between [0.0, 1.0]
+    std::default_random_engine generator;
+
+    std::vector<glm::vec4> ssaoNoise;
+    for (unsigned int i = 0; i < 16; i++) {
+        glm::vec4 noise(
+            randomFloats(generator) * 2.0 - 1.0,
+            randomFloats(generator) * 2.0 - 1.0,
+            0.0f,
+            0.0f
+        );
+        ssaoNoise.push_back(noise);
+    }
+
+    return ssaoNoise;
+}
+
+void VulkanRenderer::createSsaoTextures() {
     const auto &[width, height] = swapChain->getExtent();
 
     const vk::Extent3D extent{
@@ -641,13 +664,29 @@ void VulkanRenderer::createSsaoTexture() {
                       | vk::ImageUsageFlagBits::eColorAttachment)
             .create(ctx, *commandPool, *graphicsQueue);
 
+    auto noise = makeSsaoNoise();
+
+    ssaoNoiseTexture = TextureBuilder()
+            .fromMemory(noise.data(), { 4, 4, 1 })
+            .useFormat(vk::Format::eR32G32B32A32Sfloat)
+            .useUsage(vk::ImageUsageFlagBits::eTransferSrc
+                      | vk::ImageUsageFlagBits::eTransferDst
+                      | vk::ImageUsageFlagBits::eSampled
+                      | vk::ImageUsageFlagBits::eColorAttachment)
+            .withSamplerAddressMode(vk::SamplerAddressMode::eRepeat)
+            .create(ctx, *commandPool, *graphicsQueue);
+
     if (debugQuadDescriptorSet) {
         debugQuadDescriptorSet->updateBinding(ctx, 0, *ssaoTexture);
     }
 
     for (auto &res: frameResources) {
         if (res.sceneDescriptorSet) {
-            res.sceneDescriptorSet->updateBinding(ctx, 9, *ssaoTexture);
+            res.sceneDescriptorSet->updateBinding(ctx, 7, *ssaoTexture);
+        }
+
+        if (res.ssaoDescriptorSet) {
+            res.ssaoDescriptorSet->updateBinding(ctx, 4, *ssaoNoiseTexture);
         }
     }
 }
@@ -719,7 +758,7 @@ void VulkanRenderer::recreateSwapChain() {
 
     createPrepassTextures();
     createPrepassRenderInfo();
-    createSsaoTexture();
+    createSsaoTextures();
     createSsaoRenderInfo();
 }
 
@@ -733,7 +772,7 @@ void VulkanRenderer::createDescriptorPool() {
 
     static constexpr vk::DescriptorPoolSize samplerPoolSize{
         .type = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 13 + 3,
+        .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 13 + 4,
     };
 
     static constexpr std::array poolSizes = {
@@ -757,7 +796,7 @@ void VulkanRenderer::createSceneDescriptorSets() {
                 vk::DescriptorType::eUniformBuffer,
                 vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
             )
-            .addRepeatedBindings(9, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+            .addRepeatedBindings(7, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
             .create(ctx);
 
     const auto layoutPtr = make_shared<vk::raii::DescriptorSetLayout>(std::move(layout));
@@ -777,9 +816,7 @@ void VulkanRenderer::createSceneDescriptorSets() {
                 .queueUpdate(4, *irradianceMapTexture)
                 .queueUpdate(5, *prefilteredEnvmapTexture)
                 .queueUpdate(6, *brdfIntegrationMapTexture)
-                .queueUpdate(7, *gBufferTextures.normal)
-                .queueUpdate(8, *gBufferTextures.depth)
-                .queueUpdate(9, *ssaoTexture)
+                .queueUpdate(7, *ssaoTexture)
                 .commitUpdates(ctx);
     }
 }
@@ -845,7 +882,7 @@ void VulkanRenderer::createSsaoDescriptorSets() {
                 vk::DescriptorType::eUniformBuffer,
                 vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
             )
-            .addRepeatedBindings(2, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+            .addRepeatedBindings(4, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
             .create(ctx);
 
     const auto layoutPtr = make_shared<vk::raii::DescriptorSetLayout>(std::move(layout));
@@ -862,8 +899,10 @@ void VulkanRenderer::createSsaoDescriptorSets() {
                     vk::DescriptorType::eUniformBuffer,
                     sizeof(GraphicsUBO)
                 )
-                .queueUpdate(1, *gBufferTextures.normal)
-                .queueUpdate(2, *gBufferTextures.depth)
+                .queueUpdate(1, *gBufferTextures.depth)
+                .queueUpdate(2, *gBufferTextures.normal)
+                .queueUpdate(3, *gBufferTextures.pos)
+                .queueUpdate(4, *ssaoNoiseTexture)
                 .commitUpdates(ctx);
     }
 }
@@ -946,6 +985,13 @@ void VulkanRenderer::createPrepassRenderInfo() {
     const std::vector colorAttachments{
         vk::RenderingAttachmentInfo{
             .imageView = *gBufferTextures.normal->getView(),
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .clearValue = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f},
+        },
+        vk::RenderingAttachmentInfo{
+            .imageView = *gBufferTextures.pos->getView(),
             .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
             .loadOp = vk::AttachmentLoadOp::eClear,
             .storeOp = vk::AttachmentStoreOp::eStore,
@@ -1122,7 +1168,10 @@ void VulkanRenderer::createPrepassPipeline() {
             .withDescriptorLayouts({
                 *frameResources[0].prepassDescriptorSet->getLayout(),
             })
-            .withColorFormats({gBufferTextures.normal->getFormat()})
+            .withColorFormats({
+                gBufferTextures.normal->getFormat(),
+                gBufferTextures.pos->getFormat()
+            })
             .withDepthFormat(swapChain->getDepthFormat())
             .create(ctx);
 
@@ -1806,7 +1855,10 @@ void VulkanRenderer::runPrepass() {
 
     const auto &commandBuffer = *frameResources[currentFrameIdx].prepassCmdBuffer.buffer;
 
-    const std::vector colorAttachmentFormats{gBufferTextures.normal->getFormat()};
+    const std::vector colorAttachmentFormats{
+        gBufferTextures.normal->getFormat(),
+        gBufferTextures.pos->getFormat(),
+    };
 
     const vk::CommandBufferInheritanceRenderingInfo inheritanceRenderingInfo{
         .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),

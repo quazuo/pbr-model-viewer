@@ -72,13 +72,13 @@ public:
      * @param buffer Buffer from which to copy.
      * @param commandBuffer Command buffer to which the commands will be recorded.
      */
-    virtual void copyFromBuffer(vk::Buffer buffer, const vk::raii::CommandBuffer& commandBuffer);
+    virtual void copyFromBuffer(vk::Buffer buffer, const vk::raii::CommandBuffer &commandBuffer);
 
     virtual void transitionLayout(vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
-                                  const vk::raii::CommandBuffer& commandBuffer) const;
+                                  const vk::raii::CommandBuffer &commandBuffer) const;
 
     void transitionLayout(vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
-                          vk::ImageSubresourceRange range, const vk::raii::CommandBuffer& commandBuffer) const;
+                          vk::ImageSubresourceRange range, const vk::raii::CommandBuffer &commandBuffer) const;
 
     void saveToFile(const RendererContext &ctx, const std::filesystem::path &path,
                     const vk::raii::CommandPool &cmdPool, const vk::raii::Queue &queue) const;
@@ -112,10 +112,10 @@ public:
 
     void createViews(const RendererContext &ctx) override;
 
-    void copyFromBuffer(vk::Buffer buffer, const vk::raii::CommandBuffer& commandBuffer) override;
+    void copyFromBuffer(vk::Buffer buffer, const vk::raii::CommandBuffer &commandBuffer) override;
 
     void transitionLayout(vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
-                          const vk::raii::CommandBuffer& commandBuffer) const override;
+                          const vk::raii::CommandBuffer &commandBuffer) const override;
 };
 
 class Texture {
@@ -154,7 +154,7 @@ public:
                          const vk::raii::Queue &queue, vk::ImageLayout finalLayout) const;
 
 private:
-    void createSampler(const RendererContext &ctx);
+    void createSampler(const RendererContext &ctx, vk::SamplerAddressMode addressMode);
 };
 
 enum class SwizzleComp {
@@ -181,9 +181,12 @@ class TextureBuilder {
 
     std::array<SwizzleComp, 4> swizzle{SwizzleComp::R, SwizzleComp::G, SwizzleComp::B, SwizzleComp::A};
 
+    vk::SamplerAddressMode addressMode = vk::SamplerAddressMode::eClampToEdge;
+
     std::optional<vk::Extent3D> desiredExtent;
 
     std::vector<std::filesystem::path> paths;
+    void *memorySource = nullptr;
 
     struct LoadedTextureData {
         unique_ptr<Buffer> stagingBuffer;
@@ -206,11 +209,15 @@ public:
 
     TextureBuilder &makeMipmaps();
 
+    TextureBuilder &withSamplerAddressMode(vk::SamplerAddressMode mode);
+
     TextureBuilder &asUninitialized(vk::Extent3D extent);
 
     TextureBuilder &withSwizzle(std::array<SwizzleComp, 4> sw);
 
     TextureBuilder &fromPaths(const std::vector<std::filesystem::path> &sources);
+
+    TextureBuilder &fromMemory(void *ptr, vk::Extent3D extent);
 
     [[nodiscard]] unique_ptr<Texture>
     create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool, const vk::raii::Queue &queue) const;
@@ -221,6 +228,8 @@ private:
     [[nodiscard]] uint32_t getLayerCount() const;
 
     [[nodiscard]] LoadedTextureData loadFromPaths(const RendererContext &ctx) const;
+
+    static void *mergeChannels(const std::vector<void *> &channelsData, size_t textureSize, size_t componentCount);
 
     void performSwizzle(uint8_t *data, size_t size) const;
 };
