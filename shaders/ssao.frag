@@ -6,7 +6,7 @@ layout (location = 0) in vec2 texCoords;
 
 layout (location = 0) out vec4 outColor;
 
-layout(binding = 0) uniform UniformBufferObject {
+layout (binding = 0) uniform UniformBufferObject {
     WindowRes window;
     Matrices matrices;
     MiscData misc;
@@ -107,10 +107,13 @@ vec3 calc_view_pos(vec2 coords) {
 }
 
 void main() {
-    const float radius = 1;
+    const float radius = 0.2;
 
     vec3 normal = normalize(texture(gNormalSampler, texCoords).xyz);
     vec3 frag_pos = texture(gPosSampler, texCoords).xyz;
+
+    normal.y *= -1;
+    frag_pos.y *= -1;
 
     const vec2 noise_scale = vec2(ubo.window.width, ubo.window.height) / 4.0;
     vec3 random_vec = texture(noiseSampler, texCoords * noise_scale).xyz;
@@ -121,7 +124,7 @@ void main() {
     mat3 tbn = mat3(tangent, bitangent, normal);
 
     float occlusion = 0.0;
-    for(int i = 0; i < KERNEL_SIZE; i++) {
+    for (int i = 0; i < KERNEL_SIZE; i++) {
         vec3 sample_vec = tbn * ssao_kernel[i];
         vec3 sample_view_pos = frag_pos + sample_vec * radius;
 

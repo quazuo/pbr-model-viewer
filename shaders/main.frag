@@ -30,14 +30,14 @@ float getBlurredSsao() {
     vec2 texelSize = vec2(1.0) / vec2(textureSize(ssaoSampler, 0));
     float result = 0.0;
 
-    for (int x = -1; x < 2; x++) {
-        for (int y = -1; y < 2; y++) {
+    for (int x = -2; x < 2; x++) {
+        for (int y = -2; y < 2; y++) {
             vec2 offset = vec2(x, y) * texelSize;
             result += texture(ssaoSampler, texCoord + offset).r;
         }
     }
 
-    return result / (3.0 * 3.0);
+    return result / (4.0 * 4.0);
 }
 
 void main() {
@@ -52,8 +52,6 @@ void main() {
         : texture(ormSampler, fragTexCoord).r;
     float roughness = texture(ormSampler, fragTexCoord).g;
     float metallic = texture(ormSampler, fragTexCoord).b;
-
-    outColor = vec4(ao); return;
 
     // light related values
     vec3 light_dir = normalize(ubo.misc.light_direction);

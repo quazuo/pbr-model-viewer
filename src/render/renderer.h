@@ -244,7 +244,7 @@ class VulkanRenderer {
 
     vk::SampleCountFlagBits msaaSampleCount = vk::SampleCountFlagBits::e1;
 
-    static constexpr auto prepassColorFormat = vk::Format::eR8G8B8A8Unorm;
+    static constexpr auto prepassColorFormat = vk::Format::eR16G16B16A16Sfloat;
     static constexpr auto hdrEnvmapFormat = vk::Format::eR32G32B32A32Sfloat;
     static constexpr auto brdfIntegrationMapFormat = vk::Format::eR8G8B8A8Unorm;
 
