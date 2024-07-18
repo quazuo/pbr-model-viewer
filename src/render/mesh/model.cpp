@@ -134,8 +134,9 @@ std::vector<glm::mat4> Model::getInstanceTransforms() const {
 }
 
 void Model::normalizeScale() {
+    constexpr float standardScale = 10.0f;
     const float largestDistance = getMaxVertexDistance();
-    const glm::mat4 scaleMatrix = glm::scale(glm::identity<glm::mat4>(), glm::vec3(1.0f / largestDistance));
+    const glm::mat4 scaleMatrix = glm::scale(glm::identity<glm::mat4>(), glm::vec3(standardScale / largestDistance));
 
     for (auto& mesh: meshes) {
         for (auto& transform: mesh.instances) {
