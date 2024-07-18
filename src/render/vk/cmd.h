@@ -10,7 +10,7 @@ struct SecondaryCommandBuffer {
     vk::raii::CommandBuffer& operator*() const { return *buffer; }
 };
 
-namespace utils::cmd {
+namespace vkutils::cmd {
     /**
     * Allocates and begins a new command buffer which is supposed to be recorded once
     * and destroyed after submission.

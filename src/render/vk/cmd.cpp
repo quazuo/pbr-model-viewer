@@ -1,7 +1,7 @@
 #include "cmd.h"
 
 vk::raii::CommandBuffer
-utils::cmd::beginSingleTimeCommands(const vk::raii::Device &device, const vk::raii::CommandPool &commandPool) {
+vkutils::cmd::beginSingleTimeCommands(const vk::raii::Device &device, const vk::raii::CommandPool &commandPool) {
     const vk::CommandBufferAllocateInfo allocInfo{
         .commandPool = *commandPool,
         .level = vk::CommandBufferLevel::ePrimary,
@@ -20,7 +20,7 @@ utils::cmd::beginSingleTimeCommands(const vk::raii::Device &device, const vk::ra
     return buffer;
 }
 
-void utils::cmd::endSingleTimeCommands(const vk::raii::CommandBuffer &commandBuffer, const vk::raii::Queue &queue) {
+void vkutils::cmd::endSingleTimeCommands(const vk::raii::CommandBuffer &commandBuffer, const vk::raii::Queue &queue) {
     commandBuffer.end();
 
     const vk::SubmitInfo submitInfo{
@@ -32,7 +32,7 @@ void utils::cmd::endSingleTimeCommands(const vk::raii::CommandBuffer &commandBuf
     queue.waitIdle();
 }
 
-void utils::cmd::doSingleTimeCommands(const vk::raii::Device &device, const vk::raii::CommandPool &commandPool,
+void vkutils::cmd::doSingleTimeCommands(const vk::raii::Device &device, const vk::raii::CommandPool &commandPool,
                                       const vk::raii::Queue &queue,
                                       const std::function<void(const vk::raii::CommandBuffer &)> &func) {
     const vk::raii::CommandBuffer cmdBuffer = beginSingleTimeCommands(device, commandPool);
@@ -40,7 +40,7 @@ void utils::cmd::doSingleTimeCommands(const vk::raii::Device &device, const vk::
     endSingleTimeCommands(cmdBuffer, queue);
 }
 
-void utils::cmd::setDynamicStates(const vk::raii::CommandBuffer &commandBuffer, const vk::Extent2D drawExtent) {
+void vkutils::cmd::setDynamicStates(const vk::raii::CommandBuffer &commandBuffer, const vk::Extent2D drawExtent) {
     const vk::Viewport viewport{
         .x = 0.0f,
         .y = static_cast<float>(drawExtent.height), // flip the y-axis

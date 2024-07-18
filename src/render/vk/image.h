@@ -234,7 +234,7 @@ private:
     void performSwizzle(uint8_t *data, size_t size) const;
 };
 
-namespace utils::img {
+namespace vkutils::img {
     [[nodiscard]] unique_ptr<vk::raii::ImageView>
     createImageView(const RendererContext &ctx, vk::Image image, vk::Format format, vk::ImageAspectFlags aspectFlags,
                     uint32_t baseMipLevel, uint32_t mipLevels, uint32_t layer);

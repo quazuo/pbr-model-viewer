@@ -55,12 +55,12 @@ Image::~Image() {
 }
 
 void Image::createViews(const RendererContext &ctx) {
-    view = utils::img::createImageView(ctx, **image, format, aspectMask, 0, mipLevels, 0);
-    attachmentView = utils::img::createImageView(ctx, **image, format, aspectMask, 0, 1, 0);
+    view = vkutils::img::createImageView(ctx, **image, format, aspectMask, 0, mipLevels, 0);
+    attachmentView = vkutils::img::createImageView(ctx, **image, format, aspectMask, 0, 1, 0);
 
     for (uint32_t mip = 0; mip < mipLevels; mip++) {
         mipViews.emplace_back(
-            utils::img::createImageView(ctx, **image, format, aspectMask, mip, 1, 0)
+            vkutils::img::createImageView(ctx, **image, format, aspectMask, mip, 1, 0)
         );
     }
 }
@@ -154,7 +154,7 @@ void Image::saveToFile(const RendererContext &ctx, const std::filesystem::path &
         vk::ImageAspectFlagBits::eColor
     };
 
-    utils::cmd::doSingleTimeCommands(*ctx.device, cmdPool, queue, [&](const auto &cmdBuffer) {
+    vkutils::cmd::doSingleTimeCommands(*ctx.device, cmdPool, queue, [&](const auto &cmdBuffer) {
         transitionLayout(
             vk::ImageLayout::eShaderReadOnlyOptimal,
             vk::ImageLayout::eTransferSrcOptimal,
@@ -233,7 +233,7 @@ void Image::saveToFile(const RendererContext &ctx, const std::filesystem::path &
         supportsBlit = false;
     }
 
-    utils::cmd::doSingleTimeCommands(*ctx.device, cmdPool, queue, [&](const auto &commandBuffer) {
+    vkutils::cmd::doSingleTimeCommands(*ctx.device, cmdPool, queue, [&](const auto &commandBuffer) {
         if (supportsBlit) {
             commandBuffer.blitImage(
                 **image,
@@ -265,12 +265,12 @@ void Image::saveToFile(const RendererContext &ctx, const std::filesystem::path &
         static_cast<int>(tempImage.extent.height),
         STBI_rgb_alpha,
         data,
-        utils::img::getFormatSizeInBytes(tempImage.format) * tempImage.extent.width
+        vkutils::img::getFormatSizeInBytes(tempImage.format) * tempImage.extent.width
     );
 
     vmaUnmapMemory(tempImage.allocator, *tempImage.allocation);
 
-    utils::cmd::doSingleTimeCommands(*ctx.device, cmdPool, queue, [&](const auto &cmdBuffer) {
+    vkutils::cmd::doSingleTimeCommands(*ctx.device, cmdPool, queue, [&](const auto &cmdBuffer) {
         transitionLayout(
             vk::ImageLayout::eTransferSrcOptimal,
             vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -287,28 +287,28 @@ CubeImage::CubeImage(const RendererContext &ctx, const vk::ImageCreateInfo &imag
 }
 
 void CubeImage::createViews(const RendererContext &ctx) {
-    view = utils::img::createCubeImageView(ctx, **image, format, aspectMask, 0, mipLevels);
-    attachmentView = utils::img::createCubeImageView(ctx, **image, format, aspectMask, 0, 1);
+    view = vkutils::img::createCubeImageView(ctx, **image, format, aspectMask, 0, mipLevels);
+    attachmentView = vkutils::img::createCubeImageView(ctx, **image, format, aspectMask, 0, 1);
 
     for (uint32_t mip = 0; mip < mipLevels; mip++) {
         mipViews.emplace_back(
-            utils::img::createCubeImageView(ctx, **image, format, aspectMask, mip, 1)
+            vkutils::img::createCubeImageView(ctx, **image, format, aspectMask, mip, 1)
         );
     }
 
     for (uint32_t layer = 0; layer < 6; layer++) {
         layerViews.emplace_back(
-            utils::img::createImageView(ctx, **image, format, aspectMask, 0, mipLevels, layer)
+            vkutils::img::createImageView(ctx, **image, format, aspectMask, 0, mipLevels, layer)
         );
         attachmentLayerViews.emplace_back(
-            utils::img::createImageView(ctx, **image, format, aspectMask, 0, 1, layer)
+            vkutils::img::createImageView(ctx, **image, format, aspectMask, 0, 1, layer)
         );
 
         std::vector<unique_ptr<vk::raii::ImageView> > currLayerMipViews;
 
         for (uint32_t mip = 0; mip < mipLevels; mip++) {
             currLayerMipViews.emplace_back(
-                utils::img::createImageView(ctx, **image, format, aspectMask, mip, 1, layer)
+                vkutils::img::createImageView(ctx, **image, format, aspectMask, mip, 1, layer)
             );
         }
 
@@ -392,7 +392,7 @@ void Texture::generateMipmaps(const RendererContext &ctx, const vk::raii::Comman
         throw std::runtime_error("texture image format does not support linear blitting!");
     }
 
-    const vk::raii::CommandBuffer commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, cmdPool);
+    const vk::raii::CommandBuffer commandBuffer = vkutils::cmd::beginSingleTimeCommands(*ctx.device, cmdPool);
 
     const bool isCubeMap = dynamic_cast<CubeImage *>(&*image) != nullptr;
     const uint32_t layerCount = isCubeMap ? 6 : 1;
@@ -499,7 +499,7 @@ void Texture::generateMipmaps(const RendererContext &ctx, const vk::raii::Comman
         transBarrier
     );
 
-    utils::cmd::endSingleTimeCommands(commandBuffer, queue);
+    vkutils::cmd::endSingleTimeCommands(commandBuffer, queue);
 }
 
 void Texture::createSampler(const RendererContext &ctx, const vk::SamplerAddressMode addressMode) {
@@ -643,7 +643,7 @@ unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx, const vk:
     texture->image->createViews(ctx);
     texture->createSampler(ctx, addressMode);
 
-    utils::cmd::doSingleTimeCommands(*ctx.device, cmdPool, queue, [&](const auto &cmdBuffer) {
+    vkutils::cmd::doSingleTimeCommands(*ctx.device, cmdPool, queue, [&](const auto &cmdBuffer) {
         texture->image->transitionLayout(
             vk::ImageLayout::eUndefined,
             vk::ImageLayout::eTransferDstOptimal,
@@ -723,11 +723,11 @@ void TextureBuilder::checkParams() const {
             throw std::runtime_error("separate-channeled textures from a memory source are currently not supported!");
         }
 
-        if (utils::img::getFormatSizeInBytes(format) != 4) {
+        if (vkutils::img::getFormatSizeInBytes(format) != 4) {
             throw std::runtime_error("currently only 4-byte formats are supported when using separate channel mode!");
         }
 
-        if (utils::img::getFormatSizeInBytes(format) % 4 != 0) {
+        if (vkutils::img::getFormatSizeInBytes(format) % 4 != 0) {
             throw std::runtime_error(
                 "currently only 4-component formats are supported when using separate channel mode!"
             );
@@ -798,7 +798,7 @@ TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererCo
     }
 
     const uint32_t layerCount = getLayerCount();
-    const vk::DeviceSize formatSize = utils::img::getFormatSizeInBytes(format);
+    const vk::DeviceSize formatSize = vkutils::img::getFormatSizeInBytes(format);
     const vk::DeviceSize layerSize = texWidth * texHeight * formatSize;
     const vk::DeviceSize textureSize = layerSize * layerCount;
 
@@ -906,7 +906,7 @@ void TextureBuilder::performSwizzle(uint8_t *data, const size_t size) const {
 // ==================== utils ====================
 
 unique_ptr<vk::raii::ImageView>
-utils::img::createImageView(const RendererContext &ctx, const vk::Image image, const vk::Format format,
+vkutils::img::createImageView(const RendererContext &ctx, const vk::Image image, const vk::Format format,
                             const vk::ImageAspectFlags aspectFlags, const uint32_t baseMipLevel,
                             const uint32_t mipLevels, const uint32_t layer) {
     const vk::ImageViewCreateInfo createInfo{
@@ -926,7 +926,7 @@ utils::img::createImageView(const RendererContext &ctx, const vk::Image image, c
 }
 
 unique_ptr<vk::raii::ImageView>
-utils::img::createCubeImageView(const RendererContext &ctx, const vk::Image image, const vk::Format format,
+vkutils::img::createCubeImageView(const RendererContext &ctx, const vk::Image image, const vk::Format format,
                                 const vk::ImageAspectFlags aspectFlags, const uint32_t baseMipLevel,
                                 const uint32_t mipLevels) {
     const vk::ImageViewCreateInfo createInfo{
@@ -945,7 +945,7 @@ utils::img::createCubeImageView(const RendererContext &ctx, const vk::Image imag
     return make_unique<vk::raii::ImageView>(*ctx.device, createInfo);
 }
 
-size_t utils::img::getFormatSizeInBytes(const vk::Format format) {
+size_t vkutils::img::getFormatSizeInBytes(const vk::Format format) {
     switch (format) {
         case vk::Format::eB8G8R8A8Srgb:
         case vk::Format::eR8G8B8A8Srgb:

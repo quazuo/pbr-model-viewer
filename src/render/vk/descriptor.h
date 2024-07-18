@@ -55,7 +55,7 @@ public:
     void updateBinding(const RendererContext &ctx, uint32_t binding, const Texture &texture) const;
 };
 
-namespace utils::desc {
+namespace vkutils::desc {
     [[nodiscard]] std::vector<DescriptorSet>
     createDescriptorSets(const RendererContext &ctx, const vk::raii::DescriptorPool &pool,
                          const shared_ptr<vk::raii::DescriptorSetLayout>& layout, uint32_t count);

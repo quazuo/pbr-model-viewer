@@ -231,7 +231,7 @@ vk::PresentModeKHR SwapChain::choosePresentMode(const std::vector<vk::PresentMod
 
 void SwapChain::createImageViews(const RendererContext &ctx) {
     for (const auto &image: images) {
-        auto imageView = utils::img::createImageView(
+        auto imageView = vkutils::img::createImageView(
             ctx,
             image,
             imageFormat,

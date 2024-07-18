@@ -142,7 +142,7 @@ void DescriptorSet::updateBinding(const RendererContext &ctx, const uint32_t bin
 }
 
 std::vector<DescriptorSet>
-utils::desc::createDescriptorSets(const RendererContext &ctx, const vk::raii::DescriptorPool &pool,
+vkutils::desc::createDescriptorSets(const RendererContext &ctx, const vk::raii::DescriptorPool &pool,
                                   const shared_ptr<vk::raii::DescriptorSetLayout>& layout, const uint32_t count) {
     const std::vector setLayouts(count, **layout);
 

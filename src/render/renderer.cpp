@@ -800,7 +800,7 @@ void VulkanRenderer::createSceneDescriptorSets() {
             .create(ctx);
 
     const auto layoutPtr = make_shared<vk::raii::DescriptorSetLayout>(std::move(layout));
-    auto sets = utils::desc::createDescriptorSets(ctx, *descriptorPool, layoutPtr, MAX_FRAMES_IN_FLIGHT);
+    auto sets = vkutils::desc::createDescriptorSets(ctx, *descriptorPool, layoutPtr, MAX_FRAMES_IN_FLIGHT);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         frameResources[i].sceneDescriptorSet = make_unique<DescriptorSet>(std::move(sets[i]));
@@ -831,7 +831,7 @@ void VulkanRenderer::createSkyboxDescriptorSets() {
             .create(ctx);
 
     const auto layoutPtr = make_shared<vk::raii::DescriptorSetLayout>(std::move(layout));
-    auto sets = utils::desc::createDescriptorSets(ctx, *descriptorPool, layoutPtr, MAX_FRAMES_IN_FLIGHT);
+    auto sets = vkutils::desc::createDescriptorSets(ctx, *descriptorPool, layoutPtr, MAX_FRAMES_IN_FLIGHT);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         frameResources[i].skyboxDescriptorSet = make_unique<DescriptorSet>(std::move(sets[i]));
@@ -859,7 +859,7 @@ void VulkanRenderer::createPrepassDescriptorSets() {
             .create(ctx);
 
     const auto layoutPtr = make_shared<vk::raii::DescriptorSetLayout>(std::move(layout));
-    auto sets = utils::desc::createDescriptorSets(ctx, *descriptorPool, layoutPtr, MAX_FRAMES_IN_FLIGHT);
+    auto sets = vkutils::desc::createDescriptorSets(ctx, *descriptorPool, layoutPtr, MAX_FRAMES_IN_FLIGHT);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         frameResources[i].prepassDescriptorSet = make_unique<DescriptorSet>(std::move(sets[i]));
@@ -886,7 +886,7 @@ void VulkanRenderer::createSsaoDescriptorSets() {
             .create(ctx);
 
     const auto layoutPtr = make_shared<vk::raii::DescriptorSetLayout>(std::move(layout));
-    auto sets = utils::desc::createDescriptorSets(ctx, *descriptorPool, layoutPtr, MAX_FRAMES_IN_FLIGHT);
+    auto sets = vkutils::desc::createDescriptorSets(ctx, *descriptorPool, layoutPtr, MAX_FRAMES_IN_FLIGHT);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         frameResources[i].ssaoDescriptorSet = make_unique<DescriptorSet>(std::move(sets[i]));
@@ -914,7 +914,7 @@ void VulkanRenderer::createCubemapCaptureDescriptorSet() {
             .create(ctx);
 
     const auto layoutPtr = make_shared<vk::raii::DescriptorSetLayout>(std::move(layout));
-    auto sets = utils::desc::createDescriptorSets(ctx, *descriptorPool, layoutPtr, 1);
+    auto sets = vkutils::desc::createDescriptorSets(ctx, *descriptorPool, layoutPtr, 1);
 
     cubemapCaptureDescriptorSet = make_unique<DescriptorSet>(std::move(sets[0]));
 
@@ -934,7 +934,7 @@ void VulkanRenderer::createEnvmapConvoluteDescriptorSet() {
             .create(ctx);
 
     const auto layoutPtr = make_shared<vk::raii::DescriptorSetLayout>(std::move(layout));
-    auto sets = utils::desc::createDescriptorSets(ctx, *descriptorPool, layoutPtr, 1);
+    auto sets = vkutils::desc::createDescriptorSets(ctx, *descriptorPool, layoutPtr, 1);
 
     envmapConvoluteDescriptorSet = make_unique<DescriptorSet>(std::move(sets[0]));
 
@@ -954,7 +954,7 @@ void VulkanRenderer::createDebugQuadDescriptorSet() {
             .create(ctx);
 
     const auto layoutPtr = make_shared<vk::raii::DescriptorSetLayout>(std::move(layout));
-    auto sets = utils::desc::createDescriptorSets(ctx, *descriptorPool, layoutPtr, 1);
+    auto sets = vkutils::desc::createDescriptorSets(ctx, *descriptorPool, layoutPtr, 1);
 
     debugQuadDescriptorSet = make_unique<DescriptorSet>(std::move(sets[0]));
 
@@ -1878,7 +1878,7 @@ void VulkanRenderer::runPrepass() {
 
     commandBuffer.begin(beginInfo);
 
-    utils::cmd::setDynamicStates(commandBuffer, swapChain->getExtent());
+    vkutils::cmd::setDynamicStates(commandBuffer, swapChain->getExtent());
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***prepassPipeline);
 
@@ -1927,7 +1927,7 @@ void VulkanRenderer::runSsaoPass() {
 
     commandBuffer.begin(beginInfo);
 
-    utils::cmd::setDynamicStates(commandBuffer, swapChain->getExtent());
+    vkutils::cmd::setDynamicStates(commandBuffer, swapChain->getExtent());
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***ssaoPipeline);
 
@@ -1977,7 +1977,7 @@ void VulkanRenderer::drawScene() {
 
     commandBuffer.begin(beginInfo);
 
-    utils::cmd::setDynamicStates(commandBuffer, swapChainExtent);
+    vkutils::cmd::setDynamicStates(commandBuffer, swapChainExtent);
 
     // skybox
 
@@ -2043,7 +2043,7 @@ void VulkanRenderer::drawDebugQuad() {
 
     commandBuffer.begin(beginInfo);
 
-    utils::cmd::setDynamicStates(commandBuffer, swapChainExtent);
+    vkutils::cmd::setDynamicStates(commandBuffer, swapChainExtent);
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***debugQuadPipeline);
 
@@ -2087,9 +2087,9 @@ void VulkanRenderer::drawModel(const vk::raii::CommandBuffer &commandBuffer) con
 void VulkanRenderer::captureCubemap() const {
     const vk::Extent2D extent = skyboxTexture->getImage().getExtent2d();
 
-    const auto commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
+    const auto commandBuffer = vkutils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
 
-    utils::cmd::setDynamicStates(commandBuffer, extent);
+    vkutils::cmd::setDynamicStates(commandBuffer, extent);
 
     commandBuffer.beginRendering(cubemapCaptureRenderInfo.get(extent, 6));
 
@@ -2115,7 +2115,7 @@ void VulkanRenderer::captureCubemap() const {
         commandBuffer
     );
 
-    utils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
+    vkutils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
 
     skyboxTexture->generateMipmaps(
         ctx,
@@ -2128,9 +2128,9 @@ void VulkanRenderer::captureCubemap() const {
 void VulkanRenderer::captureIrradianceMap() const {
     const vk::Extent2D extent = irradianceMapTexture->getImage().getExtent2d();
 
-    const auto commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
+    const auto commandBuffer = vkutils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
 
-    utils::cmd::setDynamicStates(commandBuffer, extent);
+    vkutils::cmd::setDynamicStates(commandBuffer, extent);
 
     commandBuffer.beginRendering(irradianceCaptureRenderInfo.get(extent, 6));
 
@@ -2156,7 +2156,7 @@ void VulkanRenderer::captureIrradianceMap() const {
         commandBuffer
     );
 
-    utils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
+    vkutils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
 
     irradianceMapTexture->generateMipmaps(
         ctx,
@@ -2167,7 +2167,7 @@ void VulkanRenderer::captureIrradianceMap() const {
 }
 
 void VulkanRenderer::prefilterEnvmap() const {
-    const auto commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
+    const auto commandBuffer = vkutils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
 
     for (uint32_t mipLevel = 0; mipLevel < maxPrefilterMipLevels; mipLevel++) {
         const uint32_t mipScalingFactor = 1 << mipLevel;
@@ -2176,7 +2176,7 @@ void VulkanRenderer::prefilterEnvmap() const {
         extent.width /= mipScalingFactor;
         extent.height /= mipScalingFactor;
 
-        utils::cmd::setDynamicStates(commandBuffer, extent);
+        vkutils::cmd::setDynamicStates(commandBuffer, extent);
 
         commandBuffer.beginRendering(prefilterRenderInfos[mipLevel].get(extent, 6));
 
@@ -2208,15 +2208,15 @@ void VulkanRenderer::prefilterEnvmap() const {
         commandBuffer.endRendering();
     }
 
-    utils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
+    vkutils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
 }
 
 void VulkanRenderer::computeBrdfIntegrationMap() const {
     const vk::Extent2D extent = brdfIntegrationMapTexture->getImage().getExtent2d();
 
-    const auto commandBuffer = utils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
+    const auto commandBuffer = vkutils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
 
-    utils::cmd::setDynamicStates(commandBuffer, extent);
+    vkutils::cmd::setDynamicStates(commandBuffer, extent);
 
     commandBuffer.beginRendering(brdfIntegrationRenderInfo.get(extent));
 
@@ -2228,7 +2228,7 @@ void VulkanRenderer::computeBrdfIntegrationMap() const {
 
     commandBuffer.endRendering();
 
-    utils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
+    vkutils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
 }
 
 static const glm::mat4 cubemapFaceProjection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
