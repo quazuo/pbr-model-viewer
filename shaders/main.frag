@@ -25,7 +25,6 @@ layout (binding = 7) uniform sampler2D ssaoSampler;
 
 float getBlurredSsao() {
     vec2 texCoord = gl_FragCoord.xy / vec2(ubo.window.width, ubo.window.height);
-    texCoord.y = 1 - texCoord.y;
 
     vec2 texelSize = vec2(1.0) / vec2(textureSize(ssaoSampler, 0));
     float result = 0.0;
@@ -94,7 +93,7 @@ void main() {
         vec3 reflection = reflect(-view, normal);
         vec3 prefiltered_color = textureLod(prefilterMapSampler, reflection, roughness * MAX_REFLECTION_LOD).rgb;
 
-        vec2 env_brdf = texture(brdfLutSampler, vec2(n_dot_v, 1 - roughness)).rg;
+        vec2 env_brdf = texture(brdfLutSampler, vec2(n_dot_v, roughness)).rg;
         specular = prefiltered_color * (k_specular * env_brdf.x + env_brdf.y);
 
         // no need to multiply `specular` by `k_specular` as it's done implicitly by including fresnel
