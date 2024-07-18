@@ -762,9 +762,9 @@ TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererCo
         texWidth = desiredExtent->width;
         texHeight = desiredExtent->height;
     } else {
-        for (size_t i = 0; i < paths.size(); i++) {
-            const auto &path = paths[i];
+        bool isFirstNonEmpty = true;
 
+        for (const auto & path: paths) {
             if (path.empty()) {
                 dataSources.push_back(nullptr);
                 continue;
@@ -786,9 +786,11 @@ TextureBuilder::LoadedTextureData TextureBuilder::loadFromPaths(const RendererCo
                 throw std::runtime_error("failed to load texture image!");
             }
 
-            if (i == 0) {
+            if (isFirstNonEmpty) {
                 texWidth = currTexWidth;
                 texHeight = currTexHeight;
+                isFirstNonEmpty = false;
+
             } else if (texWidth != currTexWidth || texHeight != currTexHeight) {
                 throw std::runtime_error("size mismatch while loading a texture from paths!");
             }
@@ -856,7 +858,7 @@ void *TextureBuilder::mergeChannels(const std::vector<void *> &channelsData, con
     }
 
     for (size_t i = 0; i < textureSize; i++) {
-        if (i % componentCount == componentCount - 1 || channelsData[i % componentCount] == nullptr) {
+        if (i % componentCount == componentCount - 1 || !channelsData[i % componentCount]) {
             merged[i] = 0; // todo - utilize alpha
         } else {
             merged[i] = static_cast<uint8_t *>(channelsData[i % componentCount])[i / componentCount];

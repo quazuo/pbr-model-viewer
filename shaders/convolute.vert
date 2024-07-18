@@ -14,12 +14,9 @@ layout(binding = 0) uniform UniformBufferObject {
     MiscData misc;
 } ubo;
 
-layout(push_constant) uniform PushConstants {
-    mat4 view;
-} constants;
-
 void main() {
     localPosition = inPosition;
+    localPosition.x *= -1;
 
     const mat4 view = ubo.matrices.cubemap_capture_views[gl_ViewIndex];
     gl_Position = ubo.matrices.cubemap_capture_proj * view * vec4(inPosition, 1.0);

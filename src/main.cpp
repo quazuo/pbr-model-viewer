@@ -81,7 +81,7 @@ private:
             if (*currentTypeBeingChosen == FileType::ENVMAP_HDR) {
                 renderer.loadEnvironmentMap(path);
             } else {
-                chosenPaths.emplace(*currentTypeBeingChosen, path);
+                chosenPaths[*currentTypeBeingChosen] = path;
             }
 
             fileBrowser.ClearSelected();
@@ -109,7 +109,7 @@ private:
         if (ImGui::CollapsingHeader("Engine ", sectionFlags)) {
             ImGui::Text("FPS: %.2f", fps);
 #ifndef NDEBUG
-            ImGui::Checkbox("show debug quad?", &showDebugQuad);
+            ImGui::Checkbox("Debug quad", &showDebugQuad);
             ImGui::Separator();
 
             if (ImGui::Button("Reload shaders")) {
@@ -118,6 +118,11 @@ private:
             ImGui::Separator();
 #endif
             renderLoadModelPopup();
+
+            if (!currErrorMessage.empty()) {
+                ImGui::OpenPopup("Model load error");
+            }
+
             renderModelLoadErrorPopup();
         }
 
@@ -225,13 +230,11 @@ private:
 
             if (reqs.contains(FileType::ORM_PNG)) {
                 renderer.loadOrmMap(chosenPaths.at(FileType::ORM_PNG));
-            }
 
-            if (reqs.contains(FileType::RMA_PNG)) {
+            } else if (reqs.contains(FileType::RMA_PNG)) {
                 renderer.loadRmaMap(chosenPaths.at(FileType::RMA_PNG));
-            }
 
-            if (reqs.contains(FileType::ROUGHNESS_PNG)) {
+            } else if (reqs.contains(FileType::ROUGHNESS_PNG)) {
                 const auto roughnessPath = chosenPaths.at(FileType::ROUGHNESS_PNG);
                 const auto aoPath = chosenPaths.contains(FileType::AO_PNG)
                                         ? chosenPaths.at(FileType::AO_PNG)
@@ -243,12 +246,11 @@ private:
                 renderer.loadOrmMap(aoPath, roughnessPath, metallicPath);
             }
         } catch (std::exception &e) {
-            ImGui::OpenPopup("Model load error");
             currErrorMessage = e.what();
         }
     }
 
-    void renderModelLoadErrorPopup() const {
+    void renderModelLoadErrorPopup() {
         if (ImGui::BeginPopupModal("Model load error", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::Text("An error occurred while loading the model:");
             ImGui::Text(currErrorMessage.c_str());
@@ -257,6 +259,7 @@ private:
 
             if (ImGui::Button("OK", ImVec2(120, 0))) {
                 ImGui::CloseCurrentPopup();
+                currErrorMessage = "";
             }
 
             ImGui::EndPopup();
