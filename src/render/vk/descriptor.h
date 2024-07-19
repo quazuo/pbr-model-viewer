@@ -16,7 +16,12 @@ class DescriptorLayoutBuilder {
 public:
     DescriptorLayoutBuilder &addBinding(vk::DescriptorType type, vk::ShaderStageFlags stages);
 
+    DescriptorLayoutBuilder &addArrayBinding(vk::DescriptorType type, vk::ShaderStageFlags stages, uint32_t size);
+
     DescriptorLayoutBuilder &addRepeatedBindings(size_t count, vk::DescriptorType type, vk::ShaderStageFlags stages);
+
+    DescriptorLayoutBuilder &addRepeatedArrayBindings(size_t count, vk::DescriptorType type,
+                                                      vk::ShaderStageFlags stages, uint32_t size);
 
     [[nodiscard]] vk::raii::DescriptorSetLayout create(const RendererContext &ctx);
 };
@@ -27,6 +32,7 @@ class DescriptorSet {
 
     struct DescriptorUpdate {
         uint32_t binding{};
+        uint32_t arrayElement{};
         vk::DescriptorType type{};
         std::variant<vk::DescriptorBufferInfo, vk::DescriptorImageInfo> info;
     };
@@ -43,20 +49,21 @@ public:
     [[nodiscard]] const vk::raii::DescriptorSetLayout &getLayout() const { return *layout; }
 
     DescriptorSet &queueUpdate(uint32_t binding, const Buffer &buffer, vk::DescriptorType type,
-                               vk::DeviceSize size, vk::DeviceSize offset = 0);
+                               vk::DeviceSize size, vk::DeviceSize offset = 0, uint32_t arrayElement = 0);
 
-    DescriptorSet &queueUpdate(uint32_t binding, const Texture &texture);
+    DescriptorSet &queueUpdate(uint32_t binding, const Texture &texture, uint32_t arrayElement = 0);
 
     void commitUpdates(const RendererContext &ctx);
 
     void updateBinding(const RendererContext &ctx, uint32_t binding, const Buffer &buffer, vk::DescriptorType type,
-                       vk::DeviceSize size, vk::DeviceSize offset = 0) const;
+                       vk::DeviceSize size, vk::DeviceSize offset = 0, uint32_t arrayElement = 0) const;
 
-    void updateBinding(const RendererContext &ctx, uint32_t binding, const Texture &texture) const;
+    void updateBinding(const RendererContext &ctx, uint32_t binding, const Texture &texture,
+                       uint32_t arrayElement = 0) const;
 };
 
 namespace vkutils::desc {
     [[nodiscard]] std::vector<DescriptorSet>
     createDescriptorSets(const RendererContext &ctx, const vk::raii::DescriptorPool &pool,
-                         const shared_ptr<vk::raii::DescriptorSetLayout>& layout, uint32_t count);
+                         const shared_ptr<vk::raii::DescriptorSetLayout> &layout, uint32_t count);
 }

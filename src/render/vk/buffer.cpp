@@ -64,10 +64,10 @@ void Buffer::unmap() {
     mapped = nullptr;
 }
 
-void Buffer::copyFromBuffer(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
-                            const vk::raii::Queue &queue, const Buffer &otherBuffer, const vk::DeviceSize size,
-                            const vk::DeviceSize srcOffset, const vk::DeviceSize dstOffset) const {
-    const vk::raii::CommandBuffer commandBuffer = vkutils::cmd::beginSingleTimeCommands(*ctx.device, cmdPool);
+void Buffer::copyFromBuffer(const RendererContext &ctx, const Buffer &otherBuffer,
+                            const vk::DeviceSize size, const vk::DeviceSize srcOffset,
+                            const vk::DeviceSize dstOffset) const {
+    const vk::raii::CommandBuffer commandBuffer = vkutils::cmd::beginSingleTimeCommands(ctx);
 
     const vk::BufferCopy copyRegion{
         .srcOffset = srcOffset,
@@ -77,5 +77,5 @@ void Buffer::copyFromBuffer(const RendererContext &ctx, const vk::raii::CommandP
 
     commandBuffer.copyBuffer(*otherBuffer, buffer, copyRegion);
 
-    vkutils::cmd::endSingleTimeCommands(commandBuffer, queue);
+    vkutils::cmd::endSingleTimeCommands(commandBuffer, *ctx.graphicsQueue);
 }

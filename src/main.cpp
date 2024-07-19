@@ -108,7 +108,7 @@ private:
 
         if (ImGui::CollapsingHeader("Engine ", sectionFlags)) {
             ImGui::Text("FPS: %.2f", fps);
-#ifndef NDEBUG
+
             ImGui::Checkbox("Debug quad", &showDebugQuad);
             ImGui::Separator();
 
@@ -116,7 +116,7 @@ private:
                 renderer.reloadShaders();
             }
             ImGui::Separator();
-#endif
+
             renderLoadModelPopup();
 
             if (!currErrorMessage.empty()) {
@@ -216,12 +216,11 @@ private:
         const auto &reqs = fileLoadSchemes[loadSchemeIdx].requirements;
 
         try {
-            if (reqs.contains(FileType::MODEL)) {
+            if (reqs.contains(FileType::BASE_COLOR_PNG)) {
                 renderer.loadModel(chosenPaths.at(FileType::MODEL));
-            }
-
-            if (reqs.contains(FileType::ALBEDO_PNG)) {
-                renderer.loadAlbedoTexture(chosenPaths.at(FileType::ALBEDO_PNG));
+                renderer.loadBaseColorTexture(chosenPaths.at(FileType::BASE_COLOR_PNG));
+            } else {
+                renderer.loadModelWithMaterials(chosenPaths.at(FileType::MODEL));
             }
 
             if (reqs.contains(FileType::NORMAL_PNG)) {

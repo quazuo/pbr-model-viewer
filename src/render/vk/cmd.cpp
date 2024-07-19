@@ -1,14 +1,16 @@
 #include "cmd.h"
 
+#include "src/render/renderer.h"
+
 vk::raii::CommandBuffer
-vkutils::cmd::beginSingleTimeCommands(const vk::raii::Device &device, const vk::raii::CommandPool &commandPool) {
+vkutils::cmd::beginSingleTimeCommands(const RendererContext &ctx) {
     const vk::CommandBufferAllocateInfo allocInfo{
-        .commandPool = *commandPool,
+        .commandPool = **ctx.commandPool,
         .level = vk::CommandBufferLevel::ePrimary,
         .commandBufferCount = 1U,
     };
 
-    vk::raii::CommandBuffers commandBuffers{device, allocInfo};
+    vk::raii::CommandBuffers commandBuffers{*ctx.device, allocInfo};
     vk::raii::CommandBuffer buffer{std::move(commandBuffers[0])};
 
     constexpr vk::CommandBufferBeginInfo beginInfo{
@@ -32,12 +34,11 @@ void vkutils::cmd::endSingleTimeCommands(const vk::raii::CommandBuffer &commandB
     queue.waitIdle();
 }
 
-void vkutils::cmd::doSingleTimeCommands(const vk::raii::Device &device, const vk::raii::CommandPool &commandPool,
-                                      const vk::raii::Queue &queue,
-                                      const std::function<void(const vk::raii::CommandBuffer &)> &func) {
-    const vk::raii::CommandBuffer cmdBuffer = beginSingleTimeCommands(device, commandPool);
+void vkutils::cmd::doSingleTimeCommands(const RendererContext &ctx,
+                                        const std::function<void(const vk::raii::CommandBuffer &)> &func) {
+    const vk::raii::CommandBuffer cmdBuffer = beginSingleTimeCommands(ctx);
     func(cmdBuffer);
-    endSingleTimeCommands(cmdBuffer, queue);
+    endSingleTimeCommands(cmdBuffer, *ctx.graphicsQueue);
 }
 
 void vkutils::cmd::setDynamicStates(const vk::raii::CommandBuffer &commandBuffer, const vk::Extent2D drawExtent) {

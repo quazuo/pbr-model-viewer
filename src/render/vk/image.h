@@ -80,8 +80,7 @@ public:
     void transitionLayout(vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
                           vk::ImageSubresourceRange range, const vk::raii::CommandBuffer &commandBuffer) const;
 
-    void saveToFile(const RendererContext &ctx, const std::filesystem::path &path,
-                    const vk::raii::CommandPool &cmdPool, const vk::raii::Queue &queue) const;
+    void saveToFile(const RendererContext &ctx, const std::filesystem::path &path) const;
 };
 
 class CubeImage final : public Image {
@@ -150,8 +149,7 @@ public:
 
     [[nodiscard]] const vk::raii::ImageView &getLayerMipView(uint32_t layerIndex, uint32_t mipLevel) const;
 
-    void generateMipmaps(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
-                         const vk::raii::Queue &queue, vk::ImageLayout finalLayout) const;
+    void generateMipmaps(const RendererContext &ctx, vk::ImageLayout finalLayout) const;
 
 private:
     void createSampler(const RendererContext &ctx, vk::SamplerAddressMode addressMode);
@@ -164,7 +162,8 @@ enum class SwizzleComp {
     A,
     ZERO,
     ONE,
-    MAX
+    MAX,
+    HALF_MAX
 };
 
 class TextureBuilder {
@@ -179,17 +178,18 @@ class TextureBuilder {
     bool hasMipmaps = false;
     bool isUninitialized = false;
 
-    std::array<SwizzleComp, 4> swizzle{SwizzleComp::R, SwizzleComp::G, SwizzleComp::B, SwizzleComp::A};
+    std::optional<std::array<SwizzleComp, 4>> swizzle{{SwizzleComp::R, SwizzleComp::G, SwizzleComp::B, SwizzleComp::A}};
 
-    vk::SamplerAddressMode addressMode = vk::SamplerAddressMode::eClampToEdge;
+    vk::SamplerAddressMode addressMode = vk::SamplerAddressMode::eRepeat; //  vk::SamplerAddressMode::eClampToEdge;
 
     std::optional<vk::Extent3D> desiredExtent;
 
     std::vector<std::filesystem::path> paths;
     void *memorySource = nullptr;
+    bool isFromSwizzleFill = false;
 
     struct LoadedTextureData {
-        unique_ptr<Buffer> stagingBuffer;
+        std::vector<void *> sources;
         vk::Extent3D extent;
         uint32_t layerCount;
     };
@@ -219,15 +219,23 @@ public:
 
     TextureBuilder &fromMemory(void *ptr, vk::Extent3D extent);
 
+    TextureBuilder &fromSwizzleFill(vk::Extent3D extent);
+
     [[nodiscard]] unique_ptr<Texture>
-    create(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool, const vk::raii::Queue &queue) const;
+    create(const RendererContext &ctx) const;
 
 private:
     void checkParams() const;
 
     [[nodiscard]] uint32_t getLayerCount() const;
 
-    [[nodiscard]] LoadedTextureData loadFromPaths(const RendererContext &ctx) const;
+    [[nodiscard]] LoadedTextureData loadFromPaths() const;
+
+    [[nodiscard]] LoadedTextureData loadFromMemory() const;
+
+    [[nodiscard]] LoadedTextureData loadFromSwizzleFill() const;
+
+    [[nodiscard]] unique_ptr<Buffer> makeStagingBuffer(const RendererContext &ctx, const LoadedTextureData& data) const;
 
     static void *mergeChannels(const std::vector<void *> &channelsData, size_t textureSize, size_t componentCount);
 

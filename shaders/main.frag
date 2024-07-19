@@ -1,5 +1,7 @@
 #version 450
 
+#extension GL_ARB_separate_shader_objects : enable
+
 #include "utils/ubo.glsl"
 #include "utils/pbr.glsl"
 
@@ -9,19 +11,27 @@ layout (location = 2) in mat3 TBN;
 
 layout (location = 0) out vec4 outColor;
 
-layout (binding = 0) uniform UniformBufferObject {
+layout (push_constant) uniform PushConstants {
+    uint material_id;
+} constants;
+
+layout (set = 0, binding = 0) uniform UniformBufferObject {
     WindowRes window;
     Matrices matrices;
     MiscData misc;
 } ubo;
 
-layout (binding = 1) uniform sampler2D albedoSampler;
-layout (binding = 2) uniform sampler2D normalSampler;
-layout (binding = 3) uniform sampler2D ormSampler;
-layout (binding = 4) uniform samplerCube irradianceMapSampler;
-layout (binding = 5) uniform samplerCube prefilterMapSampler;
-layout (binding = 6) uniform sampler2D brdfLutSampler;
-layout (binding = 7) uniform sampler2D ssaoSampler;
+layout (set = 0, binding = 1) uniform sampler2D ssaoSampler;
+
+#define MATERIAL_TEX_ARRAY_SIZE 32
+
+layout (set = 1, binding = 0) uniform sampler2D baseColorSamplers[MATERIAL_TEX_ARRAY_SIZE];
+layout (set = 1, binding = 1) uniform sampler2D normalSamplers[MATERIAL_TEX_ARRAY_SIZE];
+layout (set = 1, binding = 2) uniform sampler2D ormSamplers[MATERIAL_TEX_ARRAY_SIZE];
+
+layout (set = 2, binding = 0) uniform samplerCube irradianceMapSampler;
+layout (set = 2, binding = 1) uniform samplerCube prefilterMapSampler;
+layout (set = 2, binding = 2) uniform sampler2D brdfLutSampler;
 
 float getBlurredSsao() {
     vec2 texCoord = gl_FragCoord.xy / vec2(ubo.window.width, ubo.window.height);
@@ -40,17 +50,24 @@ float getBlurredSsao() {
 }
 
 void main() {
-    vec3 albedo = vec3(texture(albedoSampler, fragTexCoord));
+    vec3 base_color = vec3(texture(baseColorSamplers[constants.material_id], fragTexCoord));
 
-    vec3 normal = texture(normalSampler, fragTexCoord).rgb;
+    vec3 normal = texture(normalSamplers[constants.material_id], fragTexCoord).rgb;
     normal = normalize(normal * 2.0 - 1.0);
     normal = normalize(TBN * normal);
 
+//    outColor = vec4(TBN * vec3(0.5, 0, 0) + vec3(0.5), 1.0);
+//    return;
+
     float ao = ubo.misc.use_ssao == 1u
         ? getBlurredSsao()
-        : texture(ormSampler, fragTexCoord).r;
-    float roughness = texture(ormSampler, fragTexCoord).g;
-    float metallic = texture(ormSampler, fragTexCoord).b;
+        : texture(ormSamplers[constants.material_id], fragTexCoord).r;
+    float roughness = texture(ormSamplers[constants.material_id], fragTexCoord).g;
+    float metallic = texture(ormSamplers[constants.material_id], fragTexCoord).b;
+//
+//    ao = 1;
+//    metallic = 0;
+//    roughness = 1;
 
     // light related values
     vec3 light_dir = normalize(ubo.misc.light_direction);
@@ -67,7 +84,7 @@ void main() {
     float n_dot_l = max(dot(normal, light_dir), 0.0);
 
     // BRDF intermediate values
-    vec3 f0 = mix(vec3(0.04), albedo, metallic);
+    vec3 f0 = mix(vec3(0.04), base_color, metallic);
     vec3 fresnel = fresnel_schlick(max(dot(halfway, view), 0.0), f0);
     float ndf = distribution_ggx(normal, halfway, roughness);
     float geom = geometry_smith(normal, view, light_dir, roughness);
@@ -81,13 +98,13 @@ void main() {
     vec3 k_specular = fresnel_schlick_roughness(n_dot_v, f0, roughness);
     vec3 k_diffuse = (vec3(1.0) - k_specular) * (1.0 - metallic);
 
-    vec3 out_radiance = (k_diffuse * albedo / PI + specular) * radiance * n_dot_l;
+    vec3 out_radiance = (k_diffuse * base_color / PI + specular) * radiance * n_dot_l;
 
     vec3 ambient;
 
     if (ubo.misc.use_ibl == 1u) {
         vec3 irradiance = texture(irradianceMapSampler, normal).rgb;
-        vec3 diffuse = irradiance * albedo;
+        vec3 diffuse = irradiance * base_color;
 
         const float MAX_REFLECTION_LOD = 4.0;
         vec3 reflection = reflect(-view, normal);
@@ -100,7 +117,7 @@ void main() {
         ambient = (k_diffuse * diffuse + specular) * ao;
 
     } else {
-        ambient = vec3(0.03) * albedo * ao;
+        ambient = vec3(0.03) * base_color * ao;
     }
 
     vec3 color = ambient + out_radiance;

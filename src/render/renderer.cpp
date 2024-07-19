@@ -101,6 +101,7 @@ VulkanRenderer::VulkanRenderer() {
     createSsaoPipeline();
 
     createIblTextures();
+    createIblDescriptorSet();
 
     createSkyboxVertexBuffer();
     createSkyboxDescriptorSets();
@@ -123,13 +124,16 @@ VulkanRenderer::VulkanRenderer() {
     createBrdfIntegrationPipeline();
     computeBrdfIntegrationMap();
 
+    createMaterialsDescriptorSet();
     createSceneDescriptorSets();
     createScenePipeline();
 
-    loadModel("../assets/example models/kettle/kettle.obj");
-    loadAlbedoTexture("../assets/example models/kettle/kettle-albedo.png");
-    loadNormalMap("../assets/example models/kettle/kettle-normal.png");
-    loadOrmMap("../assets/example models/kettle/kettle-orm.png");
+    loadModelWithMaterials("../../Sponza CRYTEK/Sponza.gltf");
+
+    // loadModel("../assets/example models/kettle/kettle.obj");
+    // loadBaseColorTexture("../assets/example models/kettle/kettle-albedo.png");
+    // loadNormalMap("../assets/example models/kettle/kettle-normal.png");
+    // loadOrmMap("../assets/example models/kettle/kettle-orm.png");
 
     loadEnvironmentMap("../assets/envmaps/gallery.hdr");
 
@@ -464,16 +468,50 @@ void VulkanRenderer::createLogicalDevice() {
 
     ctx.device = make_unique<vk::raii::Device>(*ctx.physicalDevice, createInfo);
 
-    graphicsQueue = make_unique<vk::raii::Queue>(ctx.device->getQueue(graphicsComputeFamily.value(), 0));
+    ctx.graphicsQueue = make_unique<vk::raii::Queue>(ctx.device->getQueue(graphicsComputeFamily.value(), 0));
     presentQueue = make_unique<vk::raii::Queue>(ctx.device->getQueue(presentFamily.value(), 0));
 }
 
 // ==================== models ====================
 
+void VulkanRenderer::loadModelWithMaterials(const std::filesystem::path &path) {
+    waitIdle();
+
+    model.reset();
+    model = make_unique<Model>(ctx, path, true);
+
+    vertexBuffer.reset();
+    indexBuffer.reset();
+
+    createModelVertexBuffer();
+    createIndexBuffer();
+
+    const auto &materials = model->getMaterials();
+
+    for (uint32_t i = 0; i < materials.size(); i++) {
+        const auto &material = materials[i];
+
+        if (material.baseColor) {
+            materialsDescriptorSet->queueUpdate(0, *material.baseColor, i);
+        }
+
+        if (material.normal) {
+            materialsDescriptorSet->queueUpdate(1, *material.normal, i);
+        }
+
+        if (material.orm) {
+            materialsDescriptorSet->queueUpdate(2, *material.orm, i);
+        }
+    }
+
+    materialsDescriptorSet->commitUpdates(ctx);
+}
+
 void VulkanRenderer::loadModel(const std::filesystem::path &path) {
     waitIdle();
 
-    model = make_unique<Model>(path);
+    model.reset();
+    model = make_unique<Model>(ctx, path, false);
 
     vertexBuffer.reset();
     indexBuffer.reset();
@@ -484,55 +522,52 @@ void VulkanRenderer::loadModel(const std::filesystem::path &path) {
 
 // ==================== assets ====================
 
-void VulkanRenderer::loadAlbedoTexture(const std::filesystem::path &path) {
+void VulkanRenderer::loadBaseColorTexture(const std::filesystem::path &path) {
     waitIdle();
 
-    albedoTexture.reset();
-    albedoTexture = TextureBuilder()
+    separateMaterial.baseColor.reset();
+    separateMaterial.baseColor = TextureBuilder()
             .fromPaths({path})
             .makeMipmaps()
-            .create(ctx, *commandPool, *graphicsQueue);
+            .create(ctx);
 
-    for (auto &res: frameResources) {
-        res.sceneDescriptorSet->updateBinding(ctx, 1, *albedoTexture);
-    }
+    materialsDescriptorSet->updateBinding(ctx, 0, *separateMaterial.baseColor);
 }
 
 void VulkanRenderer::loadNormalMap(const std::filesystem::path &path) {
     waitIdle();
 
-    normalTexture.reset();
-    normalTexture = TextureBuilder()
+    separateMaterial.normal.reset();
+    separateMaterial.normal = TextureBuilder()
             .useFormat(vk::Format::eR8G8B8A8Unorm)
             .fromPaths({path})
-            .create(ctx, *commandPool, *graphicsQueue);
+            .create(ctx);
+
+    materialsDescriptorSet->updateBinding(ctx, 1, *separateMaterial.normal);
 
     for (auto &res: frameResources) {
-        res.sceneDescriptorSet->updateBinding(ctx, 2, *normalTexture);
-        res.prepassDescriptorSet->updateBinding(ctx, 1, *normalTexture);
+        res.prepassDescriptorSet->updateBinding(ctx, 1, *separateMaterial.normal);
     }
 }
 
 void VulkanRenderer::loadOrmMap(const std::filesystem::path &path) {
     waitIdle();
 
-    ormTexture.reset();
-    ormTexture = TextureBuilder()
+    separateMaterial.orm.reset();
+    separateMaterial.orm = TextureBuilder()
             .useFormat(vk::Format::eR8G8B8A8Unorm)
             .fromPaths({path})
-            .create(ctx, *commandPool, *graphicsQueue);
+            .create(ctx);
 
-    for (auto &res: frameResources) {
-        res.sceneDescriptorSet->updateBinding(ctx, 3, *ormTexture);
-    }
+    materialsDescriptorSet->updateBinding(ctx, 2, *separateMaterial.orm);
 }
 
 void VulkanRenderer::loadOrmMap(const std::filesystem::path &aoPath, const std::filesystem::path &roughnessPath,
                                 const std::filesystem::path &metallicPath) {
     waitIdle();
 
-    ormTexture.reset();
-    ormTexture = TextureBuilder()
+    separateMaterial.orm.reset();
+    separateMaterial.orm = TextureBuilder()
             .useFormat(vk::Format::eR8G8B8A8Unorm)
             .asSeparateChannels()
             .fromPaths({aoPath, roughnessPath, metallicPath})
@@ -543,26 +578,22 @@ void VulkanRenderer::loadOrmMap(const std::filesystem::path &aoPath, const std::
                 SwizzleComp::A
             })
             .makeMipmaps()
-            .create(ctx, *commandPool, *graphicsQueue);
+            .create(ctx);
 
-    for (auto &res: frameResources) {
-        res.sceneDescriptorSet->updateBinding(ctx, 3, *ormTexture);
-    }
+    materialsDescriptorSet->updateBinding(ctx, 2, *separateMaterial.orm);
 }
 
 void VulkanRenderer::loadRmaMap(const std::filesystem::path &path) {
     waitIdle();
 
-    ormTexture.reset();
-    ormTexture = TextureBuilder()
+    separateMaterial.orm.reset();
+    separateMaterial.orm = TextureBuilder()
             .withSwizzle({SwizzleComp::B, SwizzleComp::R, SwizzleComp::G, SwizzleComp::A})
             .useFormat(vk::Format::eR8G8B8A8Unorm)
             .fromPaths({path})
-            .create(ctx, *commandPool, *graphicsQueue);
+            .create(ctx);
 
-    for (auto &res: frameResources) {
-        res.sceneDescriptorSet->updateBinding(ctx, 3, *ormTexture);
-    }
+    materialsDescriptorSet->updateBinding(ctx, 2, *separateMaterial.orm);
 }
 
 void VulkanRenderer::loadEnvironmentMap(const std::filesystem::path &path) {
@@ -573,7 +604,7 @@ void VulkanRenderer::loadEnvironmentMap(const std::filesystem::path &path) {
             .useFormat(hdrEnvmapFormat)
             .fromPaths({path})
             .makeMipmaps()
-            .create(ctx, *commandPool, *graphicsQueue);
+            .create(ctx);
 
     cubemapCaptureDescriptorSet->updateBinding(ctx, 1, *envmapTexture);
 
@@ -598,7 +629,7 @@ void VulkanRenderer::createPrepassTextures() {
                       | vk::ImageUsageFlagBits::eTransferDst
                       | vk::ImageUsageFlagBits::eSampled
                       | vk::ImageUsageFlagBits::eColorAttachment)
-            .create(ctx, *commandPool, *graphicsQueue);
+            .create(ctx);
 
     gBufferTextures.normal = TextureBuilder()
             .asUninitialized(extent)
@@ -607,7 +638,7 @@ void VulkanRenderer::createPrepassTextures() {
                       | vk::ImageUsageFlagBits::eTransferDst
                       | vk::ImageUsageFlagBits::eSampled
                       | vk::ImageUsageFlagBits::eColorAttachment)
-            .create(ctx, *commandPool, *graphicsQueue);
+            .create(ctx);
 
     gBufferTextures.depth = TextureBuilder()
             .asUninitialized(extent)
@@ -616,7 +647,7 @@ void VulkanRenderer::createPrepassTextures() {
                       | vk::ImageUsageFlagBits::eTransferDst
                       | vk::ImageUsageFlagBits::eSampled
                       | vk::ImageUsageFlagBits::eDepthStencilAttachment)
-            .create(ctx, *commandPool, *graphicsQueue);
+            .create(ctx);
 
     for (auto &res: frameResources) {
         if (res.ssaoDescriptorSet) {
@@ -662,19 +693,19 @@ void VulkanRenderer::createSsaoTextures() {
                       | vk::ImageUsageFlagBits::eTransferDst
                       | vk::ImageUsageFlagBits::eSampled
                       | vk::ImageUsageFlagBits::eColorAttachment)
-            .create(ctx, *commandPool, *graphicsQueue);
+            .create(ctx);
 
     auto noise = makeSsaoNoise();
 
     ssaoNoiseTexture = TextureBuilder()
-            .fromMemory(noise.data(), { 4, 4, 1 })
+            .fromMemory(noise.data(), {4, 4, 1})
             .useFormat(vk::Format::eR32G32B32A32Sfloat)
             .useUsage(vk::ImageUsageFlagBits::eTransferSrc
                       | vk::ImageUsageFlagBits::eTransferDst
                       | vk::ImageUsageFlagBits::eSampled
                       | vk::ImageUsageFlagBits::eColorAttachment)
             .withSamplerAddressMode(vk::SamplerAddressMode::eRepeat)
-            .create(ctx, *commandPool, *graphicsQueue);
+            .create(ctx);
 
     if (debugQuadDescriptorSet) {
         debugQuadDescriptorSet->updateBinding(ctx, 0, *ssaoTexture);
@@ -682,7 +713,7 @@ void VulkanRenderer::createSsaoTextures() {
 
     for (auto &res: frameResources) {
         if (res.sceneDescriptorSet) {
-            res.sceneDescriptorSet->updateBinding(ctx, 7, *ssaoTexture);
+            res.sceneDescriptorSet->updateBinding(ctx, 1, *ssaoTexture);
         }
 
         if (res.ssaoDescriptorSet) {
@@ -704,7 +735,7 @@ void VulkanRenderer::createIblTextures() {
             .useFormat(hdrEnvmapFormat)
             .useUsage(attachmentUsageFlags)
             .makeMipmaps()
-            .create(ctx, *commandPool, *graphicsQueue);
+            .create(ctx);
 
     irradianceMapTexture = TextureBuilder()
             .asCubemap()
@@ -713,7 +744,7 @@ void VulkanRenderer::createIblTextures() {
             .useFormat(hdrEnvmapFormat)
             .useUsage(attachmentUsageFlags)
             .makeMipmaps()
-            .create(ctx, *commandPool, *graphicsQueue);
+            .create(ctx);
 
     prefilteredEnvmapTexture = TextureBuilder()
             .asCubemap()
@@ -722,7 +753,7 @@ void VulkanRenderer::createIblTextures() {
             .useFormat(hdrEnvmapFormat)
             .useUsage(attachmentUsageFlags)
             .makeMipmaps()
-            .create(ctx, *commandPool, *graphicsQueue);
+            .create(ctx);
 
     brdfIntegrationMapTexture = TextureBuilder()
             .asUninitialized({512, 512, 1})
@@ -731,7 +762,7 @@ void VulkanRenderer::createIblTextures() {
                       | vk::ImageUsageFlagBits::eTransferDst
                       | vk::ImageUsageFlagBits::eSampled
                       | vk::ImageUsageFlagBits::eColorAttachment)
-            .create(ctx, *commandPool, *graphicsQueue);
+            .create(ctx);
 }
 
 // ==================== swapchain ====================
@@ -767,12 +798,12 @@ void VulkanRenderer::recreateSwapChain() {
 void VulkanRenderer::createDescriptorPool() {
     static constexpr vk::DescriptorPoolSize uboPoolSize{
         .type = vk::DescriptorType::eUniformBuffer,
-        .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 4 + 2,
+        .descriptorCount = 100u,
     };
 
     static constexpr vk::DescriptorPoolSize samplerPoolSize{
         .type = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 13 + 4,
+        .descriptorCount = 1000u,
     };
 
     static constexpr std::array poolSizes = {
@@ -782,7 +813,7 @@ void VulkanRenderer::createDescriptorPool() {
 
     static constexpr vk::DescriptorPoolCreateInfo poolInfo{
         .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-        .maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 4 + 3,
+        .maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 4 + 5,
         .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
         .pPoolSizes = poolSizes.data(),
     };
@@ -796,7 +827,7 @@ void VulkanRenderer::createSceneDescriptorSets() {
                 vk::DescriptorType::eUniformBuffer,
                 vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
             )
-            .addRepeatedBindings(7, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+            .addBinding(vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment) // ssao
             .create(ctx);
 
     const auto layoutPtr = make_shared<vk::raii::DescriptorSetLayout>(std::move(layout));
@@ -813,12 +844,25 @@ void VulkanRenderer::createSceneDescriptorSets() {
                     vk::DescriptorType::eUniformBuffer,
                     sizeof(GraphicsUBO)
                 )
-                .queueUpdate(4, *irradianceMapTexture)
-                .queueUpdate(5, *prefilteredEnvmapTexture)
-                .queueUpdate(6, *brdfIntegrationMapTexture)
-                .queueUpdate(7, *ssaoTexture)
+                .queueUpdate(1, *ssaoTexture)
                 .commitUpdates(ctx);
     }
+}
+
+void VulkanRenderer::createMaterialsDescriptorSet() {
+    auto layout = DescriptorLayoutBuilder()
+            .addRepeatedArrayBindings(
+                3,
+                vk::DescriptorType::eCombinedImageSampler,
+                vk::ShaderStageFlagBits::eFragment,
+                MATERIAL_TEX_ARRAY_SIZE
+            )
+            .create(ctx);
+
+    const auto layoutPtr = make_shared<vk::raii::DescriptorSetLayout>(std::move(layout));
+    auto sets = vkutils::desc::createDescriptorSets(ctx, *descriptorPool, layoutPtr, 1);
+
+    materialsDescriptorSet = make_unique<DescriptorSet>(std::move(sets[0]));
 }
 
 void VulkanRenderer::createSkyboxDescriptorSets() {
@@ -905,6 +949,22 @@ void VulkanRenderer::createSsaoDescriptorSets() {
                 .queueUpdate(4, *ssaoNoiseTexture)
                 .commitUpdates(ctx);
     }
+}
+
+void VulkanRenderer::createIblDescriptorSet() {
+    auto layout = DescriptorLayoutBuilder()
+            .addRepeatedBindings(3, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+            .create(ctx);
+
+    const auto layoutPtr = make_shared<vk::raii::DescriptorSetLayout>(std::move(layout));
+    auto sets = vkutils::desc::createDescriptorSets(ctx, *descriptorPool, layoutPtr, 1);
+
+    iblDescriptorSet = make_unique<DescriptorSet>(std::move(sets[0]));
+
+    iblDescriptorSet->queueUpdate(0, *irradianceMapTexture)
+            .queueUpdate(1, *prefilteredEnvmapTexture)
+            .queueUpdate(2, *brdfIntegrationMapTexture)
+            .commitUpdates(ctx);
 }
 
 void VulkanRenderer::createCubemapCaptureDescriptorSet() {
@@ -1065,7 +1125,7 @@ void VulkanRenderer::createIrradianceCaptureRenderInfo() {
 }
 
 void VulkanRenderer::createPrefilterRenderInfo() {
-    for (uint32_t i = 0; i < maxPrefilterMipLevels; i++) {
+    for (uint32_t i = 0; i < MAX_PREFILTER_MIP_LEVELS; i++) {
         const std::vector colorAttachments{
             vk::RenderingAttachmentInfo{
                 .imageView = *prefilteredEnvmapTexture->getMipView(i),
@@ -1117,6 +1177,15 @@ void VulkanRenderer::createScenePipeline() {
             })
             .withDescriptorLayouts({
                 *frameResources[0].sceneDescriptorSet->getLayout(),
+                *materialsDescriptorSet->getLayout(),
+                *iblDescriptorSet->getLayout(),
+            })
+            .withPushConstants({
+                vk::PushConstantRange{
+                    .stageFlags = vk::ShaderStageFlagBits::eFragment,
+                    .offset = 0,
+                    .size = sizeof(ScenePushConstants),
+                }
             })
             .withColorFormats({swapChain->getImageFormat()})
             .withDepthFormat(swapChain->getDepthFormat())
@@ -1407,7 +1476,7 @@ VulkanRenderer::createLocalBuffer(const std::vector<ElemType> &contents, const v
         vk::MemoryPropertyFlagBits::eDeviceLocal
     );
 
-    resultBuffer->copyFromBuffer(ctx, *commandPool, *graphicsQueue, stagingBuffer, bufferSize);
+    resultBuffer->copyFromBuffer(ctx, stagingBuffer, bufferSize);
 
     return resultBuffer;
 }
@@ -1435,18 +1504,18 @@ void VulkanRenderer::createCommandPool() {
         .queueFamilyIndex = queueFamilyIndices.graphicsComputeFamily.value()
     };
 
-    commandPool = make_unique<vk::raii::CommandPool>(*ctx.device, poolInfo);
+    ctx.commandPool = make_unique<vk::raii::CommandPool>(*ctx.device, poolInfo);
 }
 
 void VulkanRenderer::createCommandBuffers() {
     const vk::CommandBufferAllocateInfo primaryAllocInfo{
-        .commandPool = **commandPool,
+        .commandPool = **ctx.commandPool,
         .level = vk::CommandBufferLevel::ePrimary,
         .commandBufferCount = static_cast<uint32_t>(frameResources.size()),
     };
 
     const vk::CommandBufferAllocateInfo secondaryAllocInfo{
-        .commandPool = **commandPool,
+        .commandPool = **ctx.commandPool,
         .level = vk::CommandBufferLevel::eSecondary,
         .commandBufferCount = static_cast<uint32_t>(frameResources.size()),
     };
@@ -1585,7 +1654,7 @@ void VulkanRenderer::initImgui() {
         .Instance = **instance,
         .PhysicalDevice = **ctx.physicalDevice,
         .Device = **ctx.device,
-        .Queue = **graphicsQueue,
+        .Queue = **ctx.graphicsQueue,
         .DescriptorPool = static_cast<VkDescriptorPool>(**imguiDescriptorPool),
         .MinImageCount = imageCount,
         .ImageCount = imageCount,
@@ -1810,7 +1879,7 @@ void VulkanRenderer::endFrame() {
     };
 
     try {
-        graphicsQueue->submit(graphicsSubmitInfo);
+        ctx.graphicsQueue->submit(graphicsSubmitInfo);
     } catch (std::exception &e) {
         std::cerr << e.what() << std::endl;
         throw e;
@@ -1894,7 +1963,7 @@ void VulkanRenderer::runPrepass() {
         nullptr
     );
 
-    drawModel(commandBuffer);
+    drawModel(commandBuffer, false, *prepassPipeline);
 
     commandBuffer.end();
 
@@ -2007,11 +2076,15 @@ void VulkanRenderer::drawScene() {
         vk::PipelineBindPoint::eGraphics,
         *scenePipeline->getLayout(),
         0,
-        ***frameResources[currentFrameIdx].sceneDescriptorSet,
+        {
+            ***frameResources[currentFrameIdx].sceneDescriptorSet,
+            ***materialsDescriptorSet,
+            ***iblDescriptorSet,
+        },
         nullptr
     );
 
-    drawModel(commandBuffer);
+    drawModel(commandBuffer, true, *scenePipeline);
 
     commandBuffer.end();
 
@@ -2064,12 +2137,25 @@ void VulkanRenderer::drawDebugQuad() {
     frameResources[currentFrameIdx].debugCmdBuffer.wasRecordedThisFrame = true;
 }
 
-void VulkanRenderer::drawModel(const vk::raii::CommandBuffer &commandBuffer) const {
+void VulkanRenderer::drawModel(const vk::raii::CommandBuffer &commandBuffer, const bool doPushConstants,
+                               const PipelinePack &pipeline) const {
     uint32_t indexOffset = 0;
     std::int32_t vertexOffset = 0;
     uint32_t instanceOffset = 0;
 
     for (const auto &mesh: model->getMeshes()) {
+        // todo - make this a bit nicer (without the ugly bool)
+        if (doPushConstants) {
+            commandBuffer.pushConstants<ScenePushConstants>(
+                *pipeline.getLayout(),
+                vk::ShaderStageFlagBits::eFragment,
+                0,
+                ScenePushConstants{
+                    .materialID = mesh.materialID
+                }
+            );
+        }
+
         commandBuffer.drawIndexed(
             static_cast<uint32_t>(mesh.indices.size()),
             static_cast<uint32_t>(mesh.instances.size()),
@@ -2087,7 +2173,7 @@ void VulkanRenderer::drawModel(const vk::raii::CommandBuffer &commandBuffer) con
 void VulkanRenderer::captureCubemap() const {
     const vk::Extent2D extent = skyboxTexture->getImage().getExtent2d();
 
-    const auto commandBuffer = vkutils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
+    const auto commandBuffer = vkutils::cmd::beginSingleTimeCommands(ctx);
 
     vkutils::cmd::setDynamicStates(commandBuffer, extent);
 
@@ -2115,20 +2201,15 @@ void VulkanRenderer::captureCubemap() const {
         commandBuffer
     );
 
-    vkutils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
+    vkutils::cmd::endSingleTimeCommands(commandBuffer, *ctx.graphicsQueue);
 
-    skyboxTexture->generateMipmaps(
-        ctx,
-        *commandPool,
-        *graphicsQueue,
-        vk::ImageLayout::eShaderReadOnlyOptimal
-    );
+    skyboxTexture->generateMipmaps(ctx, vk::ImageLayout::eShaderReadOnlyOptimal);
 }
 
 void VulkanRenderer::captureIrradianceMap() const {
     const vk::Extent2D extent = irradianceMapTexture->getImage().getExtent2d();
 
-    const auto commandBuffer = vkutils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
+    const auto commandBuffer = vkutils::cmd::beginSingleTimeCommands(ctx);
 
     vkutils::cmd::setDynamicStates(commandBuffer, extent);
 
@@ -2156,20 +2237,15 @@ void VulkanRenderer::captureIrradianceMap() const {
         commandBuffer
     );
 
-    vkutils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
+    vkutils::cmd::endSingleTimeCommands(commandBuffer, *ctx.graphicsQueue);
 
-    irradianceMapTexture->generateMipmaps(
-        ctx,
-        *commandPool,
-        *graphicsQueue,
-        vk::ImageLayout::eShaderReadOnlyOptimal
-    );
+    irradianceMapTexture->generateMipmaps(ctx, vk::ImageLayout::eShaderReadOnlyOptimal);
 }
 
 void VulkanRenderer::prefilterEnvmap() const {
-    const auto commandBuffer = vkutils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
+    const auto commandBuffer = vkutils::cmd::beginSingleTimeCommands(ctx);
 
-    for (uint32_t mipLevel = 0; mipLevel < maxPrefilterMipLevels; mipLevel++) {
+    for (uint32_t mipLevel = 0; mipLevel < MAX_PREFILTER_MIP_LEVELS; mipLevel++) {
         const uint32_t mipScalingFactor = 1 << mipLevel;
 
         vk::Extent2D extent = prefilteredEnvmapTexture->getImage().getExtent2d();
@@ -2193,7 +2269,7 @@ void VulkanRenderer::prefilterEnvmap() const {
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***prefilterPipeline);
 
         const PrefilterPushConstants prefilterPushConstants{
-            .roughness = static_cast<float>(mipLevel) / (maxPrefilterMipLevels - 1)
+            .roughness = static_cast<float>(mipLevel) / (MAX_PREFILTER_MIP_LEVELS - 1)
         };
 
         commandBuffer.pushConstants<PrefilterPushConstants>(
@@ -2208,13 +2284,13 @@ void VulkanRenderer::prefilterEnvmap() const {
         commandBuffer.endRendering();
     }
 
-    vkutils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
+    vkutils::cmd::endSingleTimeCommands(commandBuffer, *ctx.graphicsQueue);
 }
 
 void VulkanRenderer::computeBrdfIntegrationMap() const {
     const vk::Extent2D extent = brdfIntegrationMapTexture->getImage().getExtent2d();
 
-    const auto commandBuffer = vkutils::cmd::beginSingleTimeCommands(*ctx.device, *commandPool);
+    const auto commandBuffer = vkutils::cmd::beginSingleTimeCommands(ctx);
 
     vkutils::cmd::setDynamicStates(commandBuffer, extent);
 
@@ -2228,7 +2304,7 @@ void VulkanRenderer::computeBrdfIntegrationMap() const {
 
     commandBuffer.endRendering();
 
-    vkutils::cmd::endSingleTimeCommands(commandBuffer, *graphicsQueue);
+    vkutils::cmd::endSingleTimeCommands(commandBuffer, *ctx.graphicsQueue);
 }
 
 static const glm::mat4 cubemapFaceProjection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);

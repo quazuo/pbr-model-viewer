@@ -37,7 +37,7 @@ public:
      *
      * @return Handle to the buffer.
      */
-    [[nodiscard]]const vk::Buffer &operator*() const { return buffer; }
+    [[nodiscard]] const vk::Buffer &operator*() const { return buffer; }
 
     /**
      * Maps the buffer's memory to host memory. This requires the buffer to *not* be created
@@ -58,14 +58,11 @@ public:
      * Copies the contents of some other given buffer to this buffer and waits until completion.
      *
      * @param ctx Renderer context.
-     * @param cmdPool Command pool from which a single-time command buffer should be allocated.
-     * @param queue Queue to which the commands should be submitted.
      * @param otherBuffer Buffer from which to copy.
      * @param size Size of the data to copy.
      * @param srcOffset Offset in the source buffer.
      * @param dstOffset Offset in this (destination) buffer.
      */
-    void copyFromBuffer(const RendererContext &ctx, const vk::raii::CommandPool &cmdPool,
-                        const vk::raii::Queue &queue, const Buffer &otherBuffer, vk::DeviceSize size,
+    void copyFromBuffer(const RendererContext &ctx, const Buffer &otherBuffer, vk::DeviceSize size,
                         vk::DeviceSize srcOffset = 0, vk::DeviceSize dstOffset = 0) const;
 };

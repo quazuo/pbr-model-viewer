@@ -10,6 +10,7 @@
 
 #include "libs.h"
 #include "globals.h"
+#include "mesh/model.h"
 #include "vk/cmd.h"
 
 class Image;
@@ -88,6 +89,10 @@ struct GraphicsUBO {
     alignas(16) MiscData misc{};
 };
 
+struct ScenePushConstants {
+    uint32_t materialID;
+};
+
 struct PrefilterPushConstants {
     float roughness;
 };
@@ -122,6 +127,8 @@ public:
 struct RendererContext {
     unique_ptr<vk::raii::PhysicalDevice> physicalDevice;
     unique_ptr<vk::raii::Device> device;
+    unique_ptr<vk::raii::CommandPool> commandPool;
+    unique_ptr<vk::raii::Queue> graphicsQueue;
     unique_ptr<VmaAllocatorWrapper> allocator;
 };
 
@@ -149,16 +156,13 @@ class VulkanRenderer {
 
     RendererContext ctx;
 
-    unique_ptr<vk::raii::Queue> graphicsQueue;
     unique_ptr<vk::raii::Queue> presentQueue;
 
     unique_ptr<SwapChain> swapChain;
 
     unique_ptr<Model> model;
-
-    unique_ptr<Texture> albedoTexture;
-    unique_ptr<Texture> normalTexture;
-    unique_ptr<Texture> ormTexture;
+    Material separateMaterial;
+    bool usingSeparateMaterial = false;
 
     unique_ptr<Texture> ssaoTexture;
     unique_ptr<Texture> ssaoNoiseTexture;
@@ -177,6 +181,8 @@ class VulkanRenderer {
 
     unique_ptr<vk::raii::DescriptorPool> descriptorPool;
 
+    unique_ptr<DescriptorSet> materialsDescriptorSet;
+    unique_ptr<DescriptorSet> iblDescriptorSet;
     unique_ptr<DescriptorSet> cubemapCaptureDescriptorSet;
     unique_ptr<DescriptorSet> envmapConvoluteDescriptorSet;
     unique_ptr<DescriptorSet> debugQuadDescriptorSet;
@@ -197,8 +203,6 @@ class VulkanRenderer {
     unique_ptr<PipelinePack> prefilterPipeline;
     unique_ptr<PipelinePack> brdfIntegrationPipeline;
     unique_ptr<PipelinePack> debugQuadPipeline;
-
-    unique_ptr<vk::raii::CommandPool> commandPool;
 
     unique_ptr<Buffer> vertexBuffer;
     unique_ptr<Buffer> indexBuffer;
@@ -244,14 +248,18 @@ class VulkanRenderer {
 
     vk::SampleCountFlagBits msaaSampleCount = vk::SampleCountFlagBits::e1;
 
+    unique_ptr<vk::raii::DescriptorPool> imguiDescriptorPool;
+    unique_ptr<GuiRenderer> guiRenderer;
+
+    // miscellaneous constants
+
     static constexpr auto prepassColorFormat = vk::Format::eR16G16B16A16Sfloat;
     static constexpr auto hdrEnvmapFormat = vk::Format::eR32G32B32A32Sfloat;
     static constexpr auto brdfIntegrationMapFormat = vk::Format::eR8G8B8A8Unorm;
 
-    static constexpr uint32_t maxPrefilterMipLevels = 5;
+    static constexpr uint32_t MAX_PREFILTER_MIP_LEVELS = 5;
 
-    unique_ptr<vk::raii::DescriptorPool> imguiDescriptorPool;
-    unique_ptr<GuiRenderer> guiRenderer;
+    static constexpr uint32_t MATERIAL_TEX_ARRAY_SIZE = 32;
 
     // miscellaneous state variables
 
@@ -305,9 +313,11 @@ public:
      */
     void waitIdle() const { ctx.device->waitIdle(); }
 
+    void loadModelWithMaterials(const std::filesystem::path &path);
+
     void loadModel(const std::filesystem::path &path);
 
-    void loadAlbedoTexture(const std::filesystem::path &path);
+    void loadBaseColorTexture(const std::filesystem::path &path);
 
     void loadNormalMap(const std::filesystem::path &path);
 
@@ -384,11 +394,15 @@ private:
 
     void createSceneDescriptorSets();
 
+    void createMaterialsDescriptorSet();
+
     void createSkyboxDescriptorSets();
 
     void createPrepassDescriptorSets();
 
     void createSsaoDescriptorSets();
+
+    void createIblDescriptorSet();
 
     void createCubemapCaptureDescriptorSet();
 
@@ -485,7 +499,8 @@ public:
     void drawDebugQuad();
 
 private:
-    void drawModel(const vk::raii::CommandBuffer &commandBuffer) const;
+    void drawModel(const vk::raii::CommandBuffer &commandBuffer, bool doPushConstants,
+                   const PipelinePack &pipeline) const;
 
     void captureCubemap() const;
 

@@ -3,6 +3,8 @@
 #include "src/render/libs.h"
 #include "src/render/globals.h"
 
+struct RendererContext;
+
 struct SecondaryCommandBuffer {
     unique_ptr<vk::raii::CommandBuffer> buffer;
     bool wasRecordedThisFrame = false;
@@ -15,12 +17,11 @@ namespace vkutils::cmd {
     * Allocates and begins a new command buffer which is supposed to be recorded once
     * and destroyed after submission.
     *
-    * @param device Logical device handle.
-    * @param commandPool Command pool from which to allocate.
+    * @param ctx Renderer context.
     * @return The created single-use command buffer.
     */
     [[nodiscard]] vk::raii::CommandBuffer
-    beginSingleTimeCommands(const vk::raii::Device &device, const vk::raii::CommandPool &commandPool);
+    beginSingleTimeCommands(const RendererContext& ctx);
 
     /**
     * Ends a single-time command buffer created beforehand by `beginSingleTimeCommands`.
@@ -34,13 +35,10 @@ namespace vkutils::cmd {
     /**
      * Convenience wrapper over `beginSingleTimeCommands` and `endSingleTimeCommands`.
      *
-     * @param device Logical device handle.
-     * @param commandPool Command pool from which to allocate.
-     * @param queue The queue to which the buffer should be submitted.
+     * @param ctx Renderer context.
      * @param func Lambda containing commands with which the command buffer will be filled.
      */
-    void doSingleTimeCommands(const vk::raii::Device &device, const vk::raii::CommandPool &commandPool,
-                              const vk::raii::Queue &queue,
+    void doSingleTimeCommands(const RendererContext& ctx,
                               const std::function<void(const vk::raii::CommandBuffer &)> &func);
 
     void setDynamicStates(const vk::raii::CommandBuffer &commandBuffer, vk::Extent2D drawExtent);

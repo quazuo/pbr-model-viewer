@@ -2,7 +2,7 @@
 
 enum class FileType {
     MODEL,
-    ALBEDO_PNG,
+    BASE_COLOR_PNG,
     NORMAL_PNG,
     ORM_PNG,
     RMA_PNG,
@@ -15,8 +15,8 @@ enum class FileType {
 [[nodiscard]] static std::vector<std::string> getFileTypeExtensions(const FileType type) {
     switch (type) {
         case FileType::MODEL:
-            return {".obj", ".fbx"};
-        case FileType::ALBEDO_PNG:
+            return {".obj", ".fbx", ".gltf"};
+        case FileType::BASE_COLOR_PNG:
         case FileType::NORMAL_PNG:
         case FileType::ORM_PNG:
         case FileType::RMA_PNG:
@@ -45,8 +45,8 @@ enum class FileType {
     switch (type) {
         case FileType::MODEL:
             return "Load model...";
-        case FileType::ALBEDO_PNG:
-            return "Load color texture...";
+        case FileType::BASE_COLOR_PNG:
+            return "Load base color texture...";
         case FileType::NORMAL_PNG:
             return "Load normal map...";
         case FileType::ORM_PNG:
@@ -73,28 +73,34 @@ struct FileLoadScheme {
 
 static const std::vector<FileLoadScheme> fileLoadSchemes{
     {
-        "Albedo + Normal + ORM",
+        "Default (model packed with materials)",
         {
             FileType::MODEL,
-            FileType::ALBEDO_PNG,
+        }
+    },
+    {
+        "One material: Base color + Normal + ORM",
+        {
+            FileType::MODEL,
+            FileType::BASE_COLOR_PNG,
             FileType::NORMAL_PNG,
             FileType::ORM_PNG,
         }
     },
     {
-        "Albedo + Normal + RMA",
+        "One material: Base color + Normal + RMA",
         {
             FileType::MODEL,
-            FileType::ALBEDO_PNG,
+            FileType::BASE_COLOR_PNG,
             FileType::NORMAL_PNG,
             FileType::RMA_PNG,
         }
     },
     {
-        "Albedo + Normal + AO + Roughness + Metallic",
+        "One material: Base color + Normal + AO + Roughness + Metallic",
         {
             FileType::MODEL,
-            FileType::ALBEDO_PNG,
+            FileType::BASE_COLOR_PNG,
             FileType::NORMAL_PNG,
             FileType::AO_PNG,
             FileType::ROUGHNESS_PNG,

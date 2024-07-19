@@ -6,7 +6,8 @@
 #include "buffer.h"
 #include "image.h"
 
-DescriptorLayoutBuilder &DescriptorLayoutBuilder::addBinding(vk::DescriptorType type, vk::ShaderStageFlags stages) {
+DescriptorLayoutBuilder &
+DescriptorLayoutBuilder::addBinding(const vk::DescriptorType type, const vk::ShaderStageFlags stages) {
     bindings.emplace_back(vk::DescriptorSetLayoutBinding{
         .binding = static_cast<uint32_t>(bindings.size()),
         .descriptorType = type,
@@ -17,15 +18,34 @@ DescriptorLayoutBuilder &DescriptorLayoutBuilder::addBinding(vk::DescriptorType 
     return *this;
 }
 
-DescriptorLayoutBuilder &DescriptorLayoutBuilder::addRepeatedBindings(const size_t count, const vk::DescriptorType type,
-                                                                      const vk::ShaderStageFlags stages) {
+DescriptorLayoutBuilder &
+DescriptorLayoutBuilder::addArrayBinding(const vk::DescriptorType type, const vk::ShaderStageFlags stages,
+                                         const uint32_t size) {
+    bindings.emplace_back(vk::DescriptorSetLayoutBinding{
+        .binding = static_cast<uint32_t>(bindings.size()),
+        .descriptorType = type,
+        .descriptorCount = size,
+        .stageFlags = stages,
+    });
+
+    return *this;
+}
+
+DescriptorLayoutBuilder &
+DescriptorLayoutBuilder::addRepeatedBindings(const size_t count, const vk::DescriptorType type,
+                                             const vk::ShaderStageFlags stages) {
     for (size_t i = 0; i < count; i++) {
-        bindings.emplace_back(vk::DescriptorSetLayoutBinding{
-            .binding = static_cast<uint32_t>(bindings.size()),
-            .descriptorType = type,
-            .descriptorCount = 1,
-            .stageFlags = stages,
-        });
+        addBinding(type, stages);
+    }
+
+    return *this;
+}
+
+DescriptorLayoutBuilder &
+DescriptorLayoutBuilder::addRepeatedArrayBindings(const size_t count, const vk::DescriptorType type,
+                                                  const vk::ShaderStageFlags stages, const uint32_t size) {
+    for (size_t i = 0; i < count; i++) {
+        addArrayBinding(type, stages, size);
     }
 
     return *this;
@@ -41,7 +61,8 @@ vk::raii::DescriptorSetLayout DescriptorLayoutBuilder::create(const RendererCont
 }
 
 DescriptorSet &DescriptorSet::queueUpdate(const uint32_t binding, const Buffer &buffer, const vk::DescriptorType type,
-                                          const vk::DeviceSize size, const vk::DeviceSize offset) {
+                                          const vk::DeviceSize size, const vk::DeviceSize offset,
+                                          const uint32_t arrayElement) {
     const vk::DescriptorBufferInfo bufferInfo{
         .buffer = *buffer,
         .offset = offset,
@@ -50,6 +71,7 @@ DescriptorSet &DescriptorSet::queueUpdate(const uint32_t binding, const Buffer &
 
     queuedUpdates.emplace_back(DescriptorUpdate{
         .binding = binding,
+        .arrayElement = arrayElement,
         .type = type,
         .info = bufferInfo,
     });
@@ -57,7 +79,7 @@ DescriptorSet &DescriptorSet::queueUpdate(const uint32_t binding, const Buffer &
     return *this;
 }
 
-DescriptorSet &DescriptorSet::queueUpdate(const uint32_t binding, const Texture &texture) {
+DescriptorSet &DescriptorSet::queueUpdate(const uint32_t binding, const Texture &texture, const uint32_t arrayElement) {
     const vk::DescriptorImageInfo imageInfo{
         .sampler = *texture.getSampler(),
         .imageView = *texture.getView(),
@@ -66,6 +88,7 @@ DescriptorSet &DescriptorSet::queueUpdate(const uint32_t binding, const Texture 
 
     queuedUpdates.emplace_back(DescriptorUpdate{
         .binding = binding,
+        .arrayElement = arrayElement,
         .type = vk::DescriptorType::eCombinedImageSampler,
         .info = imageInfo,
     });
@@ -80,7 +103,7 @@ void DescriptorSet::commitUpdates(const RendererContext &ctx) {
         vk::WriteDescriptorSet write{
             .dstSet = **set,
             .dstBinding = update.binding,
-            .dstArrayElement = 0,
+            .dstArrayElement = update.arrayElement,
             .descriptorCount = 1,
             .descriptorType = update.type,
         };
@@ -103,7 +126,7 @@ void DescriptorSet::commitUpdates(const RendererContext &ctx) {
 
 void DescriptorSet::updateBinding(const RendererContext &ctx, const uint32_t binding, const Buffer &buffer,
                                   const vk::DescriptorType type, const vk::DeviceSize size,
-                                  const vk::DeviceSize offset) const {
+                                  const vk::DeviceSize offset, const uint32_t arrayElement) const {
     const vk::DescriptorBufferInfo bufferInfo{
         .buffer = *buffer,
         .offset = offset,
@@ -113,7 +136,7 @@ void DescriptorSet::updateBinding(const RendererContext &ctx, const uint32_t bin
     const vk::WriteDescriptorSet write{
         .dstSet = **set,
         .dstBinding = binding,
-        .dstArrayElement = 0,
+        .dstArrayElement = arrayElement,
         .descriptorCount = 1,
         .descriptorType = type,
         .pBufferInfo = &bufferInfo,
@@ -122,7 +145,8 @@ void DescriptorSet::updateBinding(const RendererContext &ctx, const uint32_t bin
     ctx.device->updateDescriptorSets(write, nullptr);
 }
 
-void DescriptorSet::updateBinding(const RendererContext &ctx, const uint32_t binding, const Texture &texture) const {
+void DescriptorSet::updateBinding(const RendererContext &ctx, const uint32_t binding, const Texture &texture,
+                                  const uint32_t arrayElement) const {
     const vk::DescriptorImageInfo imageInfo{
         .sampler = *texture.getSampler(),
         .imageView = *texture.getView(),
@@ -132,7 +156,7 @@ void DescriptorSet::updateBinding(const RendererContext &ctx, const uint32_t bin
     const vk::WriteDescriptorSet write{
         .dstSet = **set,
         .dstBinding = binding,
-        .dstArrayElement = 0,
+        .dstArrayElement = arrayElement,
         .descriptorCount = 1,
         .descriptorType = vk::DescriptorType::eCombinedImageSampler,
         .pImageInfo = &imageInfo,
@@ -143,7 +167,7 @@ void DescriptorSet::updateBinding(const RendererContext &ctx, const uint32_t bin
 
 std::vector<DescriptorSet>
 vkutils::desc::createDescriptorSets(const RendererContext &ctx, const vk::raii::DescriptorPool &pool,
-                                  const shared_ptr<vk::raii::DescriptorSetLayout>& layout, const uint32_t count) {
+                                    const shared_ptr<vk::raii::DescriptorSetLayout> &layout, const uint32_t count) {
     const std::vector setLayouts(count, **layout);
 
     const vk::DescriptorSetAllocateInfo allocInfo{
