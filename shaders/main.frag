@@ -56,18 +56,11 @@ void main() {
     normal = normalize(normal * 2.0 - 1.0);
     normal = normalize(TBN * normal);
 
-//    outColor = vec4(TBN * vec3(0.5, 0, 0) + vec3(0.5), 1.0);
-//    return;
-
     float ao = ubo.misc.use_ssao == 1u
         ? getBlurredSsao()
         : texture(ormSamplers[constants.material_id], fragTexCoord).r;
     float roughness = texture(ormSamplers[constants.material_id], fragTexCoord).g;
     float metallic = texture(ormSamplers[constants.material_id], fragTexCoord).b;
-//
-//    ao = 1;
-//    metallic = 0;
-//    roughness = 1;
 
     // light related values
     vec3 light_dir = normalize(ubo.misc.light_direction);
