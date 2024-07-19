@@ -62,8 +62,8 @@ PipelineBuilder & PipelineBuilder::withDepthFormat(const vk::Format format) {
     return *this;
 }
 
-PipelinePack PipelineBuilder::create(const RendererContext &ctx) const {
-    PipelinePack result;
+Pipeline PipelineBuilder::create(const RendererContext &ctx) const {
+    Pipeline result;
 
     vk::raii::ShaderModule vertShaderModule = createShaderModule(ctx, vertexShaderPath);
     vk::raii::ShaderModule fragShaderModule = createShaderModule(ctx, fragmentShaderPath);
@@ -160,9 +160,9 @@ PipelinePack PipelineBuilder::create(const RendererContext &ctx) const {
     };
 
     vk::PipelineRenderingCreateInfo renderingInfo {
-        .viewMask = multiviewCount == 1 ? 0 : renderingInfo.viewMask = (1u << multiviewCount) - 1,
+        .viewMask = multiviewCount == 1 ? 0 : ((1u << multiviewCount) - 1),
         .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
-        .pColorAttachmentFormats = colorAttachmentFormats.data(),
+        .pColorAttachmentFormats = colorAttachmentFormats.empty() ? nullptr : colorAttachmentFormats.data(),
     };
 
     if (depthAttachmentFormat) {
@@ -186,7 +186,7 @@ PipelinePack PipelineBuilder::create(const RendererContext &ctx) const {
         .layout = **result.layout,
     };
 
-    result.pipelines.emplace_back(make_unique<vk::raii::Pipeline>(*ctx.device, nullptr, pipelineInfo));
+    result.pipeline = make_unique<vk::raii::Pipeline>(*ctx.device, nullptr, pipelineInfo);
 
     return result;
 }

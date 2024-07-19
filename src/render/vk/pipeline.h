@@ -7,18 +7,16 @@
 
 struct RendererContext;
 
-class PipelinePack {
-    std::vector<unique_ptr<vk::raii::Pipeline> > pipelines;
+class Pipeline {
+    unique_ptr<vk::raii::Pipeline> pipeline;
     unique_ptr<vk::raii::PipelineLayout> layout;
 
     friend class PipelineBuilder;
 
-    PipelinePack() = default;
+    Pipeline() = default;
 
 public:
-    [[nodiscard]] const vk::raii::Pipeline &operator*() const { return *pipelines[0]; }
-
-    [[nodiscard]] const vk::raii::Pipeline &operator[](const uint32_t idx) const { return *pipelines[idx]; }
+    [[nodiscard]] const vk::raii::Pipeline &operator*() const { return *pipeline; }
 
     [[nodiscard]] const vk::raii::PipelineLayout &getLayout() const { return *layout; }
 };
@@ -65,7 +63,7 @@ public:
 
     PipelineBuilder &withDepthFormat(vk::Format format);
 
-    [[nodiscard]] PipelinePack create(const RendererContext &ctx) const;
+    [[nodiscard]] Pipeline create(const RendererContext &ctx) const;
 
 private:
     void checkParams() const;

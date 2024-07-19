@@ -14,10 +14,6 @@ layout(binding = 0) uniform UniformBufferObject {
     MiscData misc;
 } ubo;
 
-layout(push_constant) uniform PushConstants {
-    float roughness;
-} constants;
-
 void main() {
     localPosition = inPosition;
     localPosition.x *= -1;

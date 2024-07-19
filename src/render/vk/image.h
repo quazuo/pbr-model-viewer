@@ -115,10 +115,6 @@ protected:
 };
 
 class CubeImage final : public Image {
-    std::vector<unique_ptr<vk::raii::ImageView> > layerViews;
-    std::vector<unique_ptr<vk::raii::ImageView> > attachmentLayerViews;
-    std::vector<std::vector<unique_ptr<vk::raii::ImageView> > > layerMipViews; // layerMipViews[layer][mip]
-
 public:
     explicit CubeImage(const RendererContext &ctx, const vk::ImageCreateInfo &imageInfo,
                        vk::MemoryPropertyFlags properties);

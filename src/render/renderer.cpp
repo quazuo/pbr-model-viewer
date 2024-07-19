@@ -121,12 +121,12 @@ VulkanRenderer::VulkanRenderer() {
     createSceneRenderInfos();
     createGuiRenderInfos();
 
-    loadModelWithMaterials("../assets/example models/Sponza/Sponza.gltf");
+    // loadModelWithMaterials("../assets/example models/Sponza/Sponza.gltf");
 
-    // loadModel("../assets/example models/kettle/kettle.obj");
-    // loadBaseColorTexture("../assets/example models/kettle/kettle-albedo.png");
-    // loadNormalMap("../assets/example models/kettle/kettle-normal.png");
-    // loadOrmMap("../assets/example models/kettle/kettle-orm.png");
+    loadModel("../assets/example models/kettle/kettle.obj");
+    loadBaseColorTexture("../assets/example models/kettle/kettle-albedo.png");
+    loadNormalMap("../assets/example models/kettle/kettle-normal.png");
+    loadOrmMap("../assets/example models/kettle/kettle-orm.png");
 
     loadEnvironmentMap("../assets/envmaps/vienna.hdr");
 
@@ -753,10 +753,7 @@ void VulkanRenderer::createIblTextures() {
             .asUninitialized({512, 512, 1})
             .useFormat(brdfIntegrationMapFormat)
             .withSamplerAddressMode(vk::SamplerAddressMode::eClampToEdge)
-            .useUsage(vk::ImageUsageFlagBits::eTransferSrc
-                      | vk::ImageUsageFlagBits::eTransferDst
-                      | vk::ImageUsageFlagBits::eSampled
-                      | vk::ImageUsageFlagBits::eColorAttachment)
+            .useUsage(attachmentUsageFlags)
             .create(ctx);
 }
 
@@ -889,7 +886,7 @@ void VulkanRenderer::createSkyboxDescriptorSets() {
                     vk::DescriptorType::eUniformBuffer,
                     sizeof(GraphicsUBO)
                 )
-                .queueUpdate(ctx, 1, *skyboxTexture)
+                .queueUpdate(ctx, 1, *prefilteredEnvmapTexture)
                 .commitUpdates(ctx);
     }
 }
@@ -1026,12 +1023,12 @@ void VulkanRenderer::createDebugQuadDescriptorSet() {
 
 // ==================== render infos ====================
 
-RenderInfo::RenderInfo(PipelineBuilder builder, shared_ptr<PipelinePack> pipeline, std::vector<RenderTarget> colors)
+RenderInfo::RenderInfo(PipelineBuilder builder, shared_ptr<Pipeline> pipeline, std::vector<RenderTarget> colors)
     : builder(std::move(builder)), pipeline(std::move(pipeline)), colorTargets(std::move(colors)) {
     makeAttachmentInfos();
 }
 
-RenderInfo::RenderInfo(PipelineBuilder builder, shared_ptr<PipelinePack> pipeline, std::vector<RenderTarget> colors,
+RenderInfo::RenderInfo(PipelineBuilder builder, shared_ptr<Pipeline> pipeline, std::vector<RenderTarget> colors,
                        RenderTarget depth)
     : builder(std::move(builder)), pipeline(std::move(pipeline)),
       colorTargets(std::move(colors)), depthTarget(std::move(depth)) {
@@ -1110,7 +1107,7 @@ void VulkanRenderer::createSceneRenderInfos() {
             .withColorFormats({swapChain->getImageFormat()})
             .withDepthFormat(swapChain->getDepthFormat());
 
-    auto pipeline = make_shared<PipelinePack>(builder.create(ctx));
+    auto pipeline = make_shared<Pipeline>(builder.create(ctx));
 
     for (auto &target: swapChain->getRenderTargets(ctx)) {
         std::vector<RenderTarget> colorTargets;
@@ -1154,7 +1151,7 @@ void VulkanRenderer::createSkyboxRenderInfos() {
             .withColorFormats({swapChain->getImageFormat()})
             .withDepthFormat(swapChain->getDepthFormat());
 
-    auto pipeline = make_shared<PipelinePack>(builder.create(ctx));
+    auto pipeline = make_shared<Pipeline>(builder.create(ctx));
 
     for (auto &target: swapChain->getRenderTargets(ctx)) {
         std::vector<RenderTarget> colorTargets;
@@ -1208,7 +1205,7 @@ void VulkanRenderer::createPrepassRenderInfo() {
             .withColorFormats(formats)
             .withDepthFormat(depthTarget.getFormat());
 
-    auto pipeline = make_shared<PipelinePack>(builder.create(ctx));
+    auto pipeline = make_shared<Pipeline>(builder.create(ctx));
 
     prepassRenderInfo = make_unique<RenderInfo>(
         builder,
@@ -1236,7 +1233,7 @@ void VulkanRenderer::createSsaoRenderInfo() {
             })
             .withColorFormats({target.getFormat()});
 
-    auto pipeline = make_shared<PipelinePack>(builder.create(ctx));
+    auto pipeline = make_shared<Pipeline>(builder.create(ctx));
 
     std::vector<RenderTarget> targets;
     targets.emplace_back(std::move(target));
@@ -1274,7 +1271,7 @@ void VulkanRenderer::createCubemapCaptureRenderInfo() {
             .forViews(6)
             .withColorFormats({target.getFormat()});
 
-    auto pipeline = make_shared<PipelinePack>(builder.create(ctx));
+    auto pipeline = make_shared<Pipeline>(builder.create(ctx));
 
     std::vector<RenderTarget> targets;
     targets.emplace_back(std::move(target));
@@ -1312,7 +1309,7 @@ void VulkanRenderer::createIrradianceCaptureRenderInfo() {
             .forViews(6)
             .withColorFormats({target.getFormat()});
 
-    auto pipeline = make_shared<PipelinePack>(builder.create(ctx));
+    auto pipeline = make_shared<Pipeline>(builder.create(ctx));
 
     std::vector<RenderTarget> targets;
     targets.emplace_back(std::move(target));
@@ -1344,7 +1341,7 @@ void VulkanRenderer::createPrefilterRenderInfo() {
             })
             .withPushConstants({
                 vk::PushConstantRange{
-                    .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+                    .stageFlags = vk::ShaderStageFlagBits::eFragment,
                     .offset = 0,
                     .size = sizeof(PrefilterPushConstants),
                 }
@@ -1352,7 +1349,7 @@ void VulkanRenderer::createPrefilterRenderInfo() {
             .forViews(6)
             .withColorFormats({prefilteredEnvmapTexture->getFormat()});
 
-    auto pipeline = make_shared<PipelinePack>(builder.create(ctx));
+    auto pipeline = make_shared<Pipeline>(builder.create(ctx));
 
     for (uint32_t i = 0; i < MAX_PREFILTER_MIP_LEVELS; i++) {
         RenderTarget target{
@@ -1393,7 +1390,7 @@ void VulkanRenderer::createBrdfIntegrationRenderInfo() {
             })
             .withColorFormats({target.getFormat()});
 
-    auto pipeline = make_shared<PipelinePack>(builder.create(ctx));
+    auto pipeline = make_shared<Pipeline>(builder.create(ctx));
 
     std::vector<RenderTarget> targets;
     targets.emplace_back(std::move(target));
@@ -1432,7 +1429,7 @@ void VulkanRenderer::createDebugQuadRenderInfos() {
             .withColorFormats({swapChain->getImageFormat()})
             .withDepthFormat(swapChain->getDepthFormat());
 
-    auto pipeline = make_shared<PipelinePack>(builder.create(ctx));
+    auto pipeline = make_shared<Pipeline>(builder.create(ctx));
     
     for (auto &target: swapChain->getRenderTargets(ctx)) {
         std::vector<RenderTarget> colorTargets;
@@ -2197,7 +2194,7 @@ void VulkanRenderer::drawDebugQuad() {
 }
 
 void VulkanRenderer::drawModel(const vk::raii::CommandBuffer &commandBuffer, const bool doPushConstants,
-                               const PipelinePack &pipeline) const {
+                               const Pipeline &pipeline) const {
     uint32_t indexOffset = 0;
     std::int32_t vertexOffset = 0;
     uint32_t instanceOffset = 0;
@@ -2306,6 +2303,8 @@ void VulkanRenderer::captureIrradianceMap() const {
 void VulkanRenderer::prefilterEnvmap() const {
     const auto commandBuffer = vkutils::cmd::beginSingleTimeCommands(ctx);
 
+    commandBuffer.bindVertexBuffers(0, **skyboxVertexBuffer, {0});
+
     for (uint32_t mipLevel = 0; mipLevel < MAX_PREFILTER_MIP_LEVELS; mipLevel++) {
         const uint32_t mipScalingFactor = 1 << mipLevel;
 
@@ -2316,8 +2315,6 @@ void VulkanRenderer::prefilterEnvmap() const {
         vkutils::cmd::setDynamicStates(commandBuffer, extent);
 
         commandBuffer.beginRendering(prefilterRenderInfos[mipLevel].get(extent, 6));
-
-        commandBuffer.bindVertexBuffers(0, **skyboxVertexBuffer, {0});
 
         const auto &pipeline = prefilterRenderInfos[mipLevel].getPipeline();
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, **pipeline);
@@ -2330,15 +2327,13 @@ void VulkanRenderer::prefilterEnvmap() const {
             nullptr
         );
 
-        const PrefilterPushConstants prefilterPushConstants{
-            .roughness = static_cast<float>(mipLevel) / (MAX_PREFILTER_MIP_LEVELS - 1)
-        };
-
         commandBuffer.pushConstants<PrefilterPushConstants>(
             *pipeline.getLayout(),
-            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            vk::ShaderStageFlagBits::eFragment,
             0u,
-            prefilterPushConstants
+            PrefilterPushConstants {
+                .roughness = static_cast<float>(mipLevel) / (MAX_PREFILTER_MIP_LEVELS - 1)
+            }
         );
 
         commandBuffer.draw(skyboxVertices.size(), 1, 0, 0);

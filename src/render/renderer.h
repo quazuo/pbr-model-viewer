@@ -20,7 +20,7 @@ class InputManager;
 class Model;
 class Camera;
 class Buffer;
-class PipelinePack;
+class Pipeline;
 class DescriptorSet;
 class SwapChain;
 class GuiRenderer;
@@ -135,7 +135,7 @@ struct RendererContext {
 
 class RenderInfo {
     PipelineBuilder builder;
-    shared_ptr<PipelinePack> pipeline;
+    shared_ptr<Pipeline> pipeline;
     std::vector<RenderTarget> colorTargets;
     std::optional<RenderTarget> depthTarget;
 
@@ -143,9 +143,9 @@ class RenderInfo {
     std::optional<vk::RenderingAttachmentInfo> depthAttachment;
 
 public:
-    RenderInfo(PipelineBuilder builder, shared_ptr<PipelinePack> pipeline, std::vector<RenderTarget> colors);
+    RenderInfo(PipelineBuilder builder, shared_ptr<Pipeline> pipeline, std::vector<RenderTarget> colors);
 
-    RenderInfo(PipelineBuilder builder, shared_ptr<PipelinePack> pipeline, std::vector<RenderTarget> colors,
+    RenderInfo(PipelineBuilder builder, shared_ptr<Pipeline> pipeline, std::vector<RenderTarget> colors,
                RenderTarget depth);
 
     explicit RenderInfo(std::vector<RenderTarget> colors);
@@ -154,7 +154,7 @@ public:
 
     [[nodiscard]] vk::RenderingInfo get(vk::Extent2D extent, uint32_t views = 1, vk::RenderingFlags flags = {}) const;
 
-    [[nodiscard]] const PipelinePack &getPipeline() const { return *pipeline; }
+    [[nodiscard]] const Pipeline &getPipeline() const { return *pipeline; }
 
     void reloadShaders(const RendererContext& ctx) const;
 
@@ -503,7 +503,7 @@ public:
 
 private:
     void drawModel(const vk::raii::CommandBuffer &commandBuffer, bool doPushConstants,
-                   const PipelinePack &pipeline) const;
+                   const Pipeline &pipeline) const;
 
     void captureCubemap() const;
 
