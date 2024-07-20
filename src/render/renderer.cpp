@@ -128,7 +128,7 @@ VulkanRenderer::VulkanRenderer() {
     createSceneDescriptorSets();
     createScenePipeline();
 
-    loadModelWithMaterials("../../Sponza CRYTEK/Sponza.gltf");
+    loadModelWithMaterials("../assets/example models/Sponza/Sponza.gltf");
 
     // loadModel("../assets/example models/kettle/kettle.obj");
     // loadBaseColorTexture("../assets/example models/kettle/kettle-albedo.png");
@@ -603,6 +603,7 @@ void VulkanRenderer::loadEnvironmentMap(const std::filesystem::path &path) {
             .asHdr()
             .useFormat(hdrEnvmapFormat)
             .fromPaths({path})
+            .withSamplerAddressMode(vk::SamplerAddressMode::eClampToEdge)
             .makeMipmaps()
             .create(ctx);
 
@@ -758,6 +759,7 @@ void VulkanRenderer::createIblTextures() {
     brdfIntegrationMapTexture = TextureBuilder()
             .asUninitialized({512, 512, 1})
             .useFormat(brdfIntegrationMapFormat)
+            .withSamplerAddressMode(vk::SamplerAddressMode::eClampToEdge)
             .useUsage(vk::ImageUsageFlagBits::eTransferSrc
                       | vk::ImageUsageFlagBits::eTransferDst
                       | vk::ImageUsageFlagBits::eSampled

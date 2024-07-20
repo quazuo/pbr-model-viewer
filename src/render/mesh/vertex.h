@@ -7,11 +7,13 @@ struct Vertex {
     glm::vec2 texCoord;
     glm::vec3 normal;
     glm::vec3 tangent;
+    glm::vec3 bitangent;
 
     bool operator==(const Vertex &other) const {
         return pos == other.pos
                && texCoord == other.texCoord
-               && tangent == other.tangent;
+               && tangent == other.tangent
+               && bitangent == other.bitangent;
     }
 
     static std::vector<vk::VertexInputBindingDescription> getBindingDescriptions();
@@ -24,7 +26,9 @@ struct std::hash<Vertex> {
     size_t operator()(Vertex const &vertex) const noexcept {
         return (hash<glm::vec3>()(vertex.pos) >> 1) ^
                (hash<glm::vec2>()(vertex.texCoord) << 1) ^
-               (hash<glm::vec3>()(vertex.normal) << 1);
+               (hash<glm::vec3>()(vertex.normal) << 1) ^
+               (hash<glm::vec3>()(vertex.tangent) << 1) ^
+               (hash<glm::vec3>()(vertex.bitangent) << 1);
     }
 };
 

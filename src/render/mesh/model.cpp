@@ -45,15 +45,27 @@ Mesh::Mesh(const aiMesh *assimpMesh) : materialID(assimpMesh->mMaterialIndex) {
         const auto &face = assimpMesh->mFaces[faceIdx];
 
         for (size_t i = 0; i < face.mNumIndices; i++) {
-            const Vertex vertex{
-                .pos = assimpVecToGlm(assimpMesh->mVertices[face.mIndices[i]]),
-                .texCoord = {
+            Vertex vertex{};
+
+            if (assimpMesh->HasPositions()) {
+                vertex.pos = assimpVecToGlm(assimpMesh->mVertices[face.mIndices[i]]);
+            }
+
+            if (assimpMesh->HasTextureCoords(0)) {
+                vertex.texCoord = {
                     assimpMesh->mTextureCoords[0][face.mIndices[i]].x,
                     1.0f - assimpMesh->mTextureCoords[0][face.mIndices[i]].y
-                },
-                .normal = assimpVecToGlm(assimpMesh->mNormals[face.mIndices[i]]),
-                .tangent = assimpVecToGlm(assimpMesh->mTangents[face.mIndices[i]]),
-            };
+                };
+            }
+
+            if (assimpMesh->HasTangentsAndBitangents()) {
+                vertex.normal = assimpVecToGlm(assimpMesh->mNormals[face.mIndices[i]]);
+            }
+
+            if (assimpMesh->HasTangentsAndBitangents()) {
+                vertex.tangent = assimpVecToGlm(assimpMesh->mTangents[face.mIndices[i]]);
+                vertex.bitangent = assimpVecToGlm(assimpMesh->mBitangents[face.mIndices[i]]);
+            }
 
             if (!uniqueVertices.contains(vertex)) {
                 uniqueVertices[vertex] = vertices.size();
@@ -177,14 +189,14 @@ Model::Model(const RendererContext &ctx, const std::filesystem::path &path, cons
 
     const aiScene *scene = importer.ReadFile(
         path.string(),
-        aiProcess_CalcTangentSpace
-        | aiProcess_RemoveRedundantMaterials
+        aiProcess_RemoveRedundantMaterials
         | aiProcess_FindInstances
         | aiProcess_OptimizeMeshes
         | aiProcess_OptimizeGraph
         | aiProcess_FixInfacingNormals
         | aiProcess_Triangulate
         | aiProcess_JoinIdenticalVertices
+        | aiProcess_CalcTangentSpace
         | aiProcess_SortByPType
         | aiProcess_ImproveCacheLocality
         | aiProcess_ValidateDataStructure
