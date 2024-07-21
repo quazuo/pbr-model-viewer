@@ -12,15 +12,16 @@
 #include "globals.h"
 #include "mesh/model.h"
 #include "vk/cmd.h"
+#include "vk/image.h"
+#include "vk/pipeline.h"
 
-class Image;
+class RenderTarget;
 class InputManager;
 class Model;
 class Camera;
 class Buffer;
 class PipelinePack;
 class DescriptorSet;
-class Texture;
 class SwapChain;
 class GuiRenderer;
 
@@ -132,12 +133,33 @@ struct RendererContext {
     unique_ptr<VmaAllocatorWrapper> allocator;
 };
 
-struct RenderInfo {
+class RenderInfo {
+    PipelineBuilder builder;
+    shared_ptr<PipelinePack> pipeline;
+    std::vector<RenderTarget> colorTargets;
+    std::optional<RenderTarget> depthTarget;
+
     std::vector<vk::RenderingAttachmentInfo> colorAttachments;
     std::optional<vk::RenderingAttachmentInfo> depthAttachment;
 
-    [[nodiscard]] vk::RenderingInfo get(vk::Extent2D extent, uint32_t views = 1,
-                                        vk::RenderingFlags flags = {}) const;
+public:
+    RenderInfo(PipelineBuilder builder, shared_ptr<PipelinePack> pipeline, std::vector<RenderTarget> colors);
+
+    RenderInfo(PipelineBuilder builder, shared_ptr<PipelinePack> pipeline, std::vector<RenderTarget> colors,
+               RenderTarget depth);
+
+    explicit RenderInfo(std::vector<RenderTarget> colors);
+
+    RenderInfo(std::vector<RenderTarget> colors, RenderTarget depth);
+
+    [[nodiscard]] vk::RenderingInfo get(vk::Extent2D extent, uint32_t views = 1, vk::RenderingFlags flags = {}) const;
+
+    [[nodiscard]] const PipelinePack &getPipeline() const { return *pipeline; }
+
+    void reloadShaders(const RendererContext& ctx) const;
+
+private:
+    void makeAttachmentInfos();
 };
 
 class VulkanRenderer {
@@ -162,7 +184,6 @@ class VulkanRenderer {
 
     unique_ptr<Model> model;
     Material separateMaterial;
-    bool usingSeparateMaterial = false;
 
     unique_ptr<Texture> ssaoTexture;
     unique_ptr<Texture> ssaoNoiseTexture;
@@ -187,22 +208,16 @@ class VulkanRenderer {
     unique_ptr<DescriptorSet> envmapConvoluteDescriptorSet;
     unique_ptr<DescriptorSet> debugQuadDescriptorSet;
 
-    RenderInfo prepassRenderInfo;
-    RenderInfo ssaoRenderInfo;
-    RenderInfo cubemapCaptureRenderInfo;
-    RenderInfo irradianceCaptureRenderInfo;
+    std::vector<RenderInfo> sceneRenderInfos;
+    std::vector<RenderInfo> skyboxRenderInfos;
+    std::vector<RenderInfo> guiRenderInfos;
+    unique_ptr<RenderInfo> prepassRenderInfo;
+    unique_ptr<RenderInfo> ssaoRenderInfo;
+    unique_ptr<RenderInfo> cubemapCaptureRenderInfo;
+    unique_ptr<RenderInfo> irradianceCaptureRenderInfo;
     std::vector<RenderInfo> prefilterRenderInfos;
-    RenderInfo brdfIntegrationRenderInfo;
-
-    unique_ptr<PipelinePack> scenePipeline;
-    unique_ptr<PipelinePack> skyboxPipeline;
-    unique_ptr<PipelinePack> prepassPipeline;
-    unique_ptr<PipelinePack> ssaoPipeline;
-    unique_ptr<PipelinePack> cubemapCapturePipeline;
-    unique_ptr<PipelinePack> irradianceCapturePipeline;
-    unique_ptr<PipelinePack> prefilterPipeline;
-    unique_ptr<PipelinePack> brdfIntegrationPipeline;
-    unique_ptr<PipelinePack> debugQuadPipeline;
+    unique_ptr<RenderInfo> brdfIntegrationRenderInfo;
+    std::vector<RenderInfo> debugQuadRenderInfos;
 
     unique_ptr<Buffer> vertexBuffer;
     unique_ptr<Buffer> indexBuffer;
@@ -330,7 +345,7 @@ public:
 
     void loadEnvironmentMap(const std::filesystem::path &path);
 
-    void reloadShaders();
+    void reloadShaders() const;
 
 private:
     static void framebufferResizeCallback(GLFWwindow *window, int width, int height);
@@ -412,6 +427,12 @@ private:
 
     // ==================== render infos ====================
 
+    void createSceneRenderInfos();
+
+    void createSkyboxRenderInfos();
+
+    void createGuiRenderInfos();
+
     void createPrepassRenderInfo();
 
     void createSsaoRenderInfo();
@@ -424,25 +445,7 @@ private:
 
     void createBrdfIntegrationRenderInfo();
 
-    // ==================== pipelines ====================
-
-    void createScenePipeline();
-
-    void createSkyboxPipeline();
-
-    void createPrepassPipeline();
-
-    void createSsaoPipeline();
-
-    void createCubemapCapturePipeline();
-
-    void createIrradianceCapturePipeline();
-
-    void createPrefilterPipeline();
-
-    void createBrdfIntegrationPipeline();
-
-    void createDebugQuadPipeline();
+    void createDebugQuadRenderInfos();
 
     // ==================== multisampling ====================
 

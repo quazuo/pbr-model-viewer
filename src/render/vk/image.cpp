@@ -54,15 +54,36 @@ Image::~Image() {
     vmaFreeMemory(allocator, *allocation);
 }
 
-void Image::createViews(const RendererContext &ctx) {
-    view = vkutils::img::createImageView(ctx, **image, format, aspectMask, 0, mipLevels, 0);
-    attachmentView = vkutils::img::createImageView(ctx, **image, format, aspectMask, 0, 1, 0);
+shared_ptr<vk::raii::ImageView> Image::getView(const RendererContext &ctx) {
+    return getCachedView(ctx, {0, mipLevels, 0, 1});
+}
 
-    for (uint32_t mip = 0; mip < mipLevels; mip++) {
-        mipViews.emplace_back(
-            vkutils::img::createImageView(ctx, **image, format, aspectMask, mip, 1, 0)
-        );
+shared_ptr<vk::raii::ImageView> Image::getMipView(const RendererContext &ctx, const uint32_t mipLevel) {
+    return getCachedView(ctx, {mipLevel, 1, 0, 1});
+}
+
+shared_ptr<vk::raii::ImageView> Image::getLayerView(const RendererContext &ctx, const uint32_t layer) {
+    return getCachedView(ctx, {0, mipLevels, layer, 1});
+}
+
+shared_ptr<vk::raii::ImageView> Image::getLayerMipView(const RendererContext &ctx, const uint32_t layer,
+                                                       const uint32_t mipLevel) {
+    return getCachedView(ctx, {mipLevel, 1, layer, 1});
+}
+
+shared_ptr<vk::raii::ImageView> Image::getCachedView(const RendererContext &ctx, ViewParams params) {
+    if (cachedViews.contains(params)) {
+        return cachedViews.at(params);
     }
+
+    const auto &[baseMip, mipCount, baseLayer, layerCount] = params;
+
+    auto view = layerCount == 1
+                    ? vkutils::img::createImageView(ctx, **image, format, aspectMask, baseMip, mipCount, baseLayer)
+                    : vkutils::img::createCubeImageView(ctx, **image, format, aspectMask, baseMip, mipCount);
+    auto viewPtr = make_shared<vk::raii::ImageView>(std::move(view));
+    cachedViews.emplace(params, viewPtr);
+    return viewPtr;
 }
 
 void Image::copyFromBuffer(const vk::Buffer buffer, const vk::raii::CommandBuffer &commandBuffer) {
@@ -107,7 +128,8 @@ void Image::transitionLayout(vk::ImageLayout oldLayout, vk::ImageLayout newLayou
         throw std::invalid_argument("unsupported layout transition!");
     }
 
-    const auto &[srcAccessMask, dstAccessMask, srcStage, dstStage] = transitionBarrierSchemes[{oldLayout, newLayout}];
+    const auto &[srcAccessMask, dstAccessMask, srcStage, dstStage] =
+            transitionBarrierSchemes.at({oldLayout, newLayout});
 
     range.aspectMask = aspectMask;
 
@@ -285,34 +307,12 @@ CubeImage::CubeImage(const RendererContext &ctx, const vk::ImageCreateInfo &imag
     : Image(ctx, imageInfo, properties, vk::ImageAspectFlagBits::eColor) {
 }
 
-void CubeImage::createViews(const RendererContext &ctx) {
-    view = vkutils::img::createCubeImageView(ctx, **image, format, aspectMask, 0, mipLevels);
-    attachmentView = vkutils::img::createCubeImageView(ctx, **image, format, aspectMask, 0, 1);
+shared_ptr<vk::raii::ImageView> CubeImage::getView(const RendererContext &ctx) {
+    return getCachedView(ctx, {0, 1, 0, 6});
+}
 
-    for (uint32_t mip = 0; mip < mipLevels; mip++) {
-        mipViews.emplace_back(
-            vkutils::img::createCubeImageView(ctx, **image, format, aspectMask, mip, 1)
-        );
-    }
-
-    for (uint32_t layer = 0; layer < 6; layer++) {
-        layerViews.emplace_back(
-            vkutils::img::createImageView(ctx, **image, format, aspectMask, 0, mipLevels, layer)
-        );
-        attachmentLayerViews.emplace_back(
-            vkutils::img::createImageView(ctx, **image, format, aspectMask, 0, 1, layer)
-        );
-
-        std::vector<unique_ptr<vk::raii::ImageView> > currLayerMipViews;
-
-        for (uint32_t mip = 0; mip < mipLevels; mip++) {
-            currLayerMipViews.emplace_back(
-                vkutils::img::createImageView(ctx, **image, format, aspectMask, mip, 1, layer)
-            );
-        }
-
-        layerMipViews.emplace_back(std::move(currLayerMipViews));
-    }
+shared_ptr<vk::raii::ImageView> CubeImage::getMipView(const RendererContext &ctx, const uint32_t mipLevel) {
+    return getCachedView(ctx, {mipLevel, 1, 0, 6});
 }
 
 void CubeImage::copyFromBuffer(const vk::Buffer buffer, const vk::raii::CommandBuffer &commandBuffer) {
@@ -353,36 +353,6 @@ void CubeImage::transitionLayout(const vk::ImageLayout oldLayout, const vk::Imag
 
 // ==================== Texture ====================
 
-const vk::raii::ImageView &Texture::getLayerView(const uint32_t layerIndex) const {
-    const CubeImage *cubeImage = dynamic_cast<CubeImage *>(&*image);
-
-    if (!cubeImage) {
-        throw std::runtime_error("layer-specific views are only supported in cubemap images");
-    }
-
-    return cubeImage->getLayerView(layerIndex);
-}
-
-const vk::raii::ImageView &Texture::getAttachmentLayerView(const uint32_t layerIndex) const {
-    const CubeImage *cubeImage = dynamic_cast<CubeImage *>(&*image);
-
-    if (!cubeImage) {
-        throw std::runtime_error("layer-specific views are only supported in cubemap images");
-    }
-
-    return cubeImage->getAttachmentLayerView(layerIndex);
-}
-
-const vk::raii::ImageView &Texture::getLayerMipView(const uint32_t layerIndex, const uint32_t mipLevel) const {
-    const CubeImage *cubeImage = dynamic_cast<CubeImage *>(&*image);
-
-    if (!cubeImage) {
-        throw std::runtime_error("layer-specific views are only supported in cubemap images");
-    }
-
-    return cubeImage->getLayerMipView(layerIndex, mipLevel);
-}
-
 void Texture::generateMipmaps(const RendererContext &ctx, const vk::ImageLayout finalLayout) const {
     const vk::FormatProperties formatProperties = ctx.physicalDevice->getFormatProperties(getFormat());
 
@@ -414,7 +384,7 @@ void Texture::generateMipmaps(const RendererContext &ctx, const vk::ImageLayout 
     int32_t mipWidth = image->getExtent().width;
     int32_t mipHeight = image->getExtent().height;
 
-    for (uint32_t i = 1; i < mipLevels; i++) {
+    for (uint32_t i = 1; i < image->getMipLevels(); i++) {
         vk::ImageMemoryBarrier currBarrier = barrier;
         currBarrier.subresourceRange.baseMipLevel = i - 1;
 
@@ -483,7 +453,7 @@ void Texture::generateMipmaps(const RendererContext &ctx, const vk::ImageLayout 
     }
 
     vk::ImageMemoryBarrier transBarrier = barrier;
-    transBarrier.subresourceRange.baseMipLevel = mipLevels - 1;
+    transBarrier.subresourceRange.baseMipLevel = image->getMipLevels() - 1;
     transBarrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
     transBarrier.newLayout = finalLayout;
     transBarrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
@@ -516,7 +486,7 @@ void Texture::createSampler(const RendererContext &ctx, const vk::SamplerAddress
         .compareEnable = vk::False,
         .compareOp = vk::CompareOp::eAlways,
         .minLod = 0.0f,
-        .maxLod = static_cast<float>(mipLevels),
+        .maxLod = static_cast<float>(image->getMipLevels()),
         .borderColor = vk::BorderColor::eIntOpaqueBlack,
         .unnormalizedCoordinates = vk::False,
     };
@@ -572,7 +542,7 @@ TextureBuilder &TextureBuilder::asUninitialized(const vk::Extent3D extent) {
     return *this;
 }
 
-TextureBuilder &TextureBuilder::withSwizzle(const std::array<SwizzleComp, 4> sw) {
+TextureBuilder &TextureBuilder::withSwizzle(const std::array<SwizzleComponent, 4> sw) {
     swizzle = sw;
     return *this;
 }
@@ -617,16 +587,17 @@ unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx) const {
     const auto extent = loadedTexData.extent;
     const auto stagingBuffer = isUninitialized ? nullptr : makeStagingBuffer(ctx, loadedTexData);
 
-    texture->mipLevels = hasMipmaps
-                             ? static_cast<uint32_t>(std::floor(std::log2(std::max(extent.width, extent.height)))) + 1
-                             : 1;
+    uint32_t mipLevels = 1;
+    if (hasMipmaps) {
+        mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(extent.width, extent.height)))) + 1;
+    }
 
     const vk::ImageCreateInfo imageInfo{
         .flags = isCubemap ? vk::ImageCreateFlagBits::eCubeCompatible : static_cast<vk::ImageCreateFlags>(0),
         .imageType = vk::ImageType::e2D,
         .format = format,
         .extent = extent,
-        .mipLevels = texture->mipLevels,
+        .mipLevels = mipLevels,
         .arrayLayers = loadedTexData.layerCount,
         .samples = vk::SampleCountFlagBits::e1,
         .tiling = vk::ImageTiling::eOptimal,
@@ -653,7 +624,6 @@ unique_ptr<Texture> TextureBuilder::create(const RendererContext &ctx) const {
         );
     }
 
-    texture->image->createViews(ctx);
     texture->createSampler(ctx, addressMode);
 
     vkutils::cmd::doSingleTimeCommands(ctx, [&](const auto &cmdBuffer) {
@@ -751,10 +721,10 @@ void TextureBuilder::checkParams() const {
         if (swizzle) {
             for (size_t comp = 0; comp < 3; comp++) {
                 if (paths[comp].empty()
-                    && (*swizzle)[comp] != SwizzleComp::ZERO
-                    && (*swizzle)[comp] != SwizzleComp::ONE
-                    && (*swizzle)[comp] != SwizzleComp::MAX
-                    && (*swizzle)[comp] != SwizzleComp::HALF_MAX) {
+                    && (*swizzle)[comp] != SwizzleComponent::ZERO
+                    && (*swizzle)[comp] != SwizzleComponent::ONE
+                    && (*swizzle)[comp] != SwizzleComponent::MAX
+                    && (*swizzle)[comp] != SwizzleComponent::HALF_MAX) {
                     throw std::invalid_argument("invalid swizzle component for channel provided by an empty path!");
                 }
             }
@@ -767,10 +737,10 @@ void TextureBuilder::checkParams() const {
         }
 
         for (size_t comp = 0; comp < 3; comp++) {
-            if ((*swizzle)[comp] != SwizzleComp::ZERO
-                && (*swizzle)[comp] != SwizzleComp::ONE
-                && (*swizzle)[comp] != SwizzleComp::MAX
-                && (*swizzle)[comp] != SwizzleComp::HALF_MAX) {
+            if ((*swizzle)[comp] != SwizzleComponent::ZERO
+                && (*swizzle)[comp] != SwizzleComponent::ONE
+                && (*swizzle)[comp] != SwizzleComponent::MAX
+                && (*swizzle)[comp] != SwizzleComponent::HALF_MAX) {
                 throw std::invalid_argument("invalid swizzle component for swizzle-filled texture!");
             }
         }
@@ -981,28 +951,28 @@ void TextureBuilder::performSwizzle(uint8_t *data, const size_t size) const {
 
         for (size_t comp = 0; comp < componentCount; comp++) {
             switch ((*swizzle)[comp]) {
-                case SwizzleComp::R:
+                case SwizzleComponent::R:
                     data[componentCount * i + comp] = r;
                     break;
-                case SwizzleComp::G:
+                case SwizzleComponent::G:
                     data[componentCount * i + comp] = g;
                     break;
-                case SwizzleComp::B:
+                case SwizzleComponent::B:
                     data[componentCount * i + comp] = b;
                     break;
-                case SwizzleComp::A:
+                case SwizzleComponent::A:
                     data[componentCount * i + comp] = a;
                     break;
-                case SwizzleComp::ZERO:
+                case SwizzleComponent::ZERO:
                     data[componentCount * i + comp] = 0;
                     break;
-                case SwizzleComp::ONE:
+                case SwizzleComponent::ONE:
                     data[componentCount * i + comp] = 1;
                     break;
-                case SwizzleComp::MAX:
+                case SwizzleComponent::MAX:
                     data[componentCount * i + comp] = std::numeric_limits<uint8_t>::max();
                     break;
-                case SwizzleComp::HALF_MAX:
+                case SwizzleComponent::HALF_MAX:
                     data[componentCount * i + comp] = std::numeric_limits<uint8_t>::max() / 2;
                     break;
             }
@@ -1010,9 +980,59 @@ void TextureBuilder::performSwizzle(uint8_t *data, const size_t size) const {
     }
 }
 
+// ==================== RenderTarget ====================
+
+RenderTarget::RenderTarget(shared_ptr<vk::raii::ImageView> view, const vk::Format format)
+    : view(std::move(view)), format(format) {
+}
+
+RenderTarget::RenderTarget(shared_ptr<vk::raii::ImageView> view, shared_ptr<vk::raii::ImageView> resolveView,
+                           const vk::Format format)
+    : view(std::move(view)), resolveView(std::move(resolveView)), format(format) {
+}
+
+RenderTarget::RenderTarget(const RendererContext &ctx, const Texture &texture)
+    : view(texture.getImage().getView(ctx)), format(texture.getFormat()) {
+}
+
+vk::RenderingAttachmentInfo RenderTarget::getAttachmentInfo() const {
+    const auto layout = vkutils::img::isDepthFormat(format)
+                            ? vk::ImageLayout::eDepthStencilAttachmentOptimal
+                            : vk::ImageLayout::eColorAttachmentOptimal;
+
+    vk::ClearValue clearValue = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f};
+    if (vkutils::img::isDepthFormat(format)) {
+        clearValue = vk::ClearDepthStencilValue{
+            .depth = 1.0f,
+            .stencil = 0,
+        };
+    }
+
+    vk::RenderingAttachmentInfo info{
+        .imageView = *view,
+        .imageLayout = layout,
+        .loadOp = loadOp,
+        .storeOp = storeOp,
+        .clearValue = clearValue,
+    };
+
+    if (resolveView) {
+        info.resolveMode = vk::ResolveModeFlagBits::eAverage;
+        info.resolveImageView = *resolveView;
+        info.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    }
+
+    return info;
+}
+
+void RenderTarget::overrideAttachmentConfig(const vk::AttachmentLoadOp loadOp, const vk::AttachmentStoreOp storeOp) {
+    this->loadOp = loadOp;
+    this->storeOp = storeOp;
+}
+
 // ==================== utils ====================
 
-unique_ptr<vk::raii::ImageView>
+vk::raii::ImageView
 vkutils::img::createImageView(const RendererContext &ctx, const vk::Image image, const vk::Format format,
                               const vk::ImageAspectFlags aspectFlags, const uint32_t baseMipLevel,
                               const uint32_t mipLevels, const uint32_t layer) {
@@ -1026,13 +1046,13 @@ vkutils::img::createImageView(const RendererContext &ctx, const vk::Image image,
             .levelCount = mipLevels,
             .baseArrayLayer = layer,
             .layerCount = 1,
-        }
+        },
     };
 
-    return make_unique<vk::raii::ImageView>(*ctx.device, createInfo);
+    return {*ctx.device, createInfo};
 }
 
-unique_ptr<vk::raii::ImageView>
+vk::raii::ImageView
 vkutils::img::createCubeImageView(const RendererContext &ctx, const vk::Image image, const vk::Format format,
                                   const vk::ImageAspectFlags aspectFlags, const uint32_t baseMipLevel,
                                   const uint32_t mipLevels) {
@@ -1049,7 +1069,20 @@ vkutils::img::createCubeImageView(const RendererContext &ctx, const vk::Image im
         }
     };
 
-    return make_unique<vk::raii::ImageView>(*ctx.device, createInfo);
+    return {*ctx.device, createInfo};
+}
+
+bool vkutils::img::isDepthFormat(const vk::Format format) {
+    switch (format) {
+        case vk::Format::eD16Unorm:
+        case vk::Format::eD32Sfloat:
+        case vk::Format::eD16UnormS8Uint:
+        case vk::Format::eD24UnormS8Uint:
+        case vk::Format::eD32SfloatS8Uint:
+            return true;
+        default:
+            return false;
+    }
 }
 
 size_t vkutils::img::getFormatSizeInBytes(const vk::Format format) {

@@ -88,45 +88,38 @@ VulkanRenderer::VulkanRenderer() {
     updateGraphicsUniformBuffer();
 
     createDebugQuadDescriptorSet();
-    createDebugQuadPipeline();
+    createDebugQuadRenderInfos();
 
     createPrepassTextures();
-    createPrepassRenderInfo();
     createPrepassDescriptorSets();
-    createPrepassPipeline();
+    createPrepassRenderInfo();
 
     createSsaoTextures();
-    createSsaoRenderInfo();
     createSsaoDescriptorSets();
-    createSsaoPipeline();
+    createSsaoRenderInfo();
 
     createIblTextures();
     createIblDescriptorSet();
 
     createSkyboxVertexBuffer();
     createSkyboxDescriptorSets();
-    createSkyboxPipeline();
+    createSkyboxRenderInfos();
 
-    createCubemapCaptureRenderInfo();
     createCubemapCaptureDescriptorSet();
-    createCubemapCapturePipeline();
+    createCubemapCaptureRenderInfo();
 
     createEnvmapConvoluteDescriptorSet();
-
     createIrradianceCaptureRenderInfo();
-    createIrradianceCapturePipeline();
-
     createPrefilterRenderInfo();
-    createPrefilterPipeline();
 
     createScreenSpaceQuadVertexBuffer();
     createBrdfIntegrationRenderInfo();
-    createBrdfIntegrationPipeline();
     computeBrdfIntegrationMap();
 
     createMaterialsDescriptorSet();
     createSceneDescriptorSets();
-    createScenePipeline();
+    createSceneRenderInfos();
+    createGuiRenderInfos();
 
     loadModelWithMaterials("../assets/example models/Sponza/Sponza.gltf");
 
@@ -135,7 +128,7 @@ VulkanRenderer::VulkanRenderer() {
     // loadNormalMap("../assets/example models/kettle/kettle-normal.png");
     // loadOrmMap("../assets/example models/kettle/kettle-orm.png");
 
-    loadEnvironmentMap("../assets/envmaps/gallery.hdr");
+    loadEnvironmentMap("../assets/envmaps/vienna.hdr");
 
     createSyncObjects();
 
@@ -492,15 +485,15 @@ void VulkanRenderer::loadModelWithMaterials(const std::filesystem::path &path) {
         const auto &material = materials[i];
 
         if (material.baseColor) {
-            materialsDescriptorSet->queueUpdate(0, *material.baseColor, i);
+            materialsDescriptorSet->queueUpdate(ctx, 0, *material.baseColor, i);
         }
 
         if (material.normal) {
-            materialsDescriptorSet->queueUpdate(1, *material.normal, i);
+            materialsDescriptorSet->queueUpdate(ctx, 1, *material.normal, i);
         }
 
         if (material.orm) {
-            materialsDescriptorSet->queueUpdate(2, *material.orm, i);
+            materialsDescriptorSet->queueUpdate(ctx, 2, *material.orm, i);
         }
     }
 
@@ -572,10 +565,10 @@ void VulkanRenderer::loadOrmMap(const std::filesystem::path &aoPath, const std::
             .asSeparateChannels()
             .fromPaths({aoPath, roughnessPath, metallicPath})
             .withSwizzle({
-                aoPath.empty() ? SwizzleComp::MAX : SwizzleComp::R,
-                SwizzleComp::G,
-                metallicPath.empty() ? SwizzleComp::ZERO : SwizzleComp::B,
-                SwizzleComp::A
+                aoPath.empty() ? SwizzleComponent::MAX : SwizzleComponent::R,
+                SwizzleComponent::G,
+                metallicPath.empty() ? SwizzleComponent::ZERO : SwizzleComponent::B,
+                SwizzleComponent::A
             })
             .makeMipmaps()
             .create(ctx);
@@ -588,7 +581,7 @@ void VulkanRenderer::loadRmaMap(const std::filesystem::path &path) {
 
     separateMaterial.orm.reset();
     separateMaterial.orm = TextureBuilder()
-            .withSwizzle({SwizzleComp::B, SwizzleComp::R, SwizzleComp::G, SwizzleComp::A})
+            .withSwizzle({SwizzleComponent::B, SwizzleComponent::R, SwizzleComponent::G, SwizzleComponent::A})
             .useFormat(vk::Format::eR8G8B8A8Unorm)
             .fromPaths({path})
             .create(ctx);
@@ -652,9 +645,9 @@ void VulkanRenderer::createPrepassTextures() {
 
     for (auto &res: frameResources) {
         if (res.ssaoDescriptorSet) {
-            res.ssaoDescriptorSet->queueUpdate(1, *gBufferTextures.depth)
-                    .queueUpdate(2, *gBufferTextures.normal)
-                    .queueUpdate(3, *gBufferTextures.pos)
+            res.ssaoDescriptorSet->queueUpdate(ctx, 1, *gBufferTextures.depth)
+                    .queueUpdate(ctx, 2, *gBufferTextures.normal)
+                    .queueUpdate(ctx, 3, *gBufferTextures.pos)
                     .commitUpdates(ctx);
         }
     }
@@ -789,6 +782,12 @@ void VulkanRenderer::recreateSwapChain() {
         getMsaaSampleCount()
     );
 
+    // todo - this shouldn't recreate pipelines
+    createSceneRenderInfos();
+    createSkyboxRenderInfos();
+    createGuiRenderInfos();
+    createDebugQuadRenderInfos();
+
     createPrepassTextures();
     createPrepassRenderInfo();
     createSsaoTextures();
@@ -846,7 +845,7 @@ void VulkanRenderer::createSceneDescriptorSets() {
                     vk::DescriptorType::eUniformBuffer,
                     sizeof(GraphicsUBO)
                 )
-                .queueUpdate(1, *ssaoTexture)
+                .queueUpdate(ctx, 1, *ssaoTexture)
                 .commitUpdates(ctx);
     }
 }
@@ -890,7 +889,7 @@ void VulkanRenderer::createSkyboxDescriptorSets() {
                     vk::DescriptorType::eUniformBuffer,
                     sizeof(GraphicsUBO)
                 )
-                .queueUpdate(1, *skyboxTexture)
+                .queueUpdate(ctx, 1, *skyboxTexture)
                 .commitUpdates(ctx);
     }
 }
@@ -945,10 +944,10 @@ void VulkanRenderer::createSsaoDescriptorSets() {
                     vk::DescriptorType::eUniformBuffer,
                     sizeof(GraphicsUBO)
                 )
-                .queueUpdate(1, *gBufferTextures.depth)
-                .queueUpdate(2, *gBufferTextures.normal)
-                .queueUpdate(3, *gBufferTextures.pos)
-                .queueUpdate(4, *ssaoNoiseTexture)
+                .queueUpdate(ctx, 1, *gBufferTextures.depth)
+                .queueUpdate(ctx, 2, *gBufferTextures.normal)
+                .queueUpdate(ctx, 3, *gBufferTextures.pos)
+                .queueUpdate(ctx, 4, *ssaoNoiseTexture)
                 .commitUpdates(ctx);
     }
 }
@@ -963,9 +962,9 @@ void VulkanRenderer::createIblDescriptorSet() {
 
     iblDescriptorSet = make_unique<DescriptorSet>(std::move(sets[0]));
 
-    iblDescriptorSet->queueUpdate(0, *irradianceMapTexture)
-            .queueUpdate(1, *prefilteredEnvmapTexture)
-            .queueUpdate(2, *brdfIntegrationMapTexture)
+    iblDescriptorSet->queueUpdate(ctx, 0, *irradianceMapTexture)
+            .queueUpdate(ctx, 1, *prefilteredEnvmapTexture)
+            .queueUpdate(ctx, 2, *brdfIntegrationMapTexture)
             .commitUpdates(ctx);
 }
 
@@ -1006,7 +1005,7 @@ void VulkanRenderer::createEnvmapConvoluteDescriptorSet() {
                 vk::DescriptorType::eUniformBuffer,
                 sizeof(GraphicsUBO)
             )
-            .queueUpdate(1, *skyboxTexture)
+            .queueUpdate(ctx, 1, *skyboxTexture)
             .commitUpdates(ctx);
 }
 
@@ -1027,6 +1026,28 @@ void VulkanRenderer::createDebugQuadDescriptorSet() {
 
 // ==================== render infos ====================
 
+RenderInfo::RenderInfo(PipelineBuilder builder, shared_ptr<PipelinePack> pipeline, std::vector<RenderTarget> colors)
+    : builder(std::move(builder)), pipeline(std::move(pipeline)), colorTargets(std::move(colors)) {
+    makeAttachmentInfos();
+}
+
+RenderInfo::RenderInfo(PipelineBuilder builder, shared_ptr<PipelinePack> pipeline, std::vector<RenderTarget> colors,
+                       RenderTarget depth)
+    : builder(std::move(builder)), pipeline(std::move(pipeline)),
+      colorTargets(std::move(colors)), depthTarget(std::move(depth)) {
+    makeAttachmentInfos();
+}
+
+RenderInfo::RenderInfo(std::vector<RenderTarget> colors)
+    : colorTargets(std::move(colors)) {
+    makeAttachmentInfos();
+}
+
+RenderInfo::RenderInfo(std::vector<RenderTarget> colors, RenderTarget depth)
+    : colorTargets(std::move(colors)), depthTarget(std::move(depth)) {
+    makeAttachmentInfos();
+}
+
 vk::RenderingInfo RenderInfo::get(const vk::Extent2D extent, const uint32_t views,
                                   const vk::RenderingFlags flags) const {
     return {
@@ -1043,127 +1064,24 @@ vk::RenderingInfo RenderInfo::get(const vk::Extent2D extent, const uint32_t view
     };
 }
 
-void VulkanRenderer::createPrepassRenderInfo() {
-    const std::vector colorAttachments{
-        vk::RenderingAttachmentInfo{
-            .imageView = *gBufferTextures.normal->getView(),
-            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .storeOp = vk::AttachmentStoreOp::eStore,
-            .clearValue = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f},
-        },
-        vk::RenderingAttachmentInfo{
-            .imageView = *gBufferTextures.pos->getView(),
-            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .storeOp = vk::AttachmentStoreOp::eStore,
-            .clearValue = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f},
-        }
-    };
-
-    const vk::RenderingAttachmentInfo depthAttachment{
-        .imageView = *gBufferTextures.depth->getView(),
-        .imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eStore,
-        .clearValue = vk::ClearDepthStencilValue{
-            .depth = 1.0f,
-            .stencil = 0,
-        },
-    };
-
-    prepassRenderInfo = {
-        .colorAttachments = colorAttachments,
-        .depthAttachment = depthAttachment
-    };
+void RenderInfo::reloadShaders(const RendererContext& ctx) const {
+    *pipeline = builder.create(ctx);
 }
 
-void VulkanRenderer::createSsaoRenderInfo() {
-    const std::vector colorAttachments{
-        vk::RenderingAttachmentInfo{
-            .imageView = *ssaoTexture->getView(),
-            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .storeOp = vk::AttachmentStoreOp::eStore,
-            .clearValue = vk::ClearColorValue{1.0f, 1.0f, 1.0f, 1.0f},
-        }
-    };
+void RenderInfo::makeAttachmentInfos() {
+    for (const auto &target: colorTargets) {
+        colorAttachments.emplace_back(target.getAttachmentInfo());
+    }
 
-    ssaoRenderInfo = {
-        .colorAttachments = colorAttachments,
-    };
-}
-
-void VulkanRenderer::createCubemapCaptureRenderInfo() {
-    const std::vector colorAttachments{
-        vk::RenderingAttachmentInfo{
-            .imageView = *skyboxTexture->getAttachmentView(),
-            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .storeOp = vk::AttachmentStoreOp::eStore,
-            .clearValue = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f},
-        }
-    };
-
-    cubemapCaptureRenderInfo = {
-        .colorAttachments = colorAttachments,
-    };
-}
-
-void VulkanRenderer::createIrradianceCaptureRenderInfo() {
-    const std::vector colorAttachments{
-        vk::RenderingAttachmentInfo{
-            .imageView = *irradianceMapTexture->getAttachmentView(),
-            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .storeOp = vk::AttachmentStoreOp::eStore,
-            .clearValue = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f},
-        }
-    };
-
-    irradianceCaptureRenderInfo = {
-        .colorAttachments = colorAttachments,
-    };
-}
-
-void VulkanRenderer::createPrefilterRenderInfo() {
-    for (uint32_t i = 0; i < MAX_PREFILTER_MIP_LEVELS; i++) {
-        const std::vector colorAttachments{
-            vk::RenderingAttachmentInfo{
-                .imageView = *prefilteredEnvmapTexture->getMipView(i),
-                .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-                .loadOp = vk::AttachmentLoadOp::eClear,
-                .storeOp = vk::AttachmentStoreOp::eStore,
-                .clearValue = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f},
-            }
-        };
-
-        prefilterRenderInfos.emplace_back(RenderInfo{
-            .colorAttachments = colorAttachments,
-        });
+    if (depthTarget) {
+        depthAttachment = depthTarget->getAttachmentInfo();
     }
 }
 
-void VulkanRenderer::createBrdfIntegrationRenderInfo() {
-    const std::vector colorAttachments{
-        vk::RenderingAttachmentInfo{
-            .imageView = *brdfIntegrationMapTexture->getAttachmentView(),
-            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .storeOp = vk::AttachmentStoreOp::eStore,
-            .clearValue = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f},
-        }
-    };
+void VulkanRenderer::createSceneRenderInfos() {
+    sceneRenderInfos.clear();
 
-    brdfIntegrationRenderInfo = {
-        .colorAttachments = colorAttachments,
-    };
-}
-
-// ==================== pipelines ====================
-
-void VulkanRenderer::createScenePipeline() {
-    PipelinePack pipeline = PipelineBuilder()
+    auto builder = PipelineBuilder()
             .withVertexShader("../shaders/obj/main-vert.spv")
             .withFragmentShader("../shaders/obj/main-frag.spv")
             .withVertices<Vertex>()
@@ -1190,14 +1108,29 @@ void VulkanRenderer::createScenePipeline() {
                 }
             })
             .withColorFormats({swapChain->getImageFormat()})
-            .withDepthFormat(swapChain->getDepthFormat())
-            .create(ctx);
+            .withDepthFormat(swapChain->getDepthFormat());
 
-    scenePipeline = make_unique<PipelinePack>(std::move(pipeline));
+    auto pipeline = make_shared<PipelinePack>(builder.create(ctx));
+
+    for (auto &target: swapChain->getRenderTargets(ctx)) {
+        std::vector<RenderTarget> colorTargets;
+        colorTargets.emplace_back(std::move(target.colorTarget));
+
+        target.depthTarget.overrideAttachmentConfig(vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare);
+
+        sceneRenderInfos.emplace_back(
+            builder,
+            pipeline,
+            std::move(colorTargets),
+            std::move(target.depthTarget)
+        );
+    }
 }
 
-void VulkanRenderer::createSkyboxPipeline() {
-    PipelinePack pipeline = PipelineBuilder()
+void VulkanRenderer::createSkyboxRenderInfos() {
+    skyboxRenderInfos.clear();
+
+    auto builder = PipelineBuilder()
             .withVertexShader("../shaders/obj/skybox-vert.spv")
             .withFragmentShader("../shaders/obj/skybox-frag.spv")
             .withVertices<SkyboxVertex>()
@@ -1219,14 +1152,47 @@ void VulkanRenderer::createSkyboxPipeline() {
                 *frameResources[0].skyboxDescriptorSet->getLayout(),
             })
             .withColorFormats({swapChain->getImageFormat()})
-            .withDepthFormat(swapChain->getDepthFormat())
-            .create(ctx);
+            .withDepthFormat(swapChain->getDepthFormat());
 
-    skyboxPipeline = make_unique<PipelinePack>(std::move(pipeline));
+    auto pipeline = make_shared<PipelinePack>(builder.create(ctx));
+
+    for (auto &target: swapChain->getRenderTargets(ctx)) {
+        std::vector<RenderTarget> colorTargets;
+        colorTargets.emplace_back(std::move(target.colorTarget));
+
+        skyboxRenderInfos.emplace_back(
+            builder,
+            pipeline,
+            std::move(colorTargets),
+            std::move(target.depthTarget)
+        );
+    }
 }
 
-void VulkanRenderer::createPrepassPipeline() {
-    PipelinePack pipeline = PipelineBuilder()
+void VulkanRenderer::createGuiRenderInfos() {
+    guiRenderInfos.clear();
+
+    for (auto &target: swapChain->getRenderTargets(ctx)) {
+        target.colorTarget.overrideAttachmentConfig(vk::AttachmentLoadOp::eLoad);
+
+        std::vector<RenderTarget> colorTargets;
+        colorTargets.emplace_back(std::move(target.colorTarget));
+
+        guiRenderInfos.emplace_back(std::move(colorTargets));
+    }
+}
+
+void VulkanRenderer::createPrepassRenderInfo() {
+    std::vector<RenderTarget> colorTargets;
+    colorTargets.emplace_back(ctx, *gBufferTextures.normal);
+    colorTargets.emplace_back(ctx, *gBufferTextures.pos);
+
+    RenderTarget depthTarget{ctx, *gBufferTextures.depth};
+
+    std::vector<vk::Format> formats;
+    for (const auto& target: colorTargets) formats.emplace_back(target.getFormat());
+
+    auto builder = PipelineBuilder()
             .withVertexShader("../shaders/obj/prepass-vert.spv")
             .withFragmentShader("../shaders/obj/prepass-frag.spv")
             .withVertices<Vertex>()
@@ -1239,18 +1205,23 @@ void VulkanRenderer::createPrepassPipeline() {
             .withDescriptorLayouts({
                 *frameResources[0].prepassDescriptorSet->getLayout(),
             })
-            .withColorFormats({
-                gBufferTextures.normal->getFormat(),
-                gBufferTextures.pos->getFormat()
-            })
-            .withDepthFormat(swapChain->getDepthFormat())
-            .create(ctx);
+            .withColorFormats(formats)
+            .withDepthFormat(depthTarget.getFormat());
 
-    prepassPipeline = make_unique<PipelinePack>(std::move(pipeline));
+    auto pipeline = make_shared<PipelinePack>(builder.create(ctx));
+
+    prepassRenderInfo = make_unique<RenderInfo>(
+        builder,
+        pipeline,
+        std::move(colorTargets),
+        std::move(depthTarget)
+    );
 }
 
-void VulkanRenderer::createSsaoPipeline() {
-    PipelinePack pipeline = PipelineBuilder()
+void VulkanRenderer::createSsaoRenderInfo() {
+    RenderTarget target{ctx, *ssaoTexture};
+
+    auto builder = PipelineBuilder()
             .withVertexShader("../shaders/obj/ssao-vert.spv")
             .withFragmentShader("../shaders/obj/ssao-frag.spv")
             .withVertices<ScreenSpaceQuadVertex>()
@@ -1263,14 +1234,27 @@ void VulkanRenderer::createSsaoPipeline() {
             .withDescriptorLayouts({
                 *frameResources[0].ssaoDescriptorSet->getLayout(),
             })
-            .withColorFormats({ssaoTexture->getFormat()})
-            .create(ctx);
+            .withColorFormats({target.getFormat()});
 
-    ssaoPipeline = make_unique<PipelinePack>(std::move(pipeline));
+    auto pipeline = make_shared<PipelinePack>(builder.create(ctx));
+
+    std::vector<RenderTarget> targets;
+    targets.emplace_back(std::move(target));
+
+    ssaoRenderInfo = make_unique<RenderInfo>(
+        builder,
+        pipeline,
+        std::move(targets)
+    );
 }
 
-void VulkanRenderer::createCubemapCapturePipeline() {
-    PipelinePack pipeline = PipelineBuilder()
+void VulkanRenderer::createCubemapCaptureRenderInfo() {
+    RenderTarget target{
+        skyboxTexture->getImage().getMipView(ctx, 0),
+        skyboxTexture->getFormat()
+    };
+
+    auto builder = PipelineBuilder()
             .withVertexShader("../shaders/obj/sphere-cube-vert.spv")
             .withFragmentShader("../shaders/obj/sphere-cube-frag.spv")
             .withVertices<SkyboxVertex>()
@@ -1288,14 +1272,27 @@ void VulkanRenderer::createCubemapCapturePipeline() {
                 *cubemapCaptureDescriptorSet->getLayout(),
             })
             .forViews(6)
-            .withColorFormats({hdrEnvmapFormat})
-            .create(ctx);
+            .withColorFormats({target.getFormat()});
 
-    cubemapCapturePipeline = make_unique<PipelinePack>(std::move(pipeline));
+    auto pipeline = make_shared<PipelinePack>(builder.create(ctx));
+
+    std::vector<RenderTarget> targets;
+    targets.emplace_back(std::move(target));
+
+    cubemapCaptureRenderInfo = make_unique<RenderInfo>(
+        builder,
+        pipeline,
+        std::move(targets)
+    );
 }
 
-void VulkanRenderer::createIrradianceCapturePipeline() {
-    PipelinePack pipeline = PipelineBuilder()
+void VulkanRenderer::createIrradianceCaptureRenderInfo() {
+    RenderTarget target{
+        irradianceMapTexture->getImage().getMipView(ctx, 0),
+        irradianceMapTexture->getFormat()
+    };
+
+    auto builder = PipelineBuilder()
             .withVertexShader("../shaders/obj/convolute-vert.spv")
             .withFragmentShader("../shaders/obj/convolute-frag.spv")
             .withVertices<SkyboxVertex>()
@@ -1313,14 +1310,22 @@ void VulkanRenderer::createIrradianceCapturePipeline() {
                 *envmapConvoluteDescriptorSet->getLayout(),
             })
             .forViews(6)
-            .withColorFormats({hdrEnvmapFormat})
-            .create(ctx);
+            .withColorFormats({target.getFormat()});
 
-    irradianceCapturePipeline = make_unique<PipelinePack>(std::move(pipeline));
+    auto pipeline = make_shared<PipelinePack>(builder.create(ctx));
+
+    std::vector<RenderTarget> targets;
+    targets.emplace_back(std::move(target));
+
+    irradianceCaptureRenderInfo = make_unique<RenderInfo>(
+        builder,
+        pipeline,
+        std::move(targets)
+    );
 }
 
-void VulkanRenderer::createPrefilterPipeline() {
-    PipelinePack pipeline = PipelineBuilder()
+void VulkanRenderer::createPrefilterRenderInfo() {
+    auto builder = PipelineBuilder()
             .withVertexShader("../shaders/obj/prefilter-vert.spv")
             .withFragmentShader("../shaders/obj/prefilter-frag.spv")
             .withVertices<SkyboxVertex>()
@@ -1345,14 +1350,34 @@ void VulkanRenderer::createPrefilterPipeline() {
                 }
             })
             .forViews(6)
-            .withColorFormats({hdrEnvmapFormat})
-            .create(ctx);
+            .withColorFormats({prefilteredEnvmapTexture->getFormat()});
 
-    prefilterPipeline = make_unique<PipelinePack>(std::move(pipeline));
+    auto pipeline = make_shared<PipelinePack>(builder.create(ctx));
+
+    for (uint32_t i = 0; i < MAX_PREFILTER_MIP_LEVELS; i++) {
+        RenderTarget target{
+            prefilteredEnvmapTexture->getImage().getMipView(ctx, i),
+            prefilteredEnvmapTexture->getFormat()
+        };
+
+        std::vector<RenderTarget> targets;
+        targets.emplace_back(std::move(target));
+
+        prefilterRenderInfos.emplace_back(
+            builder,
+            pipeline,
+            std::move(targets)
+        );
+    }
 }
 
-void VulkanRenderer::createBrdfIntegrationPipeline() {
-    PipelinePack pipeline = PipelineBuilder()
+void VulkanRenderer::createBrdfIntegrationRenderInfo() {
+    RenderTarget target{
+        brdfIntegrationMapTexture->getImage().getMipView(ctx, 0),
+        brdfIntegrationMapTexture->getFormat()
+    };
+
+    auto builder = PipelineBuilder()
             .withVertexShader("../shaders/obj/brdf-integrate-vert.spv")
             .withFragmentShader("../shaders/obj/brdf-integrate-frag.spv")
             .withVertices<ScreenSpaceQuadVertex>()
@@ -1366,14 +1391,24 @@ void VulkanRenderer::createBrdfIntegrationPipeline() {
                 .depthTestEnable = vk::False,
                 .depthWriteEnable = vk::False,
             })
-            .withColorFormats({brdfIntegrationMapFormat})
-            .create(ctx);
+            .withColorFormats({target.getFormat()});
 
-    brdfIntegrationPipeline = make_unique<PipelinePack>(std::move(pipeline));
+    auto pipeline = make_shared<PipelinePack>(builder.create(ctx));
+
+    std::vector<RenderTarget> targets;
+    targets.emplace_back(std::move(target));
+
+    brdfIntegrationRenderInfo = make_unique<RenderInfo>(
+        builder,
+        pipeline,
+        std::move(targets)
+    );
 }
 
-void VulkanRenderer::createDebugQuadPipeline() {
-    PipelinePack pipeline = PipelineBuilder()
+void VulkanRenderer::createDebugQuadRenderInfos() {
+    debugQuadRenderInfos.clear();
+
+    auto builder = PipelineBuilder()
             .withVertexShader("../shaders/obj/ss-quad-vert.spv")
             .withFragmentShader("../shaders/obj/ss-quad-frag.spv")
             .withVertices<ScreenSpaceQuadVertex>()
@@ -1395,24 +1430,37 @@ void VulkanRenderer::createDebugQuadPipeline() {
                 *debugQuadDescriptorSet->getLayout(),
             })
             .withColorFormats({swapChain->getImageFormat()})
-            .withDepthFormat(swapChain->getDepthFormat())
-            .create(ctx);
+            .withDepthFormat(swapChain->getDepthFormat());
 
-    debugQuadPipeline = make_unique<PipelinePack>(std::move(pipeline));
+    auto pipeline = make_shared<PipelinePack>(builder.create(ctx));
+    
+    for (auto &target: swapChain->getRenderTargets(ctx)) {
+        std::vector<RenderTarget> colorTargets;
+        colorTargets.emplace_back(std::move(target.colorTarget));
+
+        debugQuadRenderInfos.emplace_back(
+            builder,
+            pipeline,
+            std::move(colorTargets),
+            std::move(target.depthTarget)
+        );
+    }
 }
 
-void VulkanRenderer::reloadShaders() {
-    waitIdle();
+// ==================== pipelines ====================
 
-    createScenePipeline();
-    createSkyboxPipeline();
-    createPrepassPipeline();
-    createSsaoPipeline();
-    createCubemapCapturePipeline();
-    createIrradianceCapturePipeline();
-    createPrefilterPipeline();
-    createBrdfIntegrationPipeline();
-    createDebugQuadPipeline();
+void VulkanRenderer::reloadShaders() const {
+    waitIdle();
+    
+    sceneRenderInfos[0].reloadShaders(ctx);
+    skyboxRenderInfos[0].reloadShaders(ctx);
+    prepassRenderInfo->reloadShaders(ctx);
+    ssaoRenderInfo->reloadShaders(ctx);
+    cubemapCaptureRenderInfo->reloadShaders(ctx);
+    irradianceCaptureRenderInfo->reloadShaders(ctx);
+    prefilterRenderInfos[0].reloadShaders(ctx);
+    brdfIntegrationRenderInfo->reloadShaders(ctx);
+    debugQuadRenderInfos[0].reloadShaders(ctx);
 }
 
 // ==================== multisampling ====================
@@ -1559,7 +1607,7 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
     // prepass
 
     if (frameResources[currentFrameIdx].prepassCmdBuffer.wasRecordedThisFrame) {
-        commandBuffer.beginRendering(prepassRenderInfo.get(swapChain->getExtent(), 1, renderingFlags));
+        commandBuffer.beginRendering(prepassRenderInfo->get(swapChain->getExtent(), 1, renderingFlags));
         commandBuffer.executeCommands(**frameResources[currentFrameIdx].prepassCmdBuffer);
         commandBuffer.endRendering();
     }
@@ -1567,7 +1615,7 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
     // ssao pass
 
     if (frameResources[currentFrameIdx].ssaoCmdBuffer.wasRecordedThisFrame) {
-        commandBuffer.beginRendering(ssaoRenderInfo.get(swapChain->getExtent(), 1, renderingFlags));
+        commandBuffer.beginRendering(ssaoRenderInfo->get(swapChain->getExtent(), 1, renderingFlags));
         commandBuffer.executeCommands(**frameResources[currentFrameIdx].ssaoCmdBuffer);
         commandBuffer.endRendering();
     }
@@ -1575,7 +1623,8 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
     // main pass
 
     if (frameResources[currentFrameIdx].sceneCmdBuffer.wasRecordedThisFrame) {
-        commandBuffer.beginRendering(swapChain->getRenderInfo().get(swapChain->getExtent(), 1, renderingFlags));
+        const auto &renderInfo = sceneRenderInfos[swapChain->getCurrentImageIndex()];
+        commandBuffer.beginRendering(renderInfo.get(swapChain->getExtent(), 1, renderingFlags));
         commandBuffer.executeCommands(**frameResources[currentFrameIdx].sceneCmdBuffer);
         commandBuffer.endRendering();
     }
@@ -1583,7 +1632,8 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
     // debug quad pass
 
     if (frameResources[currentFrameIdx].debugCmdBuffer.wasRecordedThisFrame) {
-        commandBuffer.beginRendering(swapChain->getRenderInfo().get(swapChain->getExtent(), 1, renderingFlags));
+        const auto &renderInfo = sceneRenderInfos[swapChain->getCurrentImageIndex()];
+        commandBuffer.beginRendering(renderInfo.get(swapChain->getExtent(), 1, renderingFlags));
         commandBuffer.executeCommands(**frameResources[currentFrameIdx].debugCmdBuffer);
         commandBuffer.endRendering();
     }
@@ -1591,7 +1641,8 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
     // gui pass
 
     if (frameResources[currentFrameIdx].guiCmdBuffer.wasRecordedThisFrame) {
-        commandBuffer.beginRendering(swapChain->getGuiRenderInfo().get(swapChain->getExtent(), 1, renderingFlags));
+        const auto &renderInfo = guiRenderInfos[swapChain->getCurrentImageIndex()];
+        commandBuffer.beginRendering(renderInfo.get(swapChain->getExtent(), 1, renderingFlags));
         commandBuffer.executeCommands(**frameResources[currentFrameIdx].guiCmdBuffer);
         commandBuffer.endRendering();
     }
@@ -1694,14 +1745,14 @@ void VulkanRenderer::renderGuiSection() {
         if (ImGui::Checkbox("Cull backfaces", &cullBackFaces)) {
             queuedFrameBeginActions.emplace([&] {
                 waitIdle();
-                createScenePipeline();
+                sceneRenderInfos[0].reloadShaders(ctx);
             });
         }
 
         if (ImGui::Checkbox("Wireframe mode", &wireframeMode)) {
             queuedFrameBeginActions.emplace([&] {
                 waitIdle();
-                createScenePipeline();
+                sceneRenderInfos[0].reloadShaders(ctx);
             });
         }
 
@@ -1716,9 +1767,10 @@ void VulkanRenderer::renderGuiSection() {
 
                 waitIdle();
                 recreateSwapChain();
-                createScenePipeline();
-                createSkyboxPipeline();
-                createDebugQuadPipeline();
+
+                createSceneRenderInfos();
+                createSkyboxRenderInfos();
+                createDebugQuadRenderInfos();
 
                 guiRenderer.reset();
                 initImgui();
@@ -1951,7 +2003,8 @@ void VulkanRenderer::runPrepass() {
 
     vkutils::cmd::setDynamicStates(commandBuffer, swapChain->getExtent());
 
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***prepassPipeline);
+    auto &pipeline = prepassRenderInfo->getPipeline();
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, **pipeline);
 
     commandBuffer.bindVertexBuffers(0, **vertexBuffer, {0});
     commandBuffer.bindVertexBuffers(1, **instanceDataBuffer, {0});
@@ -1959,13 +2012,13 @@ void VulkanRenderer::runPrepass() {
 
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        *prepassPipeline->getLayout(),
+        *pipeline.getLayout(),
         0,
         ***frameResources[currentFrameIdx].prepassDescriptorSet,
         nullptr
     );
 
-    drawModel(commandBuffer, false, *prepassPipeline);
+    drawModel(commandBuffer, false, pipeline);
 
     commandBuffer.end();
 
@@ -2000,13 +2053,14 @@ void VulkanRenderer::runSsaoPass() {
 
     vkutils::cmd::setDynamicStates(commandBuffer, swapChain->getExtent());
 
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***ssaoPipeline);
+    auto &pipeline = ssaoRenderInfo->getPipeline();
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, **pipeline);
 
     commandBuffer.bindVertexBuffers(0, **screenSpaceQuadVertexBuffer, {0});
 
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        *ssaoPipeline->getLayout(),
+        *pipeline.getLayout(),
         0,
         ***frameResources[currentFrameIdx].ssaoDescriptorSet,
         nullptr
@@ -2052,13 +2106,14 @@ void VulkanRenderer::drawScene() {
 
     // skybox
 
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***skyboxPipeline);
+    const auto &skyboxPipeline = skyboxRenderInfos[swapChain->getCurrentImageIndex()].getPipeline();
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, **skyboxPipeline);
 
     commandBuffer.bindVertexBuffers(0, **skyboxVertexBuffer, {0});
 
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        *skyboxPipeline->getLayout(),
+        *skyboxPipeline.getLayout(),
         0,
         ***frameResources[currentFrameIdx].skyboxDescriptorSet,
         nullptr
@@ -2068,7 +2123,8 @@ void VulkanRenderer::drawScene() {
 
     // scene
 
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***scenePipeline);
+    const auto &scenePipeline = sceneRenderInfos[swapChain->getCurrentImageIndex()].getPipeline();
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, **scenePipeline);
 
     commandBuffer.bindVertexBuffers(0, **vertexBuffer, {0});
     commandBuffer.bindVertexBuffers(1, **instanceDataBuffer, {0});
@@ -2076,7 +2132,7 @@ void VulkanRenderer::drawScene() {
 
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        *scenePipeline->getLayout(),
+        *scenePipeline.getLayout(),
         0,
         {
             ***frameResources[currentFrameIdx].sceneDescriptorSet,
@@ -2086,7 +2142,7 @@ void VulkanRenderer::drawScene() {
         nullptr
     );
 
-    drawModel(commandBuffer, true, *scenePipeline);
+    drawModel(commandBuffer, true, scenePipeline);
 
     commandBuffer.end();
 
@@ -2120,13 +2176,14 @@ void VulkanRenderer::drawDebugQuad() {
 
     vkutils::cmd::setDynamicStates(commandBuffer, swapChainExtent);
 
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***debugQuadPipeline);
+    auto &pipeline = debugQuadRenderInfos[swapChain->getCurrentImageIndex()].getPipeline();
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, **pipeline);
 
     commandBuffer.bindVertexBuffers(0, **screenSpaceQuadVertexBuffer, {0});
 
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        *debugQuadPipeline->getLayout(),
+        *pipeline.getLayout(),
         0,
         ***debugQuadDescriptorSet,
         nullptr
@@ -2179,19 +2236,20 @@ void VulkanRenderer::captureCubemap() const {
 
     vkutils::cmd::setDynamicStates(commandBuffer, extent);
 
-    commandBuffer.beginRendering(cubemapCaptureRenderInfo.get(extent, 6));
+    commandBuffer.beginRendering(cubemapCaptureRenderInfo->get(extent, 6));
 
     commandBuffer.bindVertexBuffers(0, **skyboxVertexBuffer, {0});
 
+    const auto &pipeline = cubemapCaptureRenderInfo->getPipeline();
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, **pipeline);
+
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        *cubemapCapturePipeline->getLayout(),
+        *pipeline.getLayout(),
         0,
         ***cubemapCaptureDescriptorSet,
         nullptr
     );
-
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***cubemapCapturePipeline);
 
     commandBuffer.draw(skyboxVertices.size(), 1, 0, 0);
 
@@ -2215,19 +2273,20 @@ void VulkanRenderer::captureIrradianceMap() const {
 
     vkutils::cmd::setDynamicStates(commandBuffer, extent);
 
-    commandBuffer.beginRendering(irradianceCaptureRenderInfo.get(extent, 6));
+    commandBuffer.beginRendering(irradianceCaptureRenderInfo->get(extent, 6));
 
     commandBuffer.bindVertexBuffers(0, **skyboxVertexBuffer, {0});
 
+    const auto &pipeline = irradianceCaptureRenderInfo->getPipeline();
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, **pipeline);
+
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
-        *irradianceCapturePipeline->getLayout(),
+        *pipeline.getLayout(),
         0,
         ***envmapConvoluteDescriptorSet,
         nullptr
     );
-
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***irradianceCapturePipeline);
 
     commandBuffer.draw(skyboxVertices.size(), 1, 0, 0);
 
@@ -2260,22 +2319,23 @@ void VulkanRenderer::prefilterEnvmap() const {
 
         commandBuffer.bindVertexBuffers(0, **skyboxVertexBuffer, {0});
 
+        const auto &pipeline = prefilterRenderInfos[mipLevel].getPipeline();
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, **pipeline);
+
         commandBuffer.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics,
-            *prefilterPipeline->getLayout(),
+            *pipeline.getLayout(),
             0,
             ***envmapConvoluteDescriptorSet,
             nullptr
         );
-
-        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***prefilterPipeline);
 
         const PrefilterPushConstants prefilterPushConstants{
             .roughness = static_cast<float>(mipLevel) / (MAX_PREFILTER_MIP_LEVELS - 1)
         };
 
         commandBuffer.pushConstants<PrefilterPushConstants>(
-            *prefilterPipeline->getLayout(),
+            *pipeline.getLayout(),
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0u,
             prefilterPushConstants
@@ -2296,11 +2356,12 @@ void VulkanRenderer::computeBrdfIntegrationMap() const {
 
     vkutils::cmd::setDynamicStates(commandBuffer, extent);
 
-    commandBuffer.beginRendering(brdfIntegrationRenderInfo.get(extent));
+    commandBuffer.beginRendering(brdfIntegrationRenderInfo->get(extent));
 
     commandBuffer.bindVertexBuffers(0, **screenSpaceQuadVertexBuffer, {0});
 
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, ***brdfIntegrationPipeline);
+    const auto &pipeline = brdfIntegrationRenderInfo->getPipeline();
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, **pipeline);
 
     commandBuffer.draw(screenSpaceQuadVertices.size(), 1, 0, 0);
 
@@ -2308,17 +2369,6 @@ void VulkanRenderer::computeBrdfIntegrationMap() const {
 
     vkutils::cmd::endSingleTimeCommands(commandBuffer, *ctx.graphicsQueue);
 }
-
-static const glm::mat4 cubemapFaceProjection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
-
-static const std::array cubemapFaceViews{
-    glm::lookAt(glm::vec3(0), glm::vec3(-1, 0, 0), glm::vec3(0, 1, 0)),
-    glm::lookAt(glm::vec3(0), glm::vec3(1, 0, 0), glm::vec3(0, 1, 0)),
-    glm::lookAt(glm::vec3(0), glm::vec3(0, 1, 0), glm::vec3(0, 0, -1)),
-    glm::lookAt(glm::vec3(0), glm::vec3(0, -1, 0), glm::vec3(0, 0, 1)),
-    glm::lookAt(glm::vec3(0), glm::vec3(0, 0, 1), glm::vec3(0, 1, 0)),
-    glm::lookAt(glm::vec3(0), glm::vec3(0, 0, -1), glm::vec3(0, 1, 0))
-};
 
 void VulkanRenderer::updateGraphicsUniformBuffer() const {
     const glm::mat4 model = glm::translate(modelTranslate)
@@ -2331,6 +2381,8 @@ void VulkanRenderer::updateGraphicsUniformBuffer() const {
     glfwGetWindowSize(window, &windowSize.x, &windowSize.y);
 
     const auto &[zNear, zFar] = camera->getClippingPlanes();
+
+    static const glm::mat4 cubemapFaceProjection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
 
     GraphicsUBO graphicsUbo{
         .window = {
@@ -2356,6 +2408,15 @@ void VulkanRenderer::updateGraphicsUniformBuffer() const {
             .lightColor = lightColor,
             .cameraPos = camera->getPos(),
         }
+    };
+
+    static const std::array cubemapFaceViews{
+        glm::lookAt(glm::vec3(0), glm::vec3(-1, 0, 0), glm::vec3(0, 1, 0)),
+        glm::lookAt(glm::vec3(0), glm::vec3(1, 0, 0), glm::vec3(0, 1, 0)),
+        glm::lookAt(glm::vec3(0), glm::vec3(0, 1, 0), glm::vec3(0, 0, -1)),
+        glm::lookAt(glm::vec3(0), glm::vec3(0, -1, 0), glm::vec3(0, 0, 1)),
+        glm::lookAt(glm::vec3(0), glm::vec3(0, 0, 1), glm::vec3(0, 1, 0)),
+        glm::lookAt(glm::vec3(0), glm::vec3(0, 0, -1), glm::vec3(0, 1, 0))
     };
 
     for (size_t i = 0; i < 6; i++) {

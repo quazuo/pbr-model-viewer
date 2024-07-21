@@ -48,19 +48,17 @@ PipelineBuilder &PipelineBuilder::withDepthStencil(const vk::PipelineDepthStenci
 }
 
 PipelineBuilder &PipelineBuilder::forViews(const uint32_t count) {
-    if (count != 1) renderingInfo.viewMask = (1u << count) - 1;
+    multiviewCount = count;
     return *this;
 }
 
 PipelineBuilder &PipelineBuilder::withColorFormats(const std::vector<vk::Format> &formats) {
     colorAttachmentFormats = formats;
-    renderingInfo.colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size());
-    renderingInfo.pColorAttachmentFormats = colorAttachmentFormats.data();
     return *this;
 }
 
 PipelineBuilder & PipelineBuilder::withDepthFormat(const vk::Format format) {
-    renderingInfo.depthAttachmentFormat = format;
+    depthAttachmentFormat = format;
     return *this;
 }
 
@@ -160,6 +158,16 @@ PipelinePack PipelineBuilder::create(const RendererContext &ctx) const {
         .pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges.size()),
         .pPushConstantRanges = pushConstantRanges.empty() ? nullptr : pushConstantRanges.data()
     };
+
+    vk::PipelineRenderingCreateInfo renderingInfo {
+        .viewMask = multiviewCount == 1 ? 0 : renderingInfo.viewMask = (1u << multiviewCount) - 1,
+        .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
+        .pColorAttachmentFormats = colorAttachmentFormats.data(),
+    };
+
+    if (depthAttachmentFormat) {
+        renderingInfo.depthAttachmentFormat = *depthAttachmentFormat;
+    }
 
     result.layout = make_unique<vk::raii::PipelineLayout>(*ctx.device, pipelineLayoutInfo);
 

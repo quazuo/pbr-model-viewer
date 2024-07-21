@@ -22,20 +22,25 @@ struct QueueFamilyIndices;
 struct GLFWwindow;
 struct RenderInfo;
 
+struct SwapChainRenderTargets {
+    RenderTarget colorTarget;
+    RenderTarget depthTarget;
+};
+
 /**
- * Abstraction over a Vulkan swap chain, making it easier to manage by hiding all the Vulkan API calls.
- */
+* Abstraction over a Vulkan swap chain, making it easier to manage by hiding all the Vulkan API calls.
+*/
 class SwapChain {
     unique_ptr<vk::raii::SwapchainKHR> swapChain;
     std::vector<vk::Image> images;
-    std::vector<unique_ptr<vk::raii::ImageView> > imageViews;
-    std::vector<unique_ptr<vk::raii::Framebuffer> > framebuffers;
     vk::Format imageFormat{};
     vk::Format depthFormat{};
     vk::Extent2D extent{};
 
     unique_ptr<Image> colorImage;
     unique_ptr<Image> depthImage;
+
+    std::vector<shared_ptr<vk::raii::ImageView>> cachedViews;
 
     uint32_t currentImageIndex = 0;
 
@@ -68,15 +73,7 @@ public:
      */
     [[nodiscard]] uint32_t getCurrentImageIndex() const { return currentImageIndex; }
 
-    /**
-     * Returns the image view associated with the most recently acquired image.
-     * @return The most recent image view.
-     */
-    [[nodiscard]] const vk::raii::ImageView &getCurrentImageView() const { return *imageViews[currentImageIndex]; }
-
-    [[nodiscard]] RenderInfo getRenderInfo() const;
-
-    [[nodiscard]] RenderInfo getGuiRenderInfo() const;
+    [[nodiscard]] std::vector<SwapChainRenderTargets> getRenderTargets(const RendererContext &ctx);
 
     /**
      * Requests a new image from the swap chain and signals a given semaphore when the image is available.
@@ -87,13 +84,11 @@ public:
 
     [[nodiscard]] static uint32_t getImageCount(const RendererContext &ctx, const vk::raii::SurfaceKHR &surface);
 
-    void transitionToAttachmentLayout(const vk::raii::CommandBuffer& commandBuffer) const;
+    void transitionToAttachmentLayout(const vk::raii::CommandBuffer &commandBuffer) const;
 
-    void transitionToPresentLayout(const vk::raii::CommandBuffer& commandBuffer) const;
+    void transitionToPresentLayout(const vk::raii::CommandBuffer &commandBuffer) const;
 
 private:
-    void createImageViews(const RendererContext &ctx);
-
     void createColorResources(const RendererContext &ctx);
 
     void createDepthResources(const RendererContext &ctx);

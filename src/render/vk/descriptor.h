@@ -51,7 +51,8 @@ public:
     DescriptorSet &queueUpdate(uint32_t binding, const Buffer &buffer, vk::DescriptorType type,
                                vk::DeviceSize size, vk::DeviceSize offset = 0, uint32_t arrayElement = 0);
 
-    DescriptorSet &queueUpdate(uint32_t binding, const Texture &texture, uint32_t arrayElement = 0);
+    DescriptorSet &queueUpdate(const RendererContext &ctx, uint32_t binding, const Texture &texture,
+                               uint32_t arrayElement = 0);
 
     void commitUpdates(const RendererContext &ctx);
 

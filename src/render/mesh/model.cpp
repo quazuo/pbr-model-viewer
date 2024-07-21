@@ -79,17 +79,12 @@ Mesh::Mesh(const aiMesh *assimpMesh) : materialID(assimpMesh->mMaterialIndex) {
 
 Material::Material(const RendererContext &ctx, const aiMaterial *assimpMaterial,
                    const std::filesystem::path &basePath) {
-    std::cout << assimpMaterial->GetName().C_Str() << std::endl;
-
     // base color
 
     aiString baseColorRelPath;
     aiReturn result = assimpMaterial->GetTexture(aiTextureType_BASE_COLOR, 0, &baseColorRelPath);
-    if (result == aiReturn_SUCCESS) {
-        std::cout << "\tBase color: " << baseColorRelPath.C_Str() << std::endl;
-    }
 
-    if (baseColorRelPath.length) {
+    if (result == aiReturn_SUCCESS) {
         auto path = basePath;
         path /= baseColorRelPath.C_Str();
         path.make_preferred();
@@ -113,10 +108,6 @@ Material::Material(const RendererContext &ctx, const aiMaterial *assimpMaterial,
     }
 
     if (result == aiReturn_SUCCESS) {
-        std::cout << "\tNormal: " << normalRelPath.C_Str() << std::endl;
-    }
-
-    if (normalRelPath.length) {
         auto path = basePath;
         path /= normalRelPath.C_Str();
         path.make_preferred();
@@ -124,6 +115,7 @@ Material::Material(const RendererContext &ctx, const aiMaterial *assimpMaterial,
         normal = TextureBuilder()
                 .useFormat(vk::Format::eR8G8B8A8Unorm)
                 .fromPaths({path})
+                .makeMipmaps()
                 .create(ctx);
     }
 
@@ -133,8 +125,6 @@ Material::Material(const RendererContext &ctx, const aiMaterial *assimpMaterial,
 
     aiString aoRelPath;
     if (assimpMaterial->GetTexture(aiTextureType_AMBIENT_OCCLUSION, 0, &aoRelPath) == aiReturn_SUCCESS) {
-        std::cout << "\tAO: " << aoRelPath.C_Str() << std::endl;
-
         aoPath = basePath;
         aoPath /= aoRelPath.C_Str();
         aoPath.make_preferred();
@@ -142,8 +132,6 @@ Material::Material(const RendererContext &ctx, const aiMaterial *assimpMaterial,
 
     aiString roughnessRelPath;
     if (assimpMaterial->GetTexture(aiTextureType_DIFFUSE_ROUGHNESS, 0, &roughnessRelPath) == aiReturn_SUCCESS) {
-        std::cout << "\tRoughness: " << roughnessRelPath.C_Str() << std::endl;
-
         roughnessPath = basePath;
         roughnessPath /= roughnessRelPath.C_Str();
         roughnessPath.make_preferred();
@@ -151,8 +139,6 @@ Material::Material(const RendererContext &ctx, const aiMaterial *assimpMaterial,
 
     aiString metallicRelPath;
     if (assimpMaterial->GetTexture(aiTextureType_METALNESS, 0, &metallicRelPath) == aiReturn_SUCCESS) {
-        std::cout << "\tMetallic: " << metallicRelPath.C_Str() << std::endl;
-
         metallicPath = basePath;
         metallicPath /= metallicRelPath.C_Str();
         metallicPath.make_preferred();
@@ -166,18 +152,18 @@ Material::Material(const RendererContext &ctx, const aiMaterial *assimpMaterial,
         ormBuilder.asSeparateChannels()
             .fromPaths({aoPath, roughnessPath, metallicPath})
             .withSwizzle({
-                aoPath.empty() ? SwizzleComp::MAX : SwizzleComp::R,
-                roughnessPath.empty() ? SwizzleComp::MAX : SwizzleComp::G,
-                metallicPath.empty() ? SwizzleComp::ZERO : SwizzleComp::B,
-                SwizzleComp::MAX,
+                aoPath.empty() ? SwizzleComponent::MAX : SwizzleComponent::R,
+                roughnessPath.empty() ? SwizzleComponent::MAX : SwizzleComponent::G,
+                metallicPath.empty() ? SwizzleComponent::ZERO : SwizzleComponent::B,
+                SwizzleComponent::MAX,
             });
     } else {
         ormBuilder.fromSwizzleFill({1, 1, 1})
             .withSwizzle({
-                aoPath.empty() ? SwizzleComp::MAX : SwizzleComp::R,
-                roughnessPath.empty() ? SwizzleComp::MAX : SwizzleComp::G,
-                metallicPath.empty() ? SwizzleComp::ZERO : SwizzleComp::B,
-                SwizzleComp::MAX,
+                SwizzleComponent::MAX, // ao
+                SwizzleComponent::MAX, // roughness
+                SwizzleComponent::ZERO, // metallic
+                SwizzleComponent::MAX,
             });
     }
 
@@ -211,8 +197,6 @@ Model::Model(const RendererContext &ctx, const std::filesystem::path &path, cons
         if (scene->mNumMaterials > MAX_MATERIAL_COUNT) {
             throw std::runtime_error("Models with more than 32 materials are not supported");
         }
-
-        std::cout << scene->mNumMaterials << " materials found" << std::endl;
 
         for (size_t i = 0; i < scene->mNumMaterials; i++) {
             std::filesystem::path basePath = path.parent_path();

@@ -37,8 +37,9 @@ class PipelineBuilder {
     std::optional<vk::PipelineMultisampleStateCreateInfo> multisamplingOverride;
     std::optional<vk::PipelineDepthStencilStateCreateInfo> depthStencilOverride;
 
+    uint32_t multiviewCount = 1;
     std::vector<vk::Format> colorAttachmentFormats;
-    vk::PipelineRenderingCreateInfo renderingInfo;
+    std::optional<vk::Format> depthAttachmentFormat;
 
 public:
     PipelineBuilder &withVertexShader(const std::filesystem::path &path);

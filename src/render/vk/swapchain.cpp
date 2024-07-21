@@ -48,7 +48,6 @@ SwapChain::SwapChain(const RendererContext &ctx, const vk::raii::SurfaceKHR &sur
     swapChain = make_unique<vk::raii::SwapchainKHR>(ctx.device->createSwapchainKHR(createInfo));
     images = swapChain->getImages();
 
-    createImageViews(ctx);
     createColorResources(ctx);
 
     depthFormat = findDepthFormat(ctx);
@@ -120,53 +119,6 @@ void SwapChain::transitionToPresentLayout(const vk::raii::CommandBuffer &command
     );
 }
 
-RenderInfo SwapChain::getRenderInfo() const {
-    const bool isMsaa = msaaSampleCount != vk::SampleCountFlagBits::e1;
-
-    const std::vector colorAttachments{
-        vk::RenderingAttachmentInfo{
-            .imageView = isMsaa
-                             ? *colorImage->getView()
-                             : *getCurrentImageView(),
-            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .resolveMode = isMsaa
-                               ? vk::ResolveModeFlagBits::eAverage
-                               : vk::ResolveModeFlagBits::eNone,
-            .resolveImageView = isMsaa
-                                    ? *getCurrentImageView()
-                                    : nullptr,
-            .resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .storeOp = vk::AttachmentStoreOp::eStore,
-            .clearValue = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f},
-        }
-    };
-
-    const vk::RenderingAttachmentInfo depthAttachment{
-        .imageView = *depthImage->getView(),
-        .imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eDontCare,
-        .clearValue = vk::ClearDepthStencilValue{
-            .depth = 1.0f,
-            .stencil = 0,
-        },
-    };
-
-    return {
-        .colorAttachments = colorAttachments,
-        .depthAttachment = depthAttachment
-    };
-}
-
-RenderInfo SwapChain::getGuiRenderInfo() const {
-    auto info = getRenderInfo();
-    info.colorAttachments[0].loadOp = vk::AttachmentLoadOp::eLoad;
-    info.depthAttachment.reset();
-
-    return info;
-}
-
 std::pair<vk::Result, uint32_t> SwapChain::acquireNextImage(const vk::raii::Semaphore &semaphore) {
     try {
         const auto &[result, imageIndex] = swapChain->acquireNextImage(UINT64_MAX, *semaphore);
@@ -229,22 +181,6 @@ vk::PresentModeKHR SwapChain::choosePresentMode(const std::vector<vk::PresentMod
     return vk::PresentModeKHR::eFifo;
 }
 
-void SwapChain::createImageViews(const RendererContext &ctx) {
-    for (const auto &image: images) {
-        auto imageView = vkutils::img::createImageView(
-            ctx,
-            image,
-            imageFormat,
-            vk::ImageAspectFlagBits::eColor,
-            0,
-            1,
-            0
-        );
-
-        imageViews.push_back(std::move(imageView));
-    }
-}
-
 void SwapChain::createColorResources(const RendererContext &ctx) {
     const vk::Format colorFormat = imageFormat;
 
@@ -271,8 +207,6 @@ void SwapChain::createColorResources(const RendererContext &ctx) {
         vk::MemoryPropertyFlagBits::eDeviceLocal,
         vk::ImageAspectFlagBits::eColor
     );
-
-    colorImage->createViews(ctx);
 }
 
 void SwapChain::createDepthResources(const RendererContext &ctx) {
@@ -299,8 +233,47 @@ void SwapChain::createDepthResources(const RendererContext &ctx) {
         vk::MemoryPropertyFlagBits::eDeviceLocal,
         vk::ImageAspectFlagBits::eDepth
     );
+}
 
-    depthImage->createViews(ctx);
+std::vector<SwapChainRenderTargets> SwapChain::getRenderTargets(const RendererContext &ctx) {
+    std::vector<SwapChainRenderTargets> targets;
+
+    if (cachedViews.empty()) {
+        for (const auto &image: images) {
+            auto view = make_shared<vk::raii::ImageView>(vkutils::img::createImageView(
+                ctx,
+                image,
+                imageFormat,
+                vk::ImageAspectFlagBits::eColor
+            ));
+
+            cachedViews.emplace_back(view);
+        }
+    }
+
+    for (const auto &view: cachedViews) {
+        const bool isMsaa = msaaSampleCount != vk::SampleCountFlagBits::e1;
+
+        auto colorTarget = isMsaa
+                               ? RenderTarget{
+                                   colorImage->getView(ctx),
+                                   view,
+                                   imageFormat
+                               }
+                               : RenderTarget{
+                                   view,
+                                   imageFormat
+                               };
+
+        RenderTarget depthTarget{
+            depthImage->getView(ctx),
+            depthFormat
+        };
+
+        targets.emplace_back(std::move(colorTarget), std::move(depthTarget));
+    }
+
+    return targets;
 }
 
 vk::Format SwapChain::findDepthFormat(const RendererContext &ctx) {

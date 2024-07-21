@@ -79,10 +79,11 @@ DescriptorSet &DescriptorSet::queueUpdate(const uint32_t binding, const Buffer &
     return *this;
 }
 
-DescriptorSet &DescriptorSet::queueUpdate(const uint32_t binding, const Texture &texture, const uint32_t arrayElement) {
+DescriptorSet &DescriptorSet::queueUpdate(const RendererContext &ctx, const uint32_t binding, const Texture &texture,
+                                          const uint32_t arrayElement) {
     const vk::DescriptorImageInfo imageInfo{
         .sampler = *texture.getSampler(),
-        .imageView = *texture.getView(),
+        .imageView = *texture.getImage().getView(ctx),
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
 
@@ -149,7 +150,7 @@ void DescriptorSet::updateBinding(const RendererContext &ctx, const uint32_t bin
                                   const uint32_t arrayElement) const {
     const vk::DescriptorImageInfo imageInfo{
         .sampler = *texture.getSampler(),
-        .imageView = *texture.getView(),
+        .imageView = *texture.getImage().getView(ctx),
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
 
