@@ -1009,7 +1009,7 @@ vk::RenderingAttachmentInfo RenderTarget::getAttachmentInfo() const {
     }
 
     vk::RenderingAttachmentInfo info{
-        .imageView = *view,
+        .imageView = **view,
         .imageLayout = layout,
         .loadOp = loadOp,
         .storeOp = storeOp,
@@ -1018,7 +1018,7 @@ vk::RenderingAttachmentInfo RenderTarget::getAttachmentInfo() const {
 
     if (resolveView) {
         info.resolveMode = vk::ResolveModeFlagBits::eAverage;
-        info.resolveImageView = *resolveView;
+        info.resolveImageView = **resolveView;
         info.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal;
     }
 

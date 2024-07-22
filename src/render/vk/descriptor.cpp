@@ -83,7 +83,7 @@ DescriptorSet &DescriptorSet::queueUpdate(const RendererContext &ctx, const uint
                                           const uint32_t arrayElement) {
     const vk::DescriptorImageInfo imageInfo{
         .sampler = *texture.getSampler(),
-        .imageView = *texture.getImage().getView(ctx),
+        .imageView = **texture.getImage().getView(ctx),
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
 
@@ -150,7 +150,7 @@ void DescriptorSet::updateBinding(const RendererContext &ctx, const uint32_t bin
                                   const uint32_t arrayElement) const {
     const vk::DescriptorImageInfo imageInfo{
         .sampler = *texture.getSampler(),
-        .imageView = *texture.getImage().getView(ctx),
+        .imageView = **texture.getImage().getView(ctx),
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
 
