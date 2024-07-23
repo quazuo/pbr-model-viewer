@@ -146,25 +146,28 @@ Material::Material(const RendererContext &ctx, const aiMaterial *assimpMaterial,
 
     auto ormBuilder = TextureBuilder()
             .useFormat(vk::Format::eR8G8B8A8Unorm)
-            .makeMipmaps();
-
-    if (!aoPath.empty() || !roughnessPath.empty() || !metallicPath.empty()) {
-        ormBuilder.asSeparateChannels()
-            .fromPaths({aoPath, roughnessPath, metallicPath})
+            .makeMipmaps()
             .withSwizzle({
                 aoPath.empty() ? SwizzleComponent::MAX : SwizzleComponent::R,
                 roughnessPath.empty() ? SwizzleComponent::MAX : SwizzleComponent::G,
                 metallicPath.empty() ? SwizzleComponent::ZERO : SwizzleComponent::B,
                 SwizzleComponent::MAX,
             });
+
+    if (aoPath.empty() && roughnessPath.empty() && metallicPath.empty()) {
+        ormBuilder.fromSwizzleFill({1, 1, 1});
+
+    } else if (!aoPath.empty() && (aoPath == roughnessPath || aoPath == metallicPath)) {
+        ormBuilder.fromPaths({aoPath});
+
+    } else if (!roughnessPath.empty() && (roughnessPath == aoPath || roughnessPath == metallicPath)) {
+        ormBuilder.fromPaths({roughnessPath});
+
+    } else if (!metallicPath.empty() && (metallicPath == aoPath || metallicPath == roughnessPath)) {
+        ormBuilder.fromPaths({metallicPath});
+
     } else {
-        ormBuilder.fromSwizzleFill({1, 1, 1})
-            .withSwizzle({
-                SwizzleComponent::MAX, // ao
-                SwizzleComponent::MAX, // roughness
-                SwizzleComponent::ZERO, // metallic
-                SwizzleComponent::MAX,
-            });
+        ormBuilder.asSeparateChannels().fromPaths({aoPath, roughnessPath, metallicPath});
     }
 
     orm = ormBuilder.create(ctx);

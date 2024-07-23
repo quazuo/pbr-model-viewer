@@ -50,7 +50,9 @@ float getBlurredSsao() {
 }
 
 void main() {
-    vec3 base_color = vec3(texture(baseColorSamplers[constants.material_id], fragTexCoord));
+    vec4 base_color = texture(baseColorSamplers[constants.material_id], fragTexCoord);
+
+    if (base_color.a < 0.1) discard;
 
     vec3 normal = texture(normalSamplers[constants.material_id], fragTexCoord).rgb;
     normal = normalize(normal * 2.0 - 1.0);
@@ -77,7 +79,7 @@ void main() {
     float n_dot_l = max(dot(normal, light_dir), 0.0);
 
     // BRDF intermediate values
-    vec3 f0 = mix(vec3(0.04), base_color, metallic);
+    vec3 f0 = mix(vec3(0.04), base_color.rgb, metallic);
     vec3 fresnel = fresnel_schlick(max(dot(halfway, view), 0.0), f0);
     float ndf = distribution_ggx(normal, halfway, roughness);
     float geom = geometry_smith(normal, view, light_dir, roughness);
@@ -91,13 +93,13 @@ void main() {
     vec3 k_specular = fresnel_schlick_roughness(n_dot_v, f0, roughness);
     vec3 k_diffuse = (vec3(1.0) - k_specular) * (1.0 - metallic);
 
-    vec3 out_radiance = (k_diffuse * base_color / PI + specular) * radiance * n_dot_l;
+    vec3 out_radiance = (k_diffuse * base_color.rgb / PI + specular) * radiance * n_dot_l;
 
     vec3 ambient;
 
     if (ubo.misc.use_ibl == 1u) {
         vec3 irradiance = texture(irradianceMapSampler, normal).rgb;
-        vec3 diffuse = irradiance * base_color;
+        vec3 diffuse = irradiance * base_color.rgb;
 
         const float MAX_REFLECTION_LOD = 4.0;
         vec3 reflection = reflect(-view, normal);
@@ -110,7 +112,7 @@ void main() {
         ambient = (k_diffuse * diffuse + specular) * ao;
 
     } else {
-        ambient = vec3(0.03) * base_color * ao;
+        ambient = vec3(0.03) * base_color.rgb * ao;
     }
 
     vec3 color = ambient + out_radiance;
