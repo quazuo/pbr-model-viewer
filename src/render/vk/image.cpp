@@ -308,7 +308,7 @@ CubeImage::CubeImage(const RendererContext &ctx, const vk::ImageCreateInfo &imag
 }
 
 shared_ptr<vk::raii::ImageView> CubeImage::getView(const RendererContext &ctx) {
-    return getCachedView(ctx, {0, 1, 0, 6});
+    return getCachedView(ctx, {0, mipLevels, 0, 6});
 }
 
 shared_ptr<vk::raii::ImageView> CubeImage::getMipView(const RendererContext &ctx, const uint32_t mipLevel) {

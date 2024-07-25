@@ -134,8 +134,9 @@ struct RendererContext {
 };
 
 class RenderInfo {
-    PipelineBuilder builder;
+    PipelineBuilder cachedPipelineBuilder;
     shared_ptr<Pipeline> pipeline;
+
     std::vector<RenderTarget> colorTargets;
     std::optional<RenderTarget> depthTarget;
 
@@ -154,8 +155,7 @@ public:
 
     [[nodiscard]] vk::RenderingInfo get(vk::Extent2D extent, uint32_t views = 1, vk::RenderingFlags flags = {}) const;
 
-    [[nodiscard]] const Pipeline &
-        getPipeline() const { return *pipeline; }
+    [[nodiscard]] const Pipeline &getPipeline() const { return *pipeline; }
 
     void reloadShaders(const RendererContext& ctx) const;
 
