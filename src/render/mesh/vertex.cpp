@@ -1,10 +1,10 @@
 #include "vertex.h"
 
-std::vector<vk::VertexInputBindingDescription> Vertex::getBindingDescriptions() {
+std::vector<vk::VertexInputBindingDescription> ModelVertex::getBindingDescriptions() {
     return {
         {
             .binding = 0u,
-            .stride = static_cast<uint32_t>(sizeof(Vertex)),
+            .stride = static_cast<uint32_t>(sizeof(ModelVertex)),
             .inputRate = vk::VertexInputRate::eVertex
         },
         {
@@ -15,37 +15,37 @@ std::vector<vk::VertexInputBindingDescription> Vertex::getBindingDescriptions() 
     };
 }
 
-std::vector<vk::VertexInputAttributeDescription> Vertex::getAttributeDescriptions() {
+std::vector<vk::VertexInputAttributeDescription> ModelVertex::getAttributeDescriptions() {
     return {
         {
             .location = 0U,
             .binding = 0U,
             .format = vk::Format::eR32G32B32Sfloat,
-            .offset = static_cast<uint32_t>(offsetof(Vertex, pos)),
+            .offset = static_cast<uint32_t>(offsetof(ModelVertex, pos)),
         },
         {
             .location = 1U,
             .binding = 0U,
             .format = vk::Format::eR32G32Sfloat,
-            .offset = static_cast<uint32_t>(offsetof(Vertex, texCoord)),
+            .offset = static_cast<uint32_t>(offsetof(ModelVertex, texCoord)),
         },
         {
             .location = 2U,
             .binding = 0U,
             .format = vk::Format::eR32G32B32Sfloat,
-            .offset = static_cast<uint32_t>(offsetof(Vertex, normal)),
+            .offset = static_cast<uint32_t>(offsetof(ModelVertex, normal)),
         },
         {
             .location = 3U,
             .binding = 0U,
             .format = vk::Format::eR32G32B32Sfloat,
-            .offset = static_cast<uint32_t>(offsetof(Vertex, tangent)),
+            .offset = static_cast<uint32_t>(offsetof(ModelVertex, tangent)),
         },
         {
             .location = 4U,
             .binding = 0U,
             .format = vk::Format::eR32G32B32Sfloat,
-            .offset = static_cast<uint32_t>(offsetof(Vertex, bitangent)),
+            .offset = static_cast<uint32_t>(offsetof(ModelVertex, bitangent)),
         },
         {
             .location = 5U,

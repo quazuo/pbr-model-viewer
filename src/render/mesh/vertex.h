@@ -2,14 +2,15 @@
 
 #include "src/render/libs.h"
 
-struct Vertex {
+struct ModelVertex {
     glm::vec3 pos;
     glm::vec2 texCoord;
     glm::vec3 normal;
     glm::vec3 tangent;
     glm::vec3 bitangent;
 
-    bool operator==(const Vertex &other) const {
+    // this is implemented to allow using `Vertex` as a key in an `unordered_map`.
+    bool operator==(const ModelVertex &other) const {
         return pos == other.pos
                && texCoord == other.texCoord
                && tangent == other.tangent
@@ -21,9 +22,10 @@ struct Vertex {
     static std::vector<vk::VertexInputAttributeDescription> getAttributeDescriptions();
 };
 
+// as mentioned above, this is implemented to allow using `Vertex` as a key in an `unordered_map`.
 template<>
-struct std::hash<Vertex> {
-    size_t operator()(Vertex const &vertex) const noexcept {
+struct std::hash<ModelVertex> {
+    size_t operator()(ModelVertex const &vertex) const noexcept {
         return (hash<glm::vec3>()(vertex.pos) >> 1) ^
                (hash<glm::vec2>()(vertex.texCoord) << 1) ^
                (hash<glm::vec3>()(vertex.normal) << 1) ^
@@ -41,7 +43,7 @@ struct SkyboxVertex {
 };
 
 // vertices of the skybox cube.
-// might change this to be generated more intelligently... but it's good enough for now
+// might change this to be generated in a more smart way... but it's good enough for now
 static const std::vector<SkyboxVertex> skyboxVertices = {
     {{-1.0f, 1.0f, -1.0f}},
     {{-1.0f, -1.0f, -1.0f}},

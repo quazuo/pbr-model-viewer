@@ -7,6 +7,10 @@
 
 struct RendererContext;
 
+/**
+ * Convenience wrapper around Vulkan pipelines, mainly to pair them together with related layouts.
+ * Might be extended in the future as it's very bare-bones at this moment.
+ */
 class Pipeline {
     unique_ptr<vk::raii::Pipeline> pipeline;
     unique_ptr<vk::raii::PipelineLayout> layout;
@@ -21,6 +25,9 @@ public:
     [[nodiscard]] const vk::raii::PipelineLayout &getLayout() const { return *layout; }
 };
 
+/**
+ * Builder class streamlining pipeline creation.
+ */
 class PipelineBuilder {
     std::filesystem::path vertexShaderPath;
     std::filesystem::path fragmentShaderPath;
@@ -57,6 +64,9 @@ public:
 
     PipelineBuilder &withDepthStencil(const vk::PipelineDepthStencilStateCreateInfo &depthStencil);
 
+    /**
+     * Sets the number of views used with the `VK_KHR_multiview` extension.
+     */
     PipelineBuilder &forViews(uint32_t count);
 
     PipelineBuilder &withColorFormats(const std::vector<vk::Format> &formats);

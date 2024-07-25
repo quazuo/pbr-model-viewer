@@ -16,7 +16,7 @@ class DescriptorSet;
 class Texture;
 
 struct Mesh {
-    std::vector<Vertex> vertices;
+    std::vector<ModelVertex> vertices;
     std::vector<uint32_t> indices;
     std::vector<glm::mat4> instances;
     uint32_t materialID;
@@ -48,7 +48,7 @@ public:
 
     [[nodiscard]] const std::vector<Material> &getMaterials() const { return materials; }
 
-    [[nodiscard]] std::vector<Vertex> getVertices() const;
+    [[nodiscard]] std::vector<ModelVertex> getVertices() const;
 
     [[nodiscard]] std::vector<uint32_t> getIndices() const;
 

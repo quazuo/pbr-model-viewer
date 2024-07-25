@@ -39,13 +39,13 @@ static glm::mat4 assimpMatrixToGlm(const aiMatrix4x4 &m) {
 }
 
 Mesh::Mesh(const aiMesh *assimpMesh) : materialID(assimpMesh->mMaterialIndex) {
-    std::unordered_map<Vertex, uint32_t> uniqueVertices;
+    std::unordered_map<ModelVertex, uint32_t> uniqueVertices;
 
     for (size_t faceIdx = 0; faceIdx < assimpMesh->mNumFaces; faceIdx++) {
         const auto &face = assimpMesh->mFaces[faceIdx];
 
         for (size_t i = 0; i < face.mNumIndices; i++) {
-            Vertex vertex{};
+            ModelVertex vertex{};
 
             if (assimpMesh->HasPositions()) {
                 vertex.pos = assimpVecToGlm(assimpMesh->mVertices[face.mIndices[i]]);
@@ -232,8 +232,8 @@ void Model::addInstances(const aiNode *node, const glm::mat4 &baseTransform) {
     }
 }
 
-std::vector<Vertex> Model::getVertices() const {
-    std::vector<Vertex> vertices;
+std::vector<ModelVertex> Model::getVertices() const {
+    std::vector<ModelVertex> vertices;
 
     size_t totalSize = 0;
     for (const auto &mesh: meshes) {

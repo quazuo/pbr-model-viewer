@@ -41,5 +41,9 @@ namespace vkutils::cmd {
     void doSingleTimeCommands(const RendererContext& ctx,
                               const std::function<void(const vk::raii::CommandBuffer &)> &func);
 
+    /**
+     * Shorthand function to set all dynamic states used in rendering.
+     * This currently includes only viewport and scissor, but might be extended later.
+     */
     void setDynamicStates(const vk::raii::CommandBuffer &commandBuffer, vk::Extent2D drawExtent);
 }

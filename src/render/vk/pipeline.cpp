@@ -226,6 +226,6 @@ PipelineBuilder::createShaderModule(const RendererContext &ctx, const std::files
     return vk::raii::ShaderModule{*ctx.device, createInfo};
 }
 
-template PipelineBuilder &PipelineBuilder::withVertices<Vertex>();
+template PipelineBuilder &PipelineBuilder::withVertices<ModelVertex>();
 template PipelineBuilder &PipelineBuilder::withVertices<SkyboxVertex>();
 template PipelineBuilder &PipelineBuilder::withVertices<ScreenSpaceQuadVertex>();

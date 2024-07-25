@@ -110,7 +110,7 @@ VulkanRenderer::VulkanRenderer() {
 
     createEnvmapConvoluteDescriptorSet();
     createIrradianceCaptureRenderInfo();
-    createPrefilterRenderInfo();
+    createPrefilterRenderInfos();
 
     createScreenSpaceQuadVertexBuffer();
     createBrdfIntegrationRenderInfo();
@@ -849,7 +849,7 @@ void VulkanRenderer::createSceneDescriptorSets() {
 
 void VulkanRenderer::createMaterialsDescriptorSet() {
     auto layout = DescriptorLayoutBuilder()
-            .addRepeatedArrayBindings(
+            .addRepeatedBindings(
                 3,
                 vk::DescriptorType::eCombinedImageSampler,
                 vk::ShaderStageFlagBits::eFragment,
@@ -1081,7 +1081,7 @@ void VulkanRenderer::createSceneRenderInfos() {
     auto builder = PipelineBuilder()
             .withVertexShader("../shaders/obj/main-vert.spv")
             .withFragmentShader("../shaders/obj/main-frag.spv")
-            .withVertices<Vertex>()
+            .withVertices<ModelVertex>()
             .withRasterizer({
                 .polygonMode = wireframeMode ? vk::PolygonMode::eLine : vk::PolygonMode::eFill,
                 .cullMode = cullBackFaces ? vk::CullModeFlagBits::eBack : vk::CullModeFlagBits::eNone,
@@ -1192,7 +1192,7 @@ void VulkanRenderer::createPrepassRenderInfo() {
     auto builder = PipelineBuilder()
             .withVertexShader("../shaders/obj/prepass-vert.spv")
             .withFragmentShader("../shaders/obj/prepass-frag.spv")
-            .withVertices<Vertex>()
+            .withVertices<ModelVertex>()
             .withRasterizer({
                 .polygonMode = vk::PolygonMode::eFill,
                 .cullMode = vk::CullModeFlagBits::eNone,
@@ -1321,7 +1321,7 @@ void VulkanRenderer::createIrradianceCaptureRenderInfo() {
     );
 }
 
-void VulkanRenderer::createPrefilterRenderInfo() {
+void VulkanRenderer::createPrefilterRenderInfos() {
     auto builder = PipelineBuilder()
             .withVertexShader("../shaders/obj/prefilter-vert.spv")
             .withFragmentShader("../shaders/obj/prefilter-frag.spv")

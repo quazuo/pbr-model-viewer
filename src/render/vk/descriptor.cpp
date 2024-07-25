@@ -7,24 +7,12 @@
 #include "image.h"
 
 DescriptorLayoutBuilder &
-DescriptorLayoutBuilder::addBinding(const vk::DescriptorType type, const vk::ShaderStageFlags stages) {
+DescriptorLayoutBuilder::addBinding(const vk::DescriptorType type, const vk::ShaderStageFlags stages,
+                                    const uint32_t descriptorCount) {
     bindings.emplace_back(vk::DescriptorSetLayoutBinding{
         .binding = static_cast<uint32_t>(bindings.size()),
         .descriptorType = type,
-        .descriptorCount = 1,
-        .stageFlags = stages,
-    });
-
-    return *this;
-}
-
-DescriptorLayoutBuilder &
-DescriptorLayoutBuilder::addArrayBinding(const vk::DescriptorType type, const vk::ShaderStageFlags stages,
-                                         const uint32_t size) {
-    bindings.emplace_back(vk::DescriptorSetLayoutBinding{
-        .binding = static_cast<uint32_t>(bindings.size()),
-        .descriptorType = type,
-        .descriptorCount = size,
+        .descriptorCount = descriptorCount,
         .stageFlags = stages,
     });
 
@@ -33,19 +21,9 @@ DescriptorLayoutBuilder::addArrayBinding(const vk::DescriptorType type, const vk
 
 DescriptorLayoutBuilder &
 DescriptorLayoutBuilder::addRepeatedBindings(const size_t count, const vk::DescriptorType type,
-                                             const vk::ShaderStageFlags stages) {
+                                             const vk::ShaderStageFlags stages, const uint32_t descriptorCount) {
     for (size_t i = 0; i < count; i++) {
-        addBinding(type, stages);
-    }
-
-    return *this;
-}
-
-DescriptorLayoutBuilder &
-DescriptorLayoutBuilder::addRepeatedArrayBindings(const size_t count, const vk::DescriptorType type,
-                                                  const vk::ShaderStageFlags stages, const uint32_t size) {
-    for (size_t i = 0; i < count; i++) {
-        addArrayBinding(type, stages, size);
+        addBinding(type, stages, descriptorCount);
     }
 
     return *this;

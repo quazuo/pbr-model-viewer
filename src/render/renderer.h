@@ -154,7 +154,8 @@ public:
 
     [[nodiscard]] vk::RenderingInfo get(vk::Extent2D extent, uint32_t views = 1, vk::RenderingFlags flags = {}) const;
 
-    [[nodiscard]] const Pipeline &getPipeline() const { return *pipeline; }
+    [[nodiscard]] const Pipeline &
+        getPipeline() const { return *pipeline; }
 
     void reloadShaders(const RendererContext& ctx) const;
 
@@ -441,7 +442,7 @@ private:
 
     void createIrradianceCaptureRenderInfo();
 
-    void createPrefilterRenderInfo();
+    void createPrefilterRenderInfos();
 
     void createBrdfIntegrationRenderInfo();
 

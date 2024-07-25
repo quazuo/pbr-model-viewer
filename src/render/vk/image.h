@@ -11,12 +11,17 @@ class Buffer;
 
 struct RendererContext;
 
+/**
+ * Parameters defining which mip levels and layers of a given image are available for a given view.
+ * This struct is used mainly for caching views to eliminate creating multiple identical views.
+ */
 struct ViewParams {
     uint32_t baseMipLevel;
     uint32_t mipLevels;
     uint32_t baseLayer;
     uint32_t layerCount;
 
+    // `unordered_map` requirement
     bool operator==(const ViewParams &other) const {
         return baseMipLevel == other.baseMipLevel
                && mipLevels == other.mipLevels
@@ -25,6 +30,7 @@ struct ViewParams {
     }
 };
 
+// `unordered_map` requirement
 template<>
 struct std::hash<ViewParams> {
     size_t operator()(ViewParams const &params) const noexcept {
@@ -37,7 +43,7 @@ struct std::hash<ViewParams> {
 
 /**
  * Abstraction over a Vulkan image, making it easier to manage by hiding all the Vulkan API calls.
- * These images are allocated using VMA and are mostly suited for swap chain related logic.
+ * These images are allocated using VMA and as such are not suited for swap chain images.
  */
 class Image {
 protected:
@@ -71,18 +77,26 @@ public:
     [[nodiscard]] const vk::raii::Image &operator*() const { return *image; }
 
     /**
-     * Returns a raw handle to the actual Vulkan image view associated with this image.
-     * @return Handle to the image view.
+     * Returns an image view containing all mip levels and all layers of this image.
      */
     [[nodiscard]] virtual shared_ptr<vk::raii::ImageView>
     getView(const RendererContext &ctx);
 
+    /**
+     * Returns an image view containing a single mip level and all layers of this image.
+     */
     [[nodiscard]] virtual shared_ptr<vk::raii::ImageView>
     getMipView(const RendererContext &ctx, uint32_t mipLevel);
 
+    /**
+     * Returns an image view containing all mip levels and a single specified layer of this image.
+     */
     [[nodiscard]] shared_ptr<vk::raii::ImageView>
     getLayerView(const RendererContext &ctx, uint32_t layer);
 
+    /**
+     * Returns an image view containing a single mip level and a single specified layer of this image.
+     */
     [[nodiscard]] shared_ptr<vk::raii::ImageView>
     getLayerMipView(const RendererContext &ctx, uint32_t layer, uint32_t mipLevel);
 
@@ -96,21 +110,38 @@ public:
 
     /**
      * Records commands that copy the contents of a given buffer to this image.
-     *
-     * @param buffer Buffer from which to copy.
-     * @param commandBuffer Command buffer to which the commands will be recorded.
      */
     virtual void copyFromBuffer(vk::Buffer buffer, const vk::raii::CommandBuffer &commandBuffer);
 
+    /**
+     * Records commands that transition this image's layout.
+     * A valid old layout must be provided, as the image's current layout is not being tracked.
+     */
     virtual void transitionLayout(vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
                                   const vk::raii::CommandBuffer &commandBuffer) const;
 
+    /**
+     * Records commands that transition this image's layout, also specifying a specific subresource range
+     * on which the transition should occur.
+     * A valid old layout must be provided, as the image's current layout is not being tracked.
+     */
     void transitionLayout(vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
                           vk::ImageSubresourceRange range, const vk::raii::CommandBuffer &commandBuffer) const;
 
+    /**
+     * Writes the contents of this image to a file on a given path.
+     *
+     * Disclaimer: this might not work very well as it wasn't tested very well
+     * (nor do I care about it working perfectly) and was created purely to debug a single thing in the past.
+     * However, I'm not removing this as I might use it (and make it work better) again in the future.
+     */
     void saveToFile(const RendererContext &ctx, const std::filesystem::path &path) const;
 
 protected:
+    /**
+     * Checks if a given view is cached already and if so, returns it without creating a new one.
+     * Otherwise, creates the view and caches it for later.
+     */
     [[nodiscard]] shared_ptr<vk::raii::ImageView> getCachedView(const RendererContext &ctx, ViewParams params);
 };
 
@@ -133,7 +164,7 @@ public:
 
 class Texture {
     unique_ptr<Image> image;
-    unique_ptr<vk::raii::Sampler> textureSampler;
+    unique_ptr<vk::raii::Sampler> sampler;
 
     friend class TextureBuilder;
 
@@ -142,7 +173,7 @@ class Texture {
 public:
     [[nodiscard]] Image &getImage() const { return *image; }
 
-    [[nodiscard]] const vk::raii::Sampler &getSampler() const { return *textureSampler; }
+    [[nodiscard]] const vk::raii::Sampler &getSampler() const { return *sampler; }
 
     [[nodiscard]] uint32_t getMipLevels() const { return image->getMipLevels(); }
 
@@ -165,6 +196,11 @@ enum class SwizzleComponent {
     HALF_MAX
 };
 
+/**
+ * Builder used to streamline texture creation due to a huge amount of different parameters.
+ * Currently only some specific scenarios are supported and some parameter combinations
+ * might not be implemented, due to them not being needed at the moment.
+ */
 class TextureBuilder {
     vk::Format format = vk::Format::eR8G8B8A8Srgb;
     vk::ImageLayout layout = vk::ImageLayout::eShaderReadOnlyOptimal;
@@ -216,10 +252,20 @@ public:
 
     TextureBuilder &withSwizzle(std::array<SwizzleComponent, 4> sw);
 
+    /**
+     * Designates the texture's contents to be initialized with data stored in a given file.
+     * This requires 6 different paths for cubemap textures.
+     */
     TextureBuilder &fromPaths(const std::vector<std::filesystem::path> &sources);
 
+    /**
+     * Designates the texture's contents to be initialized with data stored in memory.
+     */
     TextureBuilder &fromMemory(void *ptr, vk::Extent3D extent);
 
+    /**
+     * Designates the texture's contents to be initialized with static data defined using `withSwizzle`.
+     */
     TextureBuilder &fromSwizzleFill(vk::Extent3D extent);
 
     [[nodiscard]] unique_ptr<Texture>
@@ -243,6 +289,11 @@ private:
     void performSwizzle(uint8_t *data, size_t size) const;
 };
 
+/**
+ * Convenience wrapper around image views which are used as render targets.
+ * This is primarily an abstraction to unify textures and swapchain images, so that they're used
+ * in an uniform way.
+ */
 class RenderTarget {
     shared_ptr<vk::raii::ImageView> view;
     shared_ptr<vk::raii::ImageView> resolveView;
@@ -287,6 +338,11 @@ struct ImageBarrierInfo {
     vk::PipelineStageFlagBits dstStage;
 };
 
+/**
+ * List of stages and access masks for image layout transitions.
+ * Currently there's no need for more fine-grained customization of these parameters during transitions,
+ * so they're defined statically and used depeneding on the transition's start and end layouts.
+ */
 static const std::map<std::pair<vk::ImageLayout, vk::ImageLayout>, ImageBarrierInfo> transitionBarrierSchemes{
     {
         {vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferSrcOptimal},

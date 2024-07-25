@@ -1,9 +1,6 @@
 #pragma once
 
-#include <iostream>
-
 #include "image.h"
-
 #include "src/render/libs.h"
 
 /**
@@ -20,7 +17,6 @@ struct SwapChainSupportDetails {
 struct RendererContext;
 struct QueueFamilyIndices;
 struct GLFWwindow;
-struct RenderInfo;
 
 struct SwapChainRenderTargets {
     RenderTarget colorTarget;
@@ -55,10 +51,6 @@ public:
 
     SwapChain &operator=(const SwapChain &other) = delete;
 
-    /**
-     * Returns a raw handle to the actual Vulkan swap chain.
-     * @return Handle to the swap chain.
-     */
     [[nodiscard]] const vk::raii::SwapchainKHR &operator*() const { return *swapChain; }
 
     [[nodiscard]] vk::Format getImageFormat() const { return imageFormat; }
@@ -73,6 +65,10 @@ public:
      */
     [[nodiscard]] uint32_t getCurrentImageIndex() const { return currentImageIndex; }
 
+    /**
+     * Wraps swapchain image views in `RenderTarget` objects and returns them.
+     * When called the first time, these views are created and cached for later.
+     */
     [[nodiscard]] std::vector<SwapChainRenderTargets> getRenderTargets(const RendererContext &ctx);
 
     /**
@@ -84,8 +80,16 @@ public:
 
     [[nodiscard]] static uint32_t getImageCount(const RendererContext &ctx, const vk::raii::SurfaceKHR &surface);
 
+    /**
+     * Records commands that transition the most newly acquired image to a layout
+     * appropriate for having the image serve as a color attachment.
+     */
     void transitionToAttachmentLayout(const vk::raii::CommandBuffer &commandBuffer) const;
 
+    /**
+     * Records commands that transition the most newly acquired image to a layout
+     * appropriate for having the image be presented to the screen.
+     */
     void transitionToPresentLayout(const vk::raii::CommandBuffer &commandBuffer) const;
 
 private:

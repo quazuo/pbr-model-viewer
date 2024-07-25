@@ -491,7 +491,7 @@ void Texture::createSampler(const RendererContext &ctx, const vk::SamplerAddress
         .unnormalizedCoordinates = vk::False,
     };
 
-    textureSampler = make_unique<vk::raii::Sampler>(*ctx.device, samplerInfo);
+    sampler = make_unique<vk::raii::Sampler>(*ctx.device, samplerInfo);
 }
 
 // ==================== TextureBuilder ====================
