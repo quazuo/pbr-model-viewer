@@ -27,7 +27,7 @@ PipelineBuilder &PipelineBuilder::withDescriptorLayouts(const std::vector<vk::De
     return *this;
 }
 
-PipelineBuilder & PipelineBuilder::withPushConstants(const std::vector<vk::PushConstantRange> &ranges) {
+PipelineBuilder &PipelineBuilder::withPushConstants(const std::vector<vk::PushConstantRange> &ranges) {
     pushConstantRanges = ranges;
     return *this;
 }
@@ -57,7 +57,7 @@ PipelineBuilder &PipelineBuilder::withColorFormats(const std::vector<vk::Format>
     return *this;
 }
 
-PipelineBuilder & PipelineBuilder::withDepthFormat(const vk::Format format) {
+PipelineBuilder &PipelineBuilder::withDepthFormat(const vk::Format format) {
     depthAttachmentFormat = format;
     return *this;
 }
@@ -127,6 +127,8 @@ Pipeline PipelineBuilder::create(const RendererContext &ctx) const {
                                        .minSampleShading = 1.0f,
                                    };
 
+    result.rasterizationSamples = multisampling.rasterizationSamples;
+
     const std::vector<vk::PipelineColorBlendAttachmentState> colorBlendAttachments(
         colorAttachmentFormats.size(),
         {
@@ -159,34 +161,38 @@ Pipeline PipelineBuilder::create(const RendererContext &ctx) const {
         .pPushConstantRanges = pushConstantRanges.empty() ? nullptr : pushConstantRanges.data()
     };
 
-    vk::PipelineRenderingCreateInfo renderingInfo {
-        .viewMask = multiviewCount == 1 ? 0 : ((1u << multiviewCount) - 1),
-        .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
-        .pColorAttachmentFormats = colorAttachmentFormats.empty() ? nullptr : colorAttachmentFormats.data(),
-    };
-
-    if (depthAttachmentFormat) {
-        renderingInfo.depthAttachmentFormat = *depthAttachmentFormat;
-    }
-
     result.layout = make_unique<vk::raii::PipelineLayout>(*ctx.device, pipelineLayoutInfo);
 
-    const vk::GraphicsPipelineCreateInfo pipelineInfo{
-        .pNext = &renderingInfo,
-        .stageCount = static_cast<uint32_t>(shaderStages.size()),
-        .pStages = shaderStages.data(),
-        .pVertexInputState = &vertexInputInfo,
-        .pInputAssemblyState = &inputAssembly,
-        .pViewportState = &viewportState,
-        .pRasterizationState = &rasterizer,
-        .pMultisampleState = &multisampling,
-        .pDepthStencilState = &depthStencil,
-        .pColorBlendState = &colorBlending,
-        .pDynamicState = &dynamicState,
-        .layout = **result.layout,
+    const vk::StructureChain<
+        vk::GraphicsPipelineCreateInfo,
+        vk::PipelineRenderingCreateInfo
+    > pipelineCreateInfo{
+        {
+            .stageCount = static_cast<uint32_t>(shaderStages.size()),
+            .pStages = shaderStages.data(),
+            .pVertexInputState = &vertexInputInfo,
+            .pInputAssemblyState = &inputAssembly,
+            .pViewportState = &viewportState,
+            .pRasterizationState = &rasterizer,
+            .pMultisampleState = &multisampling,
+            .pDepthStencilState = &depthStencil,
+            .pColorBlendState = &colorBlending,
+            .pDynamicState = &dynamicState,
+            .layout = **result.layout,
+        },
+        {
+            .viewMask = multiviewCount == 1 ? 0 : ((1u << multiviewCount) - 1),
+            .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
+            .pColorAttachmentFormats = colorAttachmentFormats.empty() ? nullptr : colorAttachmentFormats.data(),
+            .depthAttachmentFormat = depthAttachmentFormat ? *depthAttachmentFormat : static_cast<vk::Format>(0)
+        }
     };
 
-    result.pipeline = make_unique<vk::raii::Pipeline>(*ctx.device, nullptr, pipelineInfo);
+    result.pipeline = make_unique<vk::raii::Pipeline>(
+        *ctx.device,
+        nullptr,
+        pipelineCreateInfo.get<vk::GraphicsPipelineCreateInfo>()
+    );
 
     return result;
 }
@@ -227,5 +233,7 @@ PipelineBuilder::createShaderModule(const RendererContext &ctx, const std::files
 }
 
 template PipelineBuilder &PipelineBuilder::withVertices<ModelVertex>();
+
 template PipelineBuilder &PipelineBuilder::withVertices<SkyboxVertex>();
+
 template PipelineBuilder &PipelineBuilder::withVertices<ScreenSpaceQuadVertex>();

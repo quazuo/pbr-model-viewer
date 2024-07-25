@@ -14,6 +14,7 @@ struct RendererContext;
 class Pipeline {
     unique_ptr<vk::raii::Pipeline> pipeline;
     unique_ptr<vk::raii::PipelineLayout> layout;
+    vk::SampleCountFlagBits rasterizationSamples;
 
     friend class PipelineBuilder;
 
@@ -23,6 +24,8 @@ public:
     [[nodiscard]] const vk::raii::Pipeline &operator*() const { return *pipeline; }
 
     [[nodiscard]] const vk::raii::PipelineLayout &getLayout() const { return *layout; }
+
+    [[nodiscard]] vk::SampleCountFlagBits getSampleCount() const { return rasterizationSamples; }
 };
 
 /**

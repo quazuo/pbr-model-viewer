@@ -121,12 +121,12 @@ VulkanRenderer::VulkanRenderer() {
     createSceneRenderInfos();
     createGuiRenderInfos();
 
-    // loadModelWithMaterials("../assets/example models/Sponza/Sponza.gltf");
+    loadModelWithMaterials("../assets/example models/Sponza/Sponza.gltf");
 
-    loadModel("../assets/example models/kettle/kettle.obj");
-    loadBaseColorTexture("../assets/example models/kettle/kettle-albedo.png");
-    loadNormalMap("../assets/example models/kettle/kettle-normal.png");
-    loadOrmMap("../assets/example models/kettle/kettle-orm.png");
+    // loadModel("../assets/example models/kettle/kettle.obj");
+    // loadBaseColorTexture("../assets/example models/kettle/kettle-albedo.png");
+    // loadNormalMap("../assets/example models/kettle/kettle-normal.png");
+    // loadOrmMap("../assets/example models/kettle/kettle-orm.png");
 
     loadEnvironmentMap("../assets/envmaps/vienna.hdr");
 
@@ -174,18 +174,30 @@ void VulkanRenderer::createInstance() {
     };
 
     const auto extensions = getRequiredExtensions();
-    const vk::DebugUtilsMessengerCreateInfoEXT debugCreateInfo = makeDebugMessengerCreateInfo();
 
-    const vk::InstanceCreateInfo createInfo{
-        .pNext = enableValidationLayers ? &debugCreateInfo : nullptr,
-        .pApplicationInfo = &appInfo,
-        .enabledLayerCount = static_cast<uint32_t>(enableValidationLayers ? validationLayers.size() : 0),
-        .ppEnabledLayerNames = enableValidationLayers ? validationLayers.data() : nullptr,
-        .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
-        .ppEnabledExtensionNames = extensions.data(),
-    };
+    if (enableValidationLayers) {
+        const vk::StructureChain<vk::InstanceCreateInfo, vk::DebugUtilsMessengerCreateInfoEXT> instanceCreateInfo{
+            {
+                .pApplicationInfo = &appInfo,
+                .enabledLayerCount = static_cast<uint32_t>(validationLayers.size()),
+                .ppEnabledLayerNames = validationLayers.data(),
+                .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
+                .ppEnabledExtensionNames = extensions.data(),
+            },
+            makeDebugMessengerCreateInfo()
+        };
 
-    instance = make_unique<vk::raii::Instance>(vkCtx, createInfo);
+        instance = make_unique<vk::raii::Instance>(vkCtx, instanceCreateInfo.get<vk::InstanceCreateInfo>());
+
+    } else {
+        const vk::InstanceCreateInfo createInfo{
+            .pApplicationInfo = &appInfo,
+            .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
+            .ppEnabledExtensionNames = extensions.data(),
+        };
+
+        instance = make_unique<vk::raii::Instance>(vkCtx, createInfo);
+    }
 }
 
 std::vector<const char *> VulkanRenderer::getRequiredExtensions() {
@@ -429,37 +441,37 @@ void VulkanRenderer::createLogicalDevice() {
         .samplerAnisotropy = vk::True,
     };
 
-    vk::PhysicalDeviceMultiviewFeatures multiviewFeatures{
-        .multiview = vk::True,
+    const vk::StructureChain<
+        vk::DeviceCreateInfo,
+        vk::PhysicalDeviceVulkan12Features,
+        vk::PhysicalDeviceSynchronization2FeaturesKHR,
+        vk::PhysicalDeviceDynamicRenderingFeatures,
+        vk::PhysicalDeviceMultiviewFeatures
+    > createInfo{
+        {
+            .queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
+            .pQueueCreateInfos = queueCreateInfos.data(),
+            .enabledLayerCount = static_cast<uint32_t>(enableValidationLayers ? validationLayers.size() : 0),
+            .ppEnabledLayerNames = enableValidationLayers ? validationLayers.data() : nullptr,
+            .enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),
+            .ppEnabledExtensionNames = deviceExtensions.data(),
+            .pEnabledFeatures = &deviceFeatures,
+        },
+        {
+            .timelineSemaphore = vk::True,
+        },
+        {
+            .synchronization2 = vk::True,
+        },
+        {
+            .dynamicRendering = vk::True,
+        },
+        {
+            .multiview = vk::True,
+        }
     };
 
-    vk::PhysicalDeviceDynamicRenderingFeatures dynamicRenderFeatures{
-        .pNext = &multiviewFeatures,
-        .dynamicRendering = vk::True,
-    };
-
-    vk::PhysicalDeviceSynchronization2FeaturesKHR sync2Features{
-        .pNext = &dynamicRenderFeatures,
-        .synchronization2 = vk::True,
-    };
-
-    vk::PhysicalDeviceVulkan12Features vulkan12Features{
-        .pNext = &sync2Features,
-        .timelineSemaphore = vk::True,
-    };
-
-    const vk::DeviceCreateInfo createInfo{
-        .pNext = &vulkan12Features,
-        .queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
-        .pQueueCreateInfos = queueCreateInfos.data(),
-        .enabledLayerCount = static_cast<uint32_t>(enableValidationLayers ? validationLayers.size() : 0),
-        .ppEnabledLayerNames = enableValidationLayers ? validationLayers.data() : nullptr,
-        .enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),
-        .ppEnabledExtensionNames = deviceExtensions.data(),
-        .pEnabledFeatures = &deviceFeatures,
-    };
-
-    ctx.device = make_unique<vk::raii::Device>(*ctx.physicalDevice, createInfo);
+    ctx.device = make_unique<vk::raii::Device>(*ctx.physicalDevice, createInfo.get<vk::DeviceCreateInfo>());
 
     ctx.graphicsQueue = make_unique<vk::raii::Queue>(ctx.device->getQueue(graphicsComputeFamily.value(), 0));
     presentQueue = make_unique<vk::raii::Queue>(ctx.device->getQueue(presentFamily.value(), 0));
@@ -1060,6 +1072,15 @@ vk::RenderingInfo RenderInfo::get(const vk::Extent2D extent, const uint32_t view
     };
 }
 
+vk::CommandBufferInheritanceRenderingInfo RenderInfo::getInheritanceRenderingInfo() {
+    return {
+        .colorAttachmentCount = static_cast<uint32_t>(cachedColorAttachmentFormats.size()),
+        .pColorAttachmentFormats = cachedColorAttachmentFormats.data(),
+        .depthAttachmentFormat = depthTarget->getFormat(),
+        .rasterizationSamples = pipeline->getSampleCount(),
+    };
+}
+
 void RenderInfo::reloadShaders(const RendererContext &ctx) const {
     *pipeline = cachedPipelineBuilder.create(ctx);
 }
@@ -1067,6 +1088,7 @@ void RenderInfo::reloadShaders(const RendererContext &ctx) const {
 void RenderInfo::makeAttachmentInfos() {
     for (const auto &target: colorTargets) {
         colorAttachments.emplace_back(target.getAttachmentInfo());
+        cachedColorAttachmentFormats.push_back(target.getFormat());
     }
 
     if (depthTarget) {
@@ -1651,13 +1673,12 @@ void VulkanRenderer::recordGraphicsCommandBuffer() {
 // ==================== sync ====================
 
 void VulkanRenderer::createSyncObjects() {
-    static constexpr vk::SemaphoreTypeCreateInfo typeCreateInfo{
-        .semaphoreType = vk::SemaphoreType::eTimeline,
-        .initialValue = 0,
-    };
-
-    constexpr vk::SemaphoreCreateInfo timelineSemaphoreInfo{
-        .pNext = &typeCreateInfo
+    const vk::StructureChain<vk::SemaphoreCreateInfo, vk::SemaphoreTypeCreateInfo> timelineSemaphoreInfo{
+        {},
+        {
+            .semaphoreType = vk::SemaphoreType::eTimeline,
+            .initialValue = 0,
+        }
     };
 
     constexpr vk::SemaphoreCreateInfo binarySemaphoreInfo;
@@ -1666,7 +1687,9 @@ void VulkanRenderer::createSyncObjects() {
         res.sync = {
             .imageAvailableSemaphore = make_unique<vk::raii::Semaphore>(*ctx.device, binarySemaphoreInfo),
             .readyToPresentSemaphore = make_unique<vk::raii::Semaphore>(*ctx.device, binarySemaphoreInfo),
-            .renderFinishedTimeline = {make_unique<vk::raii::Semaphore>(*ctx.device, timelineSemaphoreInfo)},
+            .renderFinishedTimeline = {
+                make_unique<vk::raii::Semaphore>(*ctx.device, timelineSemaphoreInfo.get<vk::SemaphoreCreateInfo>())
+            },
         };
     }
 }
@@ -1808,19 +1831,21 @@ void VulkanRenderer::renderGui(const std::function<void()> &renderCommands) {
 
     const std::vector colorAttachmentFormats{swapChain->getImageFormat()};
 
-    const vk::CommandBufferInheritanceRenderingInfo inheritanceRenderingInfo{
-        .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
-        .pColorAttachmentFormats = colorAttachmentFormats.data(),
-        .rasterizationSamples = getMsaaSampleCount(),
-    };
-
-    const vk::CommandBufferInheritanceInfo inheritanceInfo{
-        .pNext = &inheritanceRenderingInfo
+    const vk::StructureChain<
+        vk::CommandBufferInheritanceInfo,
+        vk::CommandBufferInheritanceRenderingInfo
+    > inheritanceInfo{
+        {},
+        {
+            .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
+            .pColorAttachmentFormats = colorAttachmentFormats.data(),
+            .rasterizationSamples = getMsaaSampleCount(),
+        }
     };
 
     const vk::CommandBufferBeginInfo beginInfo{
         .flags = vk::CommandBufferUsageFlagBits::eRenderPassContinue,
-        .pInheritanceInfo = &inheritanceInfo,
+        .pInheritanceInfo = &inheritanceInfo.get<vk::CommandBufferInheritanceInfo>(),
     };
 
     commandBuffer.begin(beginInfo);
@@ -1910,26 +1935,26 @@ void VulkanRenderer::endFrame() {
         0
     };
 
-    const vk::TimelineSemaphoreSubmitInfo timelineSubmitInfo{
-        .waitSemaphoreValueCount = static_cast<uint32_t>(waitSemaphoreValues.size()),
-        .pWaitSemaphoreValues = waitSemaphoreValues.data(),
-        .signalSemaphoreValueCount = static_cast<uint32_t>(signalSemaphoreValues.size()),
-        .pSignalSemaphoreValues = signalSemaphoreValues.data(),
-    };
-
-    const vk::SubmitInfo graphicsSubmitInfo{
-        .pNext = &timelineSubmitInfo,
-        .waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores.size()),
-        .pWaitSemaphores = waitSemaphores.data(),
-        .pWaitDstStageMask = waitStages,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &**frameResources[currentFrameIdx].graphicsCmdBuffer,
-        .signalSemaphoreCount = signalSemaphores.size(),
-        .pSignalSemaphores = signalSemaphores.data(),
+    const vk::StructureChain<vk::SubmitInfo, vk::TimelineSemaphoreSubmitInfo> submitInfo{
+        {
+            .waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores.size()),
+            .pWaitSemaphores = waitSemaphores.data(),
+            .pWaitDstStageMask = waitStages,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &**frameResources[currentFrameIdx].graphicsCmdBuffer,
+            .signalSemaphoreCount = signalSemaphores.size(),
+            .pSignalSemaphores = signalSemaphores.data(),
+        },
+        {
+            .waitSemaphoreValueCount = static_cast<uint32_t>(waitSemaphoreValues.size()),
+            .pWaitSemaphoreValues = waitSemaphoreValues.data(),
+            .signalSemaphoreValueCount = static_cast<uint32_t>(signalSemaphoreValues.size()),
+            .pSignalSemaphoreValues = signalSemaphoreValues.data(),
+        }
     };
 
     try {
-        ctx.graphicsQueue->submit(graphicsSubmitInfo);
+        ctx.graphicsQueue->submit(submitInfo.get<vk::SubmitInfo>());
     } catch (std::exception &e) {
         std::cerr << e.what() << std::endl;
         throw e;
@@ -1974,25 +1999,17 @@ void VulkanRenderer::runPrepass() {
 
     const auto &commandBuffer = *frameResources[currentFrameIdx].prepassCmdBuffer.buffer;
 
-    const std::vector colorAttachmentFormats{
-        gBufferTextures.normal->getFormat(),
-        gBufferTextures.pos->getFormat(),
-    };
-
-    const vk::CommandBufferInheritanceRenderingInfo inheritanceRenderingInfo{
-        .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
-        .pColorAttachmentFormats = colorAttachmentFormats.data(),
-        .depthAttachmentFormat = swapChain->getDepthFormat(),
-        .rasterizationSamples = vk::SampleCountFlagBits::e1,
-    };
-
-    const vk::CommandBufferInheritanceInfo inheritanceInfo{
-        .pNext = &inheritanceRenderingInfo
+    const vk::StructureChain<
+        vk::CommandBufferInheritanceInfo,
+        vk::CommandBufferInheritanceRenderingInfo
+    > inheritanceInfo{
+        {},
+        prepassRenderInfo->getInheritanceRenderingInfo()
     };
 
     const vk::CommandBufferBeginInfo beginInfo{
         .flags = vk::CommandBufferUsageFlagBits::eRenderPassContinue,
-        .pInheritanceInfo = &inheritanceInfo,
+        .pInheritanceInfo = &inheritanceInfo.get<vk::CommandBufferInheritanceInfo>(),
     };
 
     commandBuffer.begin(beginInfo);
@@ -2028,21 +2045,17 @@ void VulkanRenderer::runSsaoPass() {
 
     const auto &commandBuffer = *frameResources[currentFrameIdx].ssaoCmdBuffer.buffer;
 
-    const std::vector colorAttachmentFormats{ssaoTexture->getFormat()};
-
-    const vk::CommandBufferInheritanceRenderingInfo inheritanceRenderingInfo{
-        .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
-        .pColorAttachmentFormats = colorAttachmentFormats.data(),
-        .rasterizationSamples = vk::SampleCountFlagBits::e1,
-    };
-
-    const vk::CommandBufferInheritanceInfo inheritanceInfo{
-        .pNext = &inheritanceRenderingInfo
+    const vk::StructureChain<
+        vk::CommandBufferInheritanceInfo,
+        vk::CommandBufferInheritanceRenderingInfo
+    > inheritanceInfo{
+        {},
+        ssaoRenderInfo->getInheritanceRenderingInfo()
     };
 
     const vk::CommandBufferBeginInfo beginInfo{
         .flags = vk::CommandBufferUsageFlagBits::eRenderPassContinue,
-        .pInheritanceInfo = &inheritanceInfo,
+        .pInheritanceInfo = &inheritanceInfo.get<vk::CommandBufferInheritanceInfo>(),
     };
 
     commandBuffer.begin(beginInfo);
@@ -2076,29 +2089,22 @@ void VulkanRenderer::drawScene() {
 
     const auto &commandBuffer = *frameResources[currentFrameIdx].sceneCmdBuffer.buffer;
 
-    const vk::Extent2D swapChainExtent = swapChain->getExtent();
-
-    const std::vector colorAttachmentFormats{swapChain->getImageFormat()};
-
-    const vk::CommandBufferInheritanceRenderingInfo inheritanceRenderingInfo{
-        .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
-        .pColorAttachmentFormats = colorAttachmentFormats.data(),
-        .depthAttachmentFormat = swapChain->getDepthFormat(),
-        .rasterizationSamples = getMsaaSampleCount(),
-    };
-
-    const vk::CommandBufferInheritanceInfo inheritanceInfo{
-        .pNext = &inheritanceRenderingInfo
+    const vk::StructureChain<
+        vk::CommandBufferInheritanceInfo,
+        vk::CommandBufferInheritanceRenderingInfo
+    > inheritanceInfo{
+        {},
+        sceneRenderInfos[0].getInheritanceRenderingInfo()
     };
 
     const vk::CommandBufferBeginInfo beginInfo{
         .flags = vk::CommandBufferUsageFlagBits::eRenderPassContinue,
-        .pInheritanceInfo = &inheritanceInfo,
+        .pInheritanceInfo = &inheritanceInfo.get<vk::CommandBufferInheritanceInfo>(),
     };
 
     commandBuffer.begin(beginInfo);
 
-    vkutils::cmd::setDynamicStates(commandBuffer, swapChainExtent);
+    vkutils::cmd::setDynamicStates(commandBuffer, swapChain->getExtent());
 
     // skybox
 
@@ -2148,29 +2154,22 @@ void VulkanRenderer::drawScene() {
 void VulkanRenderer::drawDebugQuad() {
     const auto &commandBuffer = *frameResources[currentFrameIdx].debugCmdBuffer.buffer;
 
-    const vk::Extent2D swapChainExtent = swapChain->getExtent();
-
-    const std::vector colorAttachmentFormats{swapChain->getImageFormat()};
-
-    const vk::CommandBufferInheritanceRenderingInfo inheritanceRenderingInfo{
-        .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
-        .pColorAttachmentFormats = colorAttachmentFormats.data(),
-        .depthAttachmentFormat = swapChain->getDepthFormat(),
-        .rasterizationSamples = getMsaaSampleCount(),
-    };
-
-    const vk::CommandBufferInheritanceInfo inheritanceInfo{
-        .pNext = &inheritanceRenderingInfo
+    const vk::StructureChain<
+        vk::CommandBufferInheritanceInfo,
+        vk::CommandBufferInheritanceRenderingInfo
+    > inheritanceInfo{
+        {},
+        debugQuadRenderInfos[0].getInheritanceRenderingInfo()
     };
 
     const vk::CommandBufferBeginInfo beginInfo{
         .flags = vk::CommandBufferUsageFlagBits::eRenderPassContinue,
-        .pInheritanceInfo = &inheritanceInfo,
+        .pInheritanceInfo = &inheritanceInfo.get<vk::CommandBufferInheritanceInfo>(),
     };
 
     commandBuffer.begin(beginInfo);
 
-    vkutils::cmd::setDynamicStates(commandBuffer, swapChainExtent);
+    vkutils::cmd::setDynamicStates(commandBuffer, swapChain->getExtent());
 
     auto &pipeline = debugQuadRenderInfos[swapChain->getCurrentImageIndex()].getPipeline();
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, **pipeline);

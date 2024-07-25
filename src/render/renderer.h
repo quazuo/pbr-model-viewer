@@ -143,19 +143,23 @@ class RenderInfo {
     std::vector<vk::RenderingAttachmentInfo> colorAttachments;
     std::optional<vk::RenderingAttachmentInfo> depthAttachment;
 
+    std::vector<vk::Format> cachedColorAttachmentFormats;
+
 public:
     RenderInfo(PipelineBuilder builder, shared_ptr<Pipeline> pipeline, std::vector<RenderTarget> colors);
 
     RenderInfo(PipelineBuilder builder, shared_ptr<Pipeline> pipeline, std::vector<RenderTarget> colors,
                RenderTarget depth);
 
-    explicit RenderInfo(std::vector<RenderTarget> colors);
+    RenderInfo(std::vector<RenderTarget> colors);
 
     RenderInfo(std::vector<RenderTarget> colors, RenderTarget depth);
 
     [[nodiscard]] vk::RenderingInfo get(vk::Extent2D extent, uint32_t views = 1, vk::RenderingFlags flags = {}) const;
 
     [[nodiscard]] const Pipeline &getPipeline() const { return *pipeline; }
+
+    [[nodiscard]] vk::CommandBufferInheritanceRenderingInfo getInheritanceRenderingInfo();
 
     void reloadShaders(const RendererContext& ctx) const;
 
