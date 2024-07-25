@@ -20,8 +20,4 @@ void main() {
     color = pow(color, vec3(1 / 2.2));
 
     outColor = vec4(color, 1.0);
-
-    // debug
-    outColor = textureLod(skyboxTexSampler, texCoord, ubo.misc.debug_number);
-    return;
 }
