@@ -43,10 +43,10 @@ Drag the right mouse button to pan your model.
 
 ### Gallery
 
-![image](https://github.com/user-attachments/assets/9a6a3a0f-7e76-4f68-8481-ecd6b327f0ce)
 ![image](https://github.com/user-attachments/assets/4b7b9a92-a21f-4458-a53e-a2d1ef64e6a1)
 ![image](https://github.com/user-attachments/assets/6c6d35d7-b13b-42ea-8006-2b8db69050bf)
 ![image](https://github.com/user-attachments/assets/20b304db-8cd0-4574-9e64-9c5c42f2ce31)
+![image](https://github.com/user-attachments/assets/9a6a3a0f-7e76-4f68-8481-ecd6b327f0ce)
 
 ### Future improvements
 
