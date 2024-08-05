@@ -121,7 +121,7 @@ VulkanRenderer::VulkanRenderer() {
     createSceneRenderInfos();
     createGuiRenderInfos();
 
-    loadModelWithMaterials("../assets/example models/Sponza/Sponza.gltf");
+    loadModelWithMaterials("../assets/example models/sponza/Sponza.gltf");
 
     // loadModel("../assets/example models/kettle/kettle.obj");
     // loadBaseColorTexture("../assets/example models/kettle/kettle-albedo.png");
